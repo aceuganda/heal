@@ -1,7 +1,7 @@
 import {
   FiCheck,
   FiCopy,
-  FiCpu,
+  // FiCpu,
   FiThumbsDown,
   FiThumbsUp,
   FiUser,
@@ -13,6 +13,7 @@ import { DanswerDocument } from "@/lib/search/interfaces";
 import { SearchSummary, ShowHideDocsButton } from "./SearchSummary";
 import { SourceIcon } from "@/components/SourceIcon";
 import { ThreeDots } from "react-loader-spinner";
+import Image from "next/image";
 
 const Hoverable: React.FC<{ children: JSX.Element; onClick?: () => void }> = ({
   children,
@@ -57,11 +58,17 @@ export const AIMessage = ({
           <div className="flex">
             <div className="p-1 bg-ai rounded-lg h-fit my-auto">
               <div className="text-inverted">
-                <FiCpu size={16} className="my-auto mx-auto" />
+                <Image
+                  width={16}
+                  height={16}
+                  alt="Heal"
+                  src="/logo.png"
+                  className="my-auto mx-auto"
+                />
               </div>
             </div>
 
-            <div className="font-bold text-emphasis ml-2 my-auto">Danswer</div>
+            <div className="font-bold text-emphasis ml-2 my-auto">Heal</div>
 
             {query === undefined &&
               hasDocs &&
