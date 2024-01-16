@@ -184,7 +184,7 @@ services:
       - api_server
       - web_server
     environment:
-      - DOMAIN=localhost
+      - DOMAIN=http://65.108.33.93
     ports:
       - "80:80"
       - "3000:80"  # allow for localhost:3000 usage, since that is the norm

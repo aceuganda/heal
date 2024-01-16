@@ -81,7 +81,7 @@ export const ChatSidebar = ({
             <Image src="/logo.png" alt="Logo" width="1419" height="1520" />
           </div>
           <h1 className="flex text-2xl font-bold my-auto text-emphasis ml-2">
-            Danswer
+            Heal
           </h1>
         </div>
       </Link>

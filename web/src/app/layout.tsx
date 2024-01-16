@@ -8,8 +8,8 @@ const inter = Inter({
 });
 
 export const metadata = {
-  title: "Danswer",
-  description: "Question answering for your documents",
+  title: "HEAL",
+  description: "Transforming Pandemic Preparedness in Uganda",
 };
 
 export const dynamic = "force-dynamic";

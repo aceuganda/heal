@@ -1,0 +1,8 @@
+docker compose -f docker-compose.dev.yml -p danswer-stack up -d --build  --force-recreate
+docker ps --format "table {{.ID}}\t{{.Names}}\t{{.Status}}"
+
+shutdown:
+docker compose -f docker-compose.dev.yml -p danswer-stack down -v
+
+only the frontend and backend services 
+docker compose -f docker-compose.dev.yml -p danswer-stack up -d --build --force-recreate web_server
