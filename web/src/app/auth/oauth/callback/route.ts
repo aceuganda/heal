@@ -25,9 +25,6 @@ export const GET = async (request: NextRequest) => {
   const redirectResponse = NextResponse.redirect(
     new URL("/", getDomain(request))
   );
-  console.log(modifiedSetCookieHeader)
-
-  console.log(setCookieHeader)
 
   redirectResponse.headers.set("set-cookie", modifiedSetCookieHeader);
   return redirectResponse;
