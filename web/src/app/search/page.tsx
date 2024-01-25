@@ -56,6 +56,7 @@ export default async function Home() {
   const personaResponse = results[4] as Response | null;
   const tagsResponse = results[5] as Response | null;
 
+
   const authDisabled = authTypeMetadata?.authType === "disabled";
   if (!authDisabled && !user) {
     return redirect("/auth/login");
@@ -105,7 +106,7 @@ export default async function Home() {
     | undefined;
   let searchTypeDefault: SearchType =
     storedSearchType !== undefined &&
-    SearchType.hasOwnProperty(storedSearchType)
+      SearchType.hasOwnProperty(storedSearchType)
       ? (storedSearchType as SearchType)
       : SearchType.SEMANTIC; // default to semantic
 

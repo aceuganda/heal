@@ -15,9 +15,20 @@ export const GET = async (request: NextRequest) => {
     return NextResponse.redirect(new URL("/auth/error", getDomain(request)));
   }
 
+  //temporay solution for not having ssl
+  let modifiedSetCookieHeader = setCookieHeader;
+  if (setCookieHeader && setCookieHeader.includes("; Secure")) {
+    const cookies = setCookieHeader.split(";");
+    const modifiedCookies = cookies.map(cookie => cookie.trim().replace("Secure", ""));
+    modifiedSetCookieHeader = modifiedCookies.join(";");
+  }
   const redirectResponse = NextResponse.redirect(
     new URL("/", getDomain(request))
   );
-  redirectResponse.headers.set("set-cookie", setCookieHeader);
+  console.log(modifiedSetCookieHeader)
+
+  console.log(setCookieHeader)
+
+  redirectResponse.headers.set("set-cookie", modifiedSetCookieHeader);
   return redirectResponse;
 };
