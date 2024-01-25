@@ -20,7 +20,6 @@ APP_API_PREFIX = os.environ.get("API_PREFIX", "")
 #####
 BLURB_SIZE = 128  # Number Encoder Tokens included in the chunk blurb
 GENERATIVE_MODEL_ACCESS_CHECK_FREQ = 86400  # 1 day
-# CURRENTLY DOES NOT FULLY WORK, DON'T USE THIS
 DISABLE_GENERATIVE_AI = os.environ.get("DISABLE_GENERATIVE_AI", "").lower() == "true"
 
 
@@ -28,6 +27,9 @@ DISABLE_GENERATIVE_AI = os.environ.get("DISABLE_GENERATIVE_AI", "").lower() == "
 # Web Configs
 #####
 # WEB_DOMAIN is used to set the redirect_uri after login flows
+# NOTE: if you are having problems accessing the Danswer web UI locally (especially
+# on Windows, try  setting this to `http://127.0.0.1:3000` instead and see if that
+# fixes it)
 WEB_DOMAIN = os.environ.get("WEB_DOMAIN") or "http://localhost:3000"
 
 
@@ -44,7 +46,7 @@ MASK_CREDENTIAL_PREFIX = (
 
 SECRET = os.environ.get("SECRET", "")
 SESSION_EXPIRE_TIME_SECONDS = int(
-    os.environ.get("SESSION_EXPIRE_TIME_SECONDS", 86400)
+    os.environ.get("SESSION_EXPIRE_TIME_SECONDS") or 86400
 )  # 1 day
 
 # set `VALID_EMAIL_DOMAINS` to a comma seperated list of domains in order to
@@ -71,14 +73,15 @@ OAUTH_CLIENT_SECRET = (
     or ""
 )
 
-# The following Basic Auth configs are not supported by the frontend UI
+# for basic auth
 REQUIRE_EMAIL_VERIFICATION = (
     os.environ.get("REQUIRE_EMAIL_VERIFICATION", "").lower() == "true"
 )
-SMTP_SERVER = os.environ.get("SMTP_SERVER", "smtp.gmail.com")
-SMTP_PORT = int(os.environ.get("SMTP_PORT", "587"))
+SMTP_SERVER = os.environ.get("SMTP_SERVER") or "smtp.gmail.com"
+SMTP_PORT = int(os.environ.get("SMTP_PORT") or "587")
 SMTP_USER = os.environ.get("SMTP_USER", "your-email@gmail.com")
 SMTP_PASS = os.environ.get("SMTP_PASS", "your-gmail-password")
+EMAIL_FROM = os.environ.get("EMAIL_FROM") or SMTP_USER
 
 
 #####
@@ -97,7 +100,10 @@ VESPA_DEPLOYMENT_ZIP = (
     os.environ.get("VESPA_DEPLOYMENT_ZIP") or "/app/danswer/vespa-app.zip"
 )
 # Number of documents in a batch during indexing (further batching done by chunks before passing to bi-encoder)
-INDEX_BATCH_SIZE = 16
+try:
+    INDEX_BATCH_SIZE = int(os.environ.get("INDEX_BATCH_SIZE", 16))
+except ValueError:
+    INDEX_BATCH_SIZE = 16
 
 # Below are intended to match the env variables names used by the official postgres docker image
 # https://hub.docker.com/_/postgres
@@ -111,6 +117,8 @@ POSTGRES_DB = os.environ.get("POSTGRES_DB") or "postgres"
 #####
 # Connector Configs
 #####
+POLL_CONNECTOR_OFFSET = 30  # Minutes overlap between poll windows
+
 GOOGLE_DRIVE_INCLUDE_SHARED = False
 GOOGLE_DRIVE_FOLLOW_SHORTCUTS = False
 
@@ -144,6 +152,8 @@ CONFLUENCE_CONNECTOR_LABELS_TO_SKIP = [
 
 GONG_CONNECTOR_START_TIME = os.environ.get("GONG_CONNECTOR_START_TIME")
 
+GITHUB_CONNECTOR_BASE_URL = os.environ.get("GITHUB_CONNECTOR_BASE_URL") or None
+
 DASK_JOB_CLIENT_ENABLED = (
     os.environ.get("DASK_JOB_CLIENT_ENABLED", "").lower() == "true"
 )
@@ -173,6 +183,8 @@ ENABLE_MINI_CHUNK = os.environ.get("ENABLE_MINI_CHUNK", "").lower() == "true"
 # Slightly larger since the sentence aware split is a max cutoff so most minichunks will be under MINI_CHUNK_SIZE
 # tokens. But we need it to be at least as big as 1/4th chunk size to avoid having a tiny mini-chunk at the end
 MINI_CHUNK_SIZE = 150
+# Timeout to wait for job's last update before killing it, in hours
+CLEANUP_INDEXING_JOBS_TIMEOUT = int(os.environ.get("CLEANUP_INDEXING_JOBS_TIMEOUT", 3))
 
 
 #####
@@ -184,22 +196,11 @@ MODEL_SERVER_HOST = os.environ.get("MODEL_SERVER_HOST") or None
 MODEL_SERVER_ALLOWED_HOST = os.environ.get("MODEL_SERVER_HOST") or "0.0.0.0"
 MODEL_SERVER_PORT = int(os.environ.get("MODEL_SERVER_PORT") or "9000")
 
-EMBEDDING_MODEL_SERVER_HOST = (
-    os.environ.get("EMBEDDING_MODEL_SERVER_HOST") or MODEL_SERVER_HOST
-)
-CROSS_ENCODER_MODEL_SERVER_HOST = (
-    os.environ.get("CROSS_ENCODER_MODEL_SERVER_HOST") or MODEL_SERVER_HOST
-)
-INTENT_MODEL_SERVER_HOST = (
-    os.environ.get("INTENT_MODEL_SERVER_HOST") or MODEL_SERVER_HOST
-)
-
 # specify this env variable directly to have a different model server for the background
 # indexing job vs the api server so that background indexing does not effect query-time
 # performance
-BACKGROUND_JOB_EMBEDDING_MODEL_SERVER_HOST = (
-    os.environ.get("BACKGROUND_JOB_EMBEDDING_MODEL_SERVER_HOST")
-    or EMBEDDING_MODEL_SERVER_HOST
+INDEXING_MODEL_SERVER_HOST = (
+    os.environ.get("INDEXING_MODEL_SERVER_HOST") or MODEL_SERVER_HOST
 )
 
 

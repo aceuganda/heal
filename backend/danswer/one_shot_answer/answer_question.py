@@ -29,6 +29,7 @@ from danswer.one_shot_answer.factory import get_question_answer_model
 from danswer.one_shot_answer.models import DirectQARequest
 from danswer.one_shot_answer.models import OneShotQAResponse
 from danswer.one_shot_answer.models import QueryRephrase
+from danswer.one_shot_answer.qa_block import no_gen_ai_response
 from danswer.one_shot_answer.qa_utils import combine_message_thread
 from danswer.search.models import RerankMetricsContainer
 from danswer.search.models import RetrievalMetricsContainer
@@ -46,7 +47,6 @@ from danswer.utils.timing import log_generator_function_time
 logger = setup_logger()
 
 
-@log_generator_function_time()
 def stream_answer_objects(
     query_req: DirectQARequest,
     user: User | None,
@@ -192,8 +192,12 @@ def stream_answer_objects(
         llm_version=llm_override,
     )
 
-    full_prompt_str = qa_model.build_prompt(
-        query=query_msg.message, history_str=history_str, context_chunks=llm_chunks
+    full_prompt_str = (
+        qa_model.build_prompt(
+            query=query_msg.message, history_str=history_str, context_chunks=llm_chunks
+        )
+        if qa_model is not None
+        else "Gen AI Disabled"
     )
 
     # Create the first User query message
@@ -208,10 +212,14 @@ def stream_answer_objects(
         commit=True,
     )
 
-    response_packets = qa_model.answer_question_stream(
-        prompt=full_prompt_str,
-        llm_context_docs=llm_chunks,
-        metrics_callback=llm_metrics_callback,
+    response_packets = (
+        qa_model.answer_question_stream(
+            prompt=full_prompt_str,
+            llm_context_docs=llm_chunks,
+            metrics_callback=llm_metrics_callback,
+        )
+        if qa_model is not None
+        else no_gen_ai_response()
     )
 
     # Capture outputs and errors
@@ -250,7 +258,8 @@ def stream_answer_objects(
     yield msg_detail_response
 
 
-def stream_one_shot_answer(
+@log_generator_function_time()
+def stream_search_answer(
     query_req: DirectQARequest,
     user: User | None,
     db_session: Session,
@@ -262,7 +271,7 @@ def stream_one_shot_answer(
         yield get_json_line(obj.dict())
 
 
-def get_one_shot_answer(
+def get_search_answer(
     query_req: DirectQARequest,
     user: User | None,
     db_session: Session,

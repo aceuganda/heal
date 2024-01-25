@@ -48,10 +48,16 @@ class Embedder:
         raise NotImplementedError
 
 
+class Tag(BaseModel):
+    tag_key: str
+    tag_value: str
+
+
 class BaseFilters(BaseModel):
     source_type: list[DocumentSource] | None = None
     document_set: list[str] | None = None
     time_cutoff: datetime | None = None
+    tags: list[Tag] | None = None
 
 
 class IndexFilters(BaseFilters):
@@ -70,6 +76,7 @@ class SearchQuery(BaseModel):
     filters: IndexFilters
     recency_bias_multiplier: float
     num_hits: int = NUM_RETURNED_HITS
+    offset: int = 0
     search_type: SearchType = SearchType.HYBRID
     skip_rerank: bool = not ENABLE_RERANKING_REAL_TIME_FLOW
     # Only used if not skip_rerank
@@ -94,8 +101,9 @@ class RetrievalDetails(BaseModel):
     # the query, if None, then use Persona settings
     filters: BaseFilters | None = None
     enable_auto_detect_filters: bool | None = None
-    # TODO Pagination/Offset options
-    # offset: int | None = None
+    # if None, no offset / limit
+    offset: int | None = None
+    limit: int | None = None
 
 
 class SearchDoc(BaseModel):
@@ -110,6 +118,7 @@ class SearchDoc(BaseModel):
     # since a standard search will never find a hidden doc, this can only ever
     # be `True` when doing an admin search
     hidden: bool
+    metadata: dict[str, str | list[str]]
     score: float | None
     # Matched sections in the doc. Uses Vespa syntax e.g. <hi>TEXT</hi>
     # to specify that a set of words should be highlighted. For example:

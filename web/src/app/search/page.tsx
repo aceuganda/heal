@@ -1,17 +1,22 @@
 import { SearchSection } from "@/components/search/SearchSection";
 import { Header } from "@/components/Header";
-import { getAuthDisabledSS, getCurrentUserSS } from "@/lib/userSS";
+import {
+  AuthTypeMetadata,
+  getAuthTypeMetadataSS,
+  getCurrentUserSS,
+} from "@/lib/userSS";
 import { redirect } from "next/navigation";
 import { HealthCheckBanner } from "@/components/health/healthcheck";
 import { ApiKeyModal } from "@/components/openai/ApiKeyModal";
 import { fetchSS } from "@/lib/utilsSS";
-import { Connector, DocumentSet, User } from "@/lib/types";
+import { Connector, DocumentSet, Tag, User, ValidSources } from "@/lib/types";
 import { cookies } from "next/headers";
 import { SearchType } from "@/lib/search/interfaces";
 import { Persona } from "../admin/personas/interfaces";
 import { WelcomeModal } from "@/components/WelcomeModal";
 import { unstable_noStore as noStore } from "next/cache";
 import { InstantSSRAutoRefresh } from "@/components/SSRAutoRefresh";
+import { personaComparator } from "../admin/personas/lib";
 
 export default async function Home() {
   // Disable caching so we always get the up to date connector / document set / persona info
@@ -20,30 +25,44 @@ export default async function Home() {
   noStore();
 
   const tasks = [
-    getAuthDisabledSS(),
+    getAuthTypeMetadataSS(),
     getCurrentUserSS(),
     fetchSS("/manage/connector"),
     fetchSS("/manage/document-set"),
     fetchSS("/persona"),
+    fetchSS("/query/valid-tags"),
   ];
 
   // catch cases where the backend is completely unreachable here
   // without try / catch, will just raise an exception and the page
   // will not render
-  let results: (User | Response | boolean | null)[] = [null, null, null, null];
+  let results: (User | Response | AuthTypeMetadata | null)[] = [
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+  ];
   try {
     results = await Promise.all(tasks);
   } catch (e) {
     console.log(`Some fetch failed for the main search page - ${e}`);
   }
-  const authDisabled = results[0] as boolean;
+  const authTypeMetadata = results[0] as AuthTypeMetadata | null;
   const user = results[1] as User | null;
   const connectorsResponse = results[2] as Response | null;
   const documentSetsResponse = results[3] as Response | null;
   const personaResponse = results[4] as Response | null;
+  const tagsResponse = results[5] as Response | null;
 
+  const authDisabled = authTypeMetadata?.authType === "disabled";
   if (!authDisabled && !user) {
     return redirect("/auth/login");
+  }
+
+  if (user && !user.is_verified && authTypeMetadata?.requiresVerification) {
+    return redirect("/auth/waiting-on-verification");
   }
 
   let connectors: Connector<any>[] = [];
@@ -67,6 +86,17 @@ export default async function Home() {
     personas = await personaResponse.json();
   } else {
     console.log(`Failed to fetch personas - ${personaResponse?.status}`);
+  }
+  // remove those marked as hidden by an admin
+  personas = personas.filter((persona) => persona.is_visible);
+  // sort them in priority order
+  personas.sort(personaComparator);
+
+  let tags: Tag[] = [];
+  if (tagsResponse?.ok) {
+    tags = (await tagsResponse.json()).tags;
+  } else {
+    console.log(`Failed to fetch tags - ${tagsResponse?.status}`);
   }
 
   // needs to be done in a non-client side component due to nextjs
@@ -94,6 +124,7 @@ export default async function Home() {
             connectors={connectors}
             documentSets={documentSets}
             personas={personas}
+            tags={tags}
             defaultSearchType={searchTypeDefault}
           />
         </div>

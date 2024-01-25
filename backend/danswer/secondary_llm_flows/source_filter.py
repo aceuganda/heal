@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from danswer.configs.constants import DocumentSource
 from danswer.db.connector import fetch_unique_document_sources
 from danswer.db.engine import get_sqlalchemy_engine
+from danswer.llm.exceptions import GenAIDisabledException
 from danswer.llm.factory import get_default_llm
 from danswer.llm.utils import dict_based_prompt_to_langchain_prompt
 from danswer.prompts.constants import SOURCES_KEY
@@ -14,7 +15,6 @@ from danswer.prompts.filter_extration import SOURCE_FILTER_PROMPT
 from danswer.prompts.filter_extration import WEB_SOURCE_WARNING
 from danswer.utils.logger import setup_logger
 from danswer.utils.text_processing import extract_embedded_json
-from danswer.utils.timing import log_function_time
 
 logger = setup_logger()
 
@@ -42,7 +42,6 @@ def _sample_document_sources(
         return random.sample(valid_sources, num_sample)
 
 
-@log_function_time()
 def extract_source_filter(
     query: str, db_session: Session
 ) -> list[DocumentSource] | None:
@@ -147,13 +146,18 @@ def extract_source_filter(
             logger.warning("LLM failed to provide a valid Source Filter output")
             return None
 
+    try:
+        llm = get_default_llm()
+    except GenAIDisabledException:
+        return None
+
     valid_sources = fetch_unique_document_sources(db_session)
     if not valid_sources:
         return None
 
     messages = _get_source_filter_messages(query=query, valid_sources=valid_sources)
     filled_llm_prompt = dict_based_prompt_to_langchain_prompt(messages)
-    model_output = get_default_llm().invoke(filled_llm_prompt)
+    model_output = llm.invoke(filled_llm_prompt)
     logger.debug(model_output)
 
     return _extract_source_filters_from_llm_out(model_output)

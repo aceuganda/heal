@@ -4,7 +4,7 @@ import { useRef, useState } from "react";
 import { SearchBar } from "./SearchBar";
 import { SearchResultsDisplay } from "./SearchResultsDisplay";
 import { SourceSelector } from "./filtering/Filters";
-import { Connector, DocumentSet } from "@/lib/types";
+import { Connector, DocumentSet, Tag } from "@/lib/types";
 import {
   DanswerDocument,
   Quote,
@@ -38,6 +38,7 @@ interface SearchSectionProps {
   connectors: Connector<any>[];
   documentSets: DocumentSet[];
   personas: Persona[];
+  tags: Tag[];
   defaultSearchType: SearchType;
 }
 
@@ -45,6 +46,7 @@ export const SearchSection = ({
   connectors,
   documentSets,
   personas,
+  tags,
   defaultSearchType,
 }: SearchSectionProps) => {
   // Search Bar
@@ -66,11 +68,8 @@ export const SearchSection = ({
   const [selectedSearchType, setSelectedSearchType] =
     useState<SearchType>(defaultSearchType);
 
-  const defaultPersona = personas.find(
-    (persona) => persona.name === "Danswer" && persona.default_persona
-  );
   const [selectedPersona, setSelectedPersona] = useState<number>(
-    defaultPersona?.id || 0
+    personas[0]?.id || 0
   );
 
   // Overrides for default behavior that only last a single query
@@ -149,6 +148,7 @@ export const SearchSection = ({
       sources: filterManager.selectedSources,
       documentSets: filterManager.selectedDocumentSets,
       timeRange: filterManager.timeRange,
+      tags: filterManager.selectedTags,
       persona: personas.find(
         (persona) => persona.id === selectedPersona
       ) as Persona,
@@ -209,6 +209,7 @@ export const SearchSection = ({
             {...filterManager}
             availableDocumentSets={documentSets}
             existingSources={connectors.map((connector) => connector.source)}
+            availableTags={tags}
           />
         )}
 

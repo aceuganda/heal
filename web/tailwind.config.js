@@ -17,15 +17,18 @@ module.exports = {
     current: "currentColor",
     extend: {
       screens: {
+        "2xl": "1420px",
         "3xl": "1700px",
       },
       fontFamily: {
         sans: ["var(--font-inter)"],
       },
       width: {
-        "message-small": "600px",
+        "message-xs": "450px",
+        "message-sm": "550px",
         "message-default": "740px",
-        "searchbar-small": "710px",
+        "searchbar-xs": "560px",
+        "searchbar-sm": "660px",
         searchbar: "850px",
         "document-sidebar": "800px",
         "document-sidebar-large": "1000px",
@@ -35,7 +38,7 @@ module.exports = {
       },
       colors: {
         link: "#3b82f6", // blue-500
-        subtle: "#9ca3af", // gray-400
+        subtle: "#6b7280", // gray-500
         default: "#4b5563", // gray-600
         emphasis: "#374151", // gray-700
         strong: "#111827", // gray-900

@@ -13,6 +13,7 @@ from slack_sdk.web import SlackResponse
 
 from danswer.configs.app_configs import INDEX_BATCH_SIZE
 from danswer.configs.constants import DocumentSource
+from danswer.connectors.cross_connector_utils.retry_wrapper import retry_builder
 from danswer.connectors.interfaces import GenerateDocumentsOutput
 from danswer.connectors.interfaces import LoadConnector
 from danswer.connectors.interfaces import PollConnector
@@ -35,19 +36,25 @@ MessageType = dict[str, Any]
 # list of messages in a thread
 ThreadType = list[MessageType]
 
+basic_retry_wrapper = retry_builder()
+
 
 def _make_paginated_slack_api_call(
     call: Callable[..., SlackResponse], **kwargs: Any
 ) -> Generator[dict[str, Any], None, None]:
     return make_slack_api_call_paginated(
-        make_slack_api_rate_limited(make_slack_api_call_logged(call))
+        basic_retry_wrapper(
+            make_slack_api_rate_limited(make_slack_api_call_logged(call))
+        )
     )(**kwargs)
 
 
 def _make_slack_api_call(
     call: Callable[..., SlackResponse], **kwargs: Any
 ) -> SlackResponse:
-    return make_slack_api_rate_limited(make_slack_api_call_logged(call))(**kwargs)
+    return basic_retry_wrapper(
+        make_slack_api_rate_limited(make_slack_api_call_logged(call))
+    )(**kwargs)
 
 
 def get_channel_info(client: WebClient, channel_id: str) -> ChannelType:
@@ -425,8 +432,10 @@ if __name__ == "__main__":
     import os
     import time
 
+    slack_channel = os.environ.get("SLACK_CHANNEL")
     connector = SlackPollConnector(
-        workspace=os.environ["SLACK_WORKSPACE"], channels=[os.environ["SLACK_CHANNEL"]]
+        workspace=os.environ["SLACK_WORKSPACE"],
+        channels=[slack_channel] if slack_channel else None,
     )
     connector.load_credentials({"slack_bot_token": os.environ["SLACK_BOT_TOKEN"]})
 
