@@ -16,7 +16,7 @@ interface Props {
   selectedSearchType: SearchType;
   setSelectedSearchType: (searchType: SearchType) => void;
   defaultOverrides: SearchDefaultOverrides;
-  restartSearch: (overrides?: SearchRequestOverrides) => void;
+  // restartSearch: (overrides?: SearchRequestOverrides) => void;
   forceQADisplay: () => void;
   setOffset: (offset: number) => void;
 }
@@ -27,7 +27,7 @@ const getAssistantMessage = ({
   selectedSearchType,
   setSelectedSearchType,
   defaultOverrides,
-  restartSearch,
+  // restartSearch,
   forceQADisplay,
   setOffset,
 }: Props): string | JSX.Element | null => {
@@ -67,9 +67,9 @@ const getAssistantMessage = ({
           onClick={() => {
             const newOffset = defaultOverrides.offset + 1;
             setOffset(newOffset);
-            restartSearch({
-              offset: newOffset,
-            });
+            // restartSearch({
+            //   offset: newOffset,
+            // });
           }}
         >
           keep searching?

@@ -17,3 +17,8 @@ docker compose -f docker-compose.prod.yml -p danswer-stack down -v
 
 only the frontend and backend services 
 docker compose -f docker-compose.prod.yml -p danswer-stack up -d --build --force-recreate web_server
+
+docker-compose -f docker-compose.prod.yml -p danswer-stack down --rmi all -v --remove-orphans
+
+
+docker-compose -f docker-compose.prod.yml -p danswer-stack build --no-cache web_server

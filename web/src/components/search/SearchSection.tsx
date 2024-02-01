@@ -4,6 +4,7 @@ import { useRef, useState } from "react";
 import { SearchBar } from "./SearchBar";
 import { SearchResultsDisplay } from "./SearchResultsDisplay";
 import { SourceSelector } from "./filtering/Filters";
+import { SearchLanguageSelector } from "./SearchLanguageSelector";
 import { Connector, DocumentSet, Tag } from "@/lib/types";
 import {
   DanswerDocument,
@@ -51,6 +52,7 @@ export const SearchSection = ({
 }: SearchSectionProps) => {
   // Search Bar
   const [query, setQuery] = useState<string>("");
+  const [language, setLanguage] = useState<string>("english");
 
   // Search
   const [searchResponse, setSearchResponse] = useState<SearchResponse | null>(
@@ -132,7 +134,8 @@ export const SearchSection = ({
   const onSearch = async ({
     searchType,
     offset,
-  }: SearchRequestOverrides = {}) => {
+    query,
+  }: SearchRequestOverrides & { query: string }) => {
     // cancel the prior search if it hasn't finished
     if (lastSearchCancellationToken.current) {
       lastSearchCancellationToken.current.cancel();
@@ -193,25 +196,150 @@ export const SearchSection = ({
       update: setValidQuestionResponse,
     };
 
-    await Promise.all([
+    // await Promise.all([
+    //   searchRequestStreamed(searchFnArgs),
+    //   questionValidationStreamed(questionValidationArgs),
+    // ]);
+    const [tempSearchResponse, tempValidationResponse] = await Promise.all([
       searchRequestStreamed(searchFnArgs),
       questionValidationStreamed(questionValidationArgs),
     ]);
 
+
+
     setIsFetching(false);
+
+    return tempSearchResponse.answer;
+  };
+
+  const translateToEnglish = async (text: string): Promise<string> => {
+    const response = await fetch('https://qo4le5gdg10o34m1.us-east-1.aws.endpoints.huggingface.cloud', {
+      method: 'POST',
+      headers: {
+        'Authorization': 'Bearer NSBAjgJJBYZFSyJQnKhWtqbnDiMjhvPZvEiJjwvqVoeojQjEpiGBimUYzwodfspAVLnISwxpBFmFHDZCRUkGcKOoymZGByldmNjRpGWYbCblafXvbEqOYdgZoOpJdAFk',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        'inputs': text,
+        'parameters': {
+          'temperature': 0.5, 'top_k': 5,
+          'top_p': 1.0, 'max_new_tokens': 512, 'repetition_penalty': 1.0
+        }
+      }),
+    });
+
+    const data = await response.json();
+    console.log(data)
+    console.log('inside translate luganda to english function')
+    console.log(data[0].generated_text)
+    return data[0].generated_text;  // Assuming the translated text is returned in this key
+  };
+
+  const translateToLuganda = async (text: string | null): Promise<string> => {
+    if (text != null) {
+      const response = await fetch('https://t90ai8edum2silwl.us-east-1.aws.endpoints.huggingface.cloud', {
+        method: 'POST',
+        headers: {
+          "Authorization": "Bearer NSBAjgJJBYZFSyJQnKhWtqbnDiMjhvPZvEiJjwvqVoeojQjEpiGBimUYzwodfspAVLnISwxpBFmFHDZCRUkGcKOoymZGByldmNjRpGWYbCblafXvbEqOYdgZoOpJdAFk",
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          'inputs': text, 'parameters': {
+            'temperature': 0.5, 'top_k': 5,
+            'top_p': 1.0, 'max_new_tokens': 512, 'repetition_penalty': 1.0
+          }
+        }),
+      });
+
+      const data = await response.json();
+      console.log('inside translate english to luganda function')
+      console.log(data[0].generated_text) //generated_text translation_text
+      return data[0].generated_text; //generated_text // Assuming the translated text is returned in this 
+    } else {
+      console.log('error: input text is null')
+      return "input text is null"
+    }
+  };
+
+  const onSearchInLuganda = async ({
+    searchType,
+    offset,
+  }: SearchRequestOverrides = {}) => {
+    try {
+      console.log('translating to english')
+      // Step 1: Translate query from Luganda to English
+
+      //   await translateToEnglish(query).then(result => {
+      //     console.log("Translated result:", result);
+      //     console.log ('after the translating function has been called')
+      //     console.log(result);
+      //   console.log ('end of  the translating function part 1')
+      // }).catch(error => {
+      //     console.error("Error translating:", error);
+      // });
+
+      const translatedQuery = await translateToEnglish(query)
+      console.log('after the translating function has been called')
+      console.log(translatedQuery);
+      console.log('end of  the translating function part2')
+      // Step 2: Perform search with the translated query
+      // Assuming onSearch can take an optional query parameter to override the state
+      //console.log('updating the query variable')
+      //setQuery(translatedQuery)
+      console.log('updated query value')
+      console.log(query)
+      const englishSearchResponse = await onSearch({ searchType, offset, query: translatedQuery });
+      console.log('updated search response value from english')
+      console.log(searchResponse)
+      console.log(englishSearchResponse)
+      // Step 3: Translate search results back to Luganda
+      // Here you might need to pick the relevant fields from the search response to translate
+      var englishResponse: string | null = ""
+      if (englishSearchResponse) {
+
+        //englishResponse = searchResponse.answer
+        let lugandaSearchResponse = await translateToLuganda(englishSearchResponse);
+        //lugandaSearchResponse = lugandaSearchResponse.replace(/_/g, ' ');
+        console.log('translated answer back to luganda')
+        console.log(lugandaSearchResponse)
+
+
+        // Step 4: Update state with Luganda search results
+        updateCurrentAnswer(lugandaSearchResponse)
+        // setSearchResponse({
+        //   ...searchResponse,
+        //   answer: lugandaSearchResponse
+        // });
+
+      } else {
+        var lugandaSearchResponseFailed = 'Failed to respond in Luganda'
+        //updateCurrentAnswer(lugandaSearchResponseFailed)
+
+        //  setSearchResponse({
+        //    ...searchResponse,
+        //   answer: lugandaSearchResponseFailed
+        //  })
+      }
+
+
+
+    } catch (error) {
+      setSearchResponse(initialSearchResponse);
+      console.error('An error occurred during the Luganda search:', error);
+    }
   };
 
   return (
     <div className="relative max-w-[2000px] xl:max-w-[1430px] mx-auto">
       <div className="absolute left-0 hidden 2xl:block w-64">
-        {(connectors.length > 0 || documentSets.length > 0) && (
+        {/* {(connectors.length > 0 || documentSets.length > 0) && (
           <SourceSelector
             {...filterManager}
             availableDocumentSets={documentSets}
             existingSources={connectors.map((connector) => connector.source)}
             availableTags={tags}
           />
-        )}
+        )} */}
 
         <div className="mt-10 pr-5">
           <SearchHelper
@@ -220,7 +348,7 @@ export const SearchSection = ({
             selectedSearchType={selectedSearchType}
             setSelectedSearchType={setSelectedSearchType}
             defaultOverrides={defaultOverrides}
-            restartSearch={onSearch}
+            //restartSearch={onSearch}
             forceQADisplay={() =>
               setDefaultOverrides((prevState) => ({
                 ...(prevState || SEARCH_DEFAULT_OVERRIDES_START),
@@ -249,12 +377,20 @@ export const SearchSection = ({
           <div className="pt-3" />
         )}
 
+        <SearchLanguageSelector
+          language={language}
+          setLanguage={(language: string) => {
+            setLanguage(language)
+          }}
+        />
+
         <SearchBar
           query={query}
           setQuery={setQuery}
+          language={language}
           onSearch={async () => {
             setDefaultOverrides(SEARCH_DEFAULT_OVERRIDES_START);
-            await onSearch({ offset: 0 });
+            await onSearch({ offset: 0, query });
           }}
         />
 
