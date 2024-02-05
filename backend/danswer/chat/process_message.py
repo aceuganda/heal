@@ -54,6 +54,8 @@ from danswer.server.query_and_chat.models import CreateChatMessageRequest
 from danswer.server.utils import get_json_line
 from danswer.utils.logger import setup_logger
 from danswer.utils.timing import log_generator_function_time
+from danswer.utils.translation import translate_to_english, translate_to_luganda
+
 
 logger = setup_logger()
 
@@ -166,13 +168,24 @@ def stream_chat_message(
             user_id=user_id,
             db_session=db_session,
         )
+        # Check the language of the incoming message
+        is_luganda = new_msg_req.language == 'luganda'
 
-        message_text = new_msg_req.message
+        message_text = new_msg_req.message 
+        luganda_message = is_luganda and message_text is not None
+
+        if is_luganda:
+            # Translate Luganda message to English
+            translated_message_english = translate_to_english(message_text)
+            message_text = translated_message_english
+
+        #message_text = new_msg_req.message
         chat_session_id = new_msg_req.chat_session_id
         parent_id = new_msg_req.parent_message_id
         prompt_id = new_msg_req.prompt_id
         reference_doc_ids = new_msg_req.search_doc_ids
         retrieval_options = new_msg_req.retrieval_options
+        language = new_msg_req.language
         persona = chat_session.persona
         query_override = new_msg_req.query_override
 
@@ -210,6 +223,8 @@ def stream_chat_message(
             parent_message=parent_message,
             prompt_id=prompt_id,
             message=message_text,
+            language=language,
+            luganda_message=luganda_message,
             token_count=len(llm_tokenizer(message_text)),
             message_type=MessageType.USER,
             db_session=db_session,
@@ -449,9 +464,14 @@ def stream_chat_message(
                 db_docs=reference_db_search_docs,
             )
 
+        # Luganda translation
+        luganda_response = translate_to_luganda(llm_output)
+
         # Saving Gen AI answer and responding with message info
         gen_ai_response_message = partial_response(
             message=llm_output,
+            language=new_msg_req.language,
+            luganda_translation=luganda_response,
             token_count=len(llm_tokenizer(llm_output)),
             citations=db_citations,
             error=error,

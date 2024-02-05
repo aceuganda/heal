@@ -119,6 +119,7 @@ export const Chat = ({
     initialSessionFetch();
   }, [existingChatSessionId]);
 
+
   const [chatSessionId, setChatSessionId] = useState<number | null>(
     existingChatSessionId
   );
@@ -132,9 +133,9 @@ export const Chat = ({
     useState<number | null>(null);
   const { aiMessage } = selectedMessageForDocDisplay
     ? getHumanAndAIMessageFromMessageNumber(
-        messageHistory,
-        selectedMessageForDocDisplay
-      )
+      messageHistory,
+      selectedMessageForDocDisplay
+    )
     : { aiMessage: null };
   const [selectedDocuments, setSelectedDocuments] = useState<DanswerDocument[]>(
     []
@@ -143,13 +144,13 @@ export const Chat = ({
   const [selectedPersona, setSelectedPersona] = useState<Persona | undefined>(
     existingChatSessionPersonaId !== undefined
       ? availablePersonas.find(
-          (persona) => persona.id === existingChatSessionPersonaId
-        )
+        (persona) => persona.id === existingChatSessionPersonaId
+      )
       : defaultSelectedPersonaId !== undefined
-      ? availablePersonas.find(
+        ? availablePersonas.find(
           (persona) => persona.id === defaultSelectedPersonaId
         )
-      : undefined
+        : undefined
   );
   const livePersona = selectedPersona || availablePersonas[0];
 
@@ -510,37 +511,37 @@ export const Chat = ({
                             i === messageHistory.length - 1 && isStreaming
                               ? undefined
                               : (feedbackType) =>
-                                  setCurrentFeedback([
-                                    feedbackType,
-                                    message.messageId as number,
-                                  ])
+                                setCurrentFeedback([
+                                  feedbackType,
+                                  message.messageId as number,
+                                ])
                           }
                           handleSearchQueryEdit={
                             i === messageHistory.length - 1 && !isStreaming
                               ? (newQuery) => {
-                                  if (!previousMessage) {
-                                    setPopup({
-                                      type: "error",
-                                      message:
-                                        "Cannot edit query of first message - please refresh the page and try again.",
-                                    });
-                                    return;
-                                  }
-
-                                  if (previousMessage.messageId === null) {
-                                    setPopup({
-                                      type: "error",
-                                      message:
-                                        "Cannot edit query of a pending message - please wait a few seconds and try again.",
-                                    });
-                                    return;
-                                  }
-                                  onSubmit({
-                                    messageIdToResend:
-                                      previousMessage.messageId,
-                                    queryOverride: newQuery,
+                                if (!previousMessage) {
+                                  setPopup({
+                                    type: "error",
+                                    message:
+                                      "Cannot edit query of first message - please refresh the page and try again.",
                                   });
+                                  return;
                                 }
+
+                                if (previousMessage.messageId === null) {
+                                  setPopup({
+                                    type: "error",
+                                    message:
+                                      "Cannot edit query of a pending message - please wait a few seconds and try again.",
+                                  });
+                                  return;
+                                }
+                                onSubmit({
+                                  messageIdToResend:
+                                    previousMessage.messageId,
+                                  queryOverride: newQuery,
+                                });
+                              }
                               : undefined
                           }
                           isCurrentlyShowingRetrieved={isShowingRetrieved}
@@ -643,12 +644,11 @@ export const Chat = ({
                     py-4 
                     overflow-hidden
                     h-14
-                    ${
-                      (textareaRef?.current?.scrollHeight || 0) >
-                      MAX_INPUT_HEIGHT
-                        ? "overflow-y-auto"
-                        : ""
-                    } 
+                    ${(textareaRef?.current?.scrollHeight || 0) >
+                          MAX_INPUT_HEIGHT
+                          ? "overflow-y-auto"
+                          : ""
+                        } 
                     whitespace-normal 
                     break-word
                     overscroll-contain

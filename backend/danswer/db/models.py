@@ -61,6 +61,10 @@ class TaskStatus(str, PyEnum):
     SUCCESS = "SUCCESS"
     FAILURE = "FAILURE"
 
+# class LanguageType(str, PyEnum):
+#     LUGANDA = "luganda"
+#     ENGLISH = "english"
+
 
 class Base(DeclarativeBase):
     pass
@@ -563,6 +567,8 @@ class ChatMessage(Base):
     document_feedbacks: Mapped[List["DocumentRetrievalFeedback"]] = relationship(
         "DocumentRetrievalFeedback", back_populates="chat_message"
     )
+    language: Mapped[str] = mapped_column(Text,nullable=False, default="english")
+    luganda_message: Mapped[str] = mapped_column(Text, nullable=True)
     search_docs = relationship(
         "SearchDoc",
         secondary="chat_message__search_doc",

@@ -94,6 +94,7 @@ class CreateChatMessageRequest(BaseModel):
     # allows the caller to specify the exact search query they want to use
     # will disable Query Rewording if specified
     query_override: str | None = None
+    language: str = "english"  # Default to English
 
     @root_validator
     def check_search_doc_ids_or_retrieval_options(cls: BaseModel, values: dict) -> dict:
@@ -155,6 +156,8 @@ class ChatMessageDetail(BaseModel):
     parent_message: int | None
     latest_child_message: int | None
     message: str
+    language: str = "english" 
+    luganda_translation: str
     rephrased_query: str | None
     context_docs: RetrievalDocs | None
     message_type: MessageType
