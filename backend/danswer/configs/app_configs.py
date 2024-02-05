@@ -107,10 +107,10 @@ except ValueError:
 
 # Below are intended to match the env variables names used by the official postgres docker image
 # https://hub.docker.com/_/postgres
-POSTGRES_USER = os.environ.get("POSTGRES_USER") or "nqtqzhbcwapqvtzd"
-POSTGRES_PASSWORD = os.environ.get("POSTGRES_PASSWORD") or "winterfel"
-POSTGRES_HOST = os.environ.get("POSTGRES_HOST") or "102.134.147.233"
-POSTGRES_PORT = os.environ.get("POSTGRES_PORT") or "32761"
+POSTGRES_USER = os.environ.get("POSTGRES_USER") or "postgres"
+POSTGRES_PASSWORD = os.environ.get("POSTGRES_PASSWORD") or "password"
+POSTGRES_HOST = os.environ.get("POSTGRES_HOST") or "localhost"
+POSTGRES_PORT = os.environ.get("POSTGRES_PORT") or "5432"
 POSTGRES_DB = os.environ.get("POSTGRES_DB") or "postgres"
 
 

@@ -46,6 +46,7 @@ export interface SendMessageRequest {
   filters: Filters | null;
   selectedDocumentIds: number[] | null;
   queryOverride?: string;
+  language?: string;
 }
 
 export async function* sendMessage({
@@ -56,6 +57,7 @@ export async function* sendMessage({
   filters,
   selectedDocumentIds,
   queryOverride,
+  language
 }: SendMessageRequest) {
   const documentsAreSelected =
     selectedDocumentIds && selectedDocumentIds.length > 0;
@@ -72,15 +74,16 @@ export async function* sendMessage({
       search_doc_ids: documentsAreSelected ? selectedDocumentIds : null,
       retrieval_options: !documentsAreSelected
         ? {
-            run_search:
-              promptId === null || promptId === undefined || queryOverride
-                ? "always"
-                : "auto",
-            real_time: true,
-            filters: filters,
-          }
+          run_search:
+            promptId === null || promptId === undefined || queryOverride
+              ? "always"
+              : "auto",
+          real_time: true,
+          filters: filters,
+        }
         : null,
       query_override: queryOverride,
+      language: language
     }),
   });
   if (!sendMessageResponse.ok) {
@@ -179,8 +182,8 @@ export function handleAutoScroll(
   if (endRef && endRef.current && scrollableRef && scrollableRef.current) {
     if (
       scrollableRef.current.scrollHeight -
-        scrollableRef.current.scrollTop -
-        buffer <=
+      scrollableRef.current.scrollTop -
+      buffer <=
       scrollableRef.current.clientHeight
     ) {
       endRef.current.scrollIntoView({ behavior: "smooth" });
@@ -333,11 +336,11 @@ export function processRawChatHistory(rawMessages: BackendMessage[]) {
         // this is identical to what is computed at streaming time
         ...(messageInfo.message_type === "assistant"
           ? {
-              retrievalType: retrievalType,
-              query: messageInfo.rephrased_query,
-              documents: messageInfo?.context_docs?.top_documents || [],
-              citations: messageInfo?.citations || {},
-            }
+            retrievalType: retrievalType,
+            query: messageInfo.rephrased_query,
+            documents: messageInfo?.context_docs?.top_documents || [],
+            citations: messageInfo?.citations || {},
+          }
           : {}),
       };
     });

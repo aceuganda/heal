@@ -307,6 +307,7 @@ export const Chat = ({
           filterManager.timeRange,
           filterManager.selectedTags
         ),
+        language: "luganda",
         selectedDocumentIds: selectedDocuments
           .filter(
             (document) =>
@@ -333,6 +334,7 @@ export const Chat = ({
             finalMessage = packet as BackendMessage;
           }
         }
+        console.log(finalMessage)
         setMessageHistory([
           ...currMessageHistory,
           {

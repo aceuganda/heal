@@ -44,6 +44,8 @@ export interface BackendMessage {
   parent_message: number | null;
   latest_child_message: number | null;
   message: string;
+  language: string;
+  luganda_translation: string;
   rephrased_query: string | null;
   context_docs: { top_documents: DanswerDocument[] } | null;
   message_type: "user" | "assistant" | "system";
