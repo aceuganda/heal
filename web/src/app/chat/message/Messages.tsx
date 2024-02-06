@@ -32,6 +32,8 @@ export const Hoverable: React.FC<{
 export const AIMessage = ({
   messageId,
   content,
+  language,
+  luganda_message,
   query,
   citedDocuments,
   isComplete,
@@ -42,7 +44,9 @@ export const AIMessage = ({
   handleSearchQueryEdit,
 }: {
   messageId: number | null;
-  content: string | JSX.Element;
+  content: string | JSX.Element | null | undefined;
+  language?: string | null;
+  luganda_message?: string | null;
   query?: string;
   citedDocuments?: [string, DanswerDocument][] | null;
   isComplete?: boolean;
@@ -185,22 +189,33 @@ export const AIMessage = ({
             )}
           </div>
           {handleFeedback && (
-            <div className="flex flex-col md:flex-row gap-x-0.5 ml-8 mt-1">
-              <Hoverable
-                onClick={() => {
-                  navigator.clipboard.writeText(content.toString());
-                  setCopyClicked(true);
-                  setTimeout(() => setCopyClicked(false), 3000);
-                }}
-              >
-                {copyClicked ? <FiCheck /> : <FiCopy />}
-              </Hoverable>
-              <Hoverable onClick={() => handleFeedback("like")}>
-                <FiThumbsUp />
-              </Hoverable>
-              <Hoverable>
-                <FiThumbsDown onClick={() => handleFeedback("dislike")} />
-              </Hoverable>
+            <div className="flex flex-col gap-y-3 items-start">
+              {language === 'luganda' && !luganda_message &&
+                <button
+                  onClick={() => { console.log('translate') }}
+                  className="text-blue-500 text-[10px] ml-8 "
+                >
+                  Translate to Luganda
+                </button>}
+              <div className="flex flex-row gap-x-0.5 ml-8 mt-1">
+                <Hoverable
+                  onClick={() => {
+                    if (typeof content === "string") {
+                      navigator.clipboard.writeText(content.toString());
+                      setCopyClicked(true);
+                      setTimeout(() => setCopyClicked(false), 3000);
+                    }
+                  }}
+                >
+                  {copyClicked ? <FiCheck /> : <FiCopy />}
+                </Hoverable>
+                <Hoverable onClick={() => handleFeedback("like")}>
+                  <FiThumbsUp />
+                </Hoverable>
+                <Hoverable>
+                  <FiThumbsDown onClick={() => handleFeedback("dislike")} />
+                </Hoverable>
+              </div>
             </div>
           )}
         </div>

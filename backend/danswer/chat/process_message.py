@@ -172,12 +172,14 @@ def stream_chat_message(
         is_luganda = new_msg_req.language == 'luganda'
 
         message_text = new_msg_req.message 
-        luganda_message = is_luganda and message_text is not None
+        luganda_message = None
 
         if is_luganda:
             # Translate Luganda message to English
+            luganda_message = message_text
             translated_message_english = translate_to_english(message_text)
             message_text = translated_message_english
+            
 
         #message_text = new_msg_req.message
         chat_session_id = new_msg_req.chat_session_id
@@ -402,6 +404,7 @@ def stream_chat_message(
         if final_msg.prompt is None:
             gen_ai_response_message = partial_response(
                 message="",
+                luganda_message=None,
                 token_count=0,
                 citations=None,
                 error=None,
@@ -465,13 +468,16 @@ def stream_chat_message(
             )
 
         # Luganda translation
-        luganda_response = translate_to_luganda(llm_output)
+        luganda_response = None
+        if is_luganda:
+            # Translate english response to luganda
+            luganda_response = translate_to_luganda(llm_output)
 
         # Saving Gen AI answer and responding with message info
         gen_ai_response_message = partial_response(
             message=llm_output,
             language=new_msg_req.language,
-            luganda_translation=luganda_response,
+            luganda_message=luganda_response,
             token_count=len(llm_tokenizer(llm_output)),
             citations=db_citations,
             error=error,

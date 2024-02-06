@@ -68,7 +68,8 @@ export const ChatSidebar = ({
   return (
     <div
       className={`
-        w-72
+        sm:w-72
+        w-0
         2xl:w-80
         ${HEADER_PADDING}
         border-r 
@@ -79,6 +80,7 @@ export const ChatSidebar = ({
         transition-transform`}
       id="chat-sidebar"
     >
+
       <Link href="/chat" className="mx-3 mt-5">
         <BasicClickable fullWidth>
           <div className="flex text-sm">
@@ -86,7 +88,6 @@ export const ChatSidebar = ({
           </div>
         </BasicClickable>
       </Link>
-
       <div className="mt-1 pb-1 mb-1 ml-3 overflow-y-auto h-full">
         {Object.entries(groupedChatSessions).map(
           ([dateRange, chatSessions]) => {

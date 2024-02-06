@@ -331,6 +331,8 @@ export function processRawChatHistory(rawMessages: BackendMessage[]) {
       return {
         messageId: messageInfo.message_id,
         message: messageInfo.message,
+        language: messageInfo.language,
+        luganda_message: messageInfo.luganda_message,
         type: messageInfo.message_type as "user" | "assistant",
         // only include these fields if this is an assistant message so that
         // this is identical to what is computed at streaming time

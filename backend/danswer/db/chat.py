@@ -705,7 +705,7 @@ def translate_db_message_to_chat_message_detail(
         parent_message=chat_message.parent_message,
         latest_child_message=chat_message.latest_child_message,
         message=chat_message.message,
-        luganda_translation=chat_message.luganda_translation,
+        luganda_message=chat_message.luganda_message,
         language=chat_message.language,
         rephrased_query=chat_message.rephrased_query,
         context_docs=get_retrieval_docs_from_chat_message(chat_message),

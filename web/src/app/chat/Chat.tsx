@@ -40,6 +40,7 @@ import { ResizableSection } from "@/components/resizable/ResizableSection";
 import { DanswerInitializingLoader } from "@/components/DanswerInitializingLoader";
 import { ChatIntro } from "./ChatIntro";
 import { HEADER_PADDING } from "@/lib/constants";
+import { SearchLanguageSelector } from "@/components/search/SearchLanguageSelector";
 
 const MAX_INPUT_HEIGHT = 200;
 
@@ -66,6 +67,7 @@ export const Chat = ({
 }) => {
   const router = useRouter();
   const { popup, setPopup } = usePopup();
+  const [language, setLanguage] = useState('english');
 
   // fetch messages for the chat session
   const [isFetchingChatMessages, setIsFetchingChatMessages] = useState(
@@ -279,6 +281,7 @@ export const Chat = ({
         messageId: 0,
         message: currMessage,
         type: "user",
+        language: language,
       },
     ]);
     setMessage("");
@@ -307,7 +310,7 @@ export const Chat = ({
           filterManager.timeRange,
           filterManager.selectedTags
         ),
-        language: "luganda",
+        language: language,
         selectedDocumentIds: selectedDocuments
           .filter(
             (document) =>
@@ -334,13 +337,14 @@ export const Chat = ({
             finalMessage = packet as BackendMessage;
           }
         }
-        console.log(finalMessage)
+        // console.log(finalMessage)
         setMessageHistory([
           ...currMessageHistory,
           {
             messageId: finalMessage?.parent_message || null,
             message: currMessage,
             type: "user",
+            language: language,
           },
           {
             messageId: finalMessage?.message_id || null,
@@ -350,6 +354,8 @@ export const Chat = ({
             query: finalMessage?.rephrased_query || query,
             documents: finalMessage?.context_docs?.top_documents || documents,
             citations: finalMessage?.citations || {},
+            language: finalMessage?.language || language,
+            luganda_message: finalMessage?.luganda_message || null,
           },
         ]);
         if (isCancelledRef.current) {
@@ -365,6 +371,7 @@ export const Chat = ({
           messageId: null,
           message: currMessage,
           type: "user",
+          language: language,
         },
         {
           messageId: null,
@@ -438,6 +445,7 @@ export const Chat = ({
 
       {documentSidebarInitialWidth !== undefined ? (
         <>
+
           <div className="w-full sm:relative">
             <div
               className={`w-full h-screen ${HEADER_PADDING} flex flex-col overflow-y-auto relative`}
@@ -499,7 +507,11 @@ export const Chat = ({
                       <div key={i}>
                         <AIMessage
                           messageId={message.messageId}
-                          content={message.message}
+                          language={language}
+                          luganda_message={message.luganda_message}
+                          content={message.language === "luganda" || (language === "luganda" && message.luganda_message)
+                            ? message.luganda_message
+                            : message.message}
                           query={messageHistory[i]?.query || undefined}
                           citedDocuments={getCitedDocumentsFromMessage(message)}
                           isComplete={
@@ -612,7 +624,7 @@ export const Chat = ({
               <div className="w-full pb-4 pt-2">
                 <div className="flex">
                   <div className="w-searchbar-xs 2xl:w-searchbar-sm 3xl:w-searchbar mx-auto px-4 pt-1 flex">
-                    {selectedDocuments.length > 0 ? (
+                    {/* {selectedDocuments.length > 0 ? (
                       <SelectedDocuments
                         selectedDocuments={selectedDocuments}
                       />
@@ -623,7 +635,13 @@ export const Chat = ({
                         availableDocumentSets={availableDocumentSets}
                         availableTags={availableTags}
                       />
-                    )}
+                    )} */}
+                    <SearchLanguageSelector
+                      language={language}
+                      setLanguage={(language: string) => {
+                        setLanguage(language)
+                      }}
+                    />
                   </div>
                 </div>
 
@@ -659,7 +677,7 @@ export const Chat = ({
                       style={{ scrollbarWidth: "thin" }}
                       role="textarea"
                       aria-multiline
-                      placeholder="Ask me anything..."
+                      placeholder={language === "luganda" ? "Nonyelezaa.." : "Ask me anything..."}
                       value={message}
                       onChange={(e) => setMessage(e.target.value)}
                       onKeyDown={(event) => {
@@ -711,7 +729,7 @@ export const Chat = ({
             </div>
           </div>
 
-          <ResizableSection
+          {/* <ResizableSection
             intialWidth={documentSidebarInitialWidth}
             minWidth={400}
             maxWidth={maxDocumentSidebarWidth || undefined}
@@ -722,7 +740,7 @@ export const Chat = ({
               setSelectedDocuments={setSelectedDocuments}
               isLoading={isFetchingChatMessages}
             />
-          </ResizableSection>
+          </ResizableSection> */}
         </>
       ) : (
         <div className="mx-auto h-full flex flex-col">

@@ -157,7 +157,7 @@ class ChatMessageDetail(BaseModel):
     latest_child_message: int | None
     message: str
     language: str = "english" 
-    luganda_translation: str
+    luganda_message: str | None
     rephrased_query: str | None
     context_docs: RetrievalDocs | None
     message_type: MessageType

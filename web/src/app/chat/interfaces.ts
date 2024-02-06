@@ -28,6 +28,8 @@ export interface Message {
   type: "user" | "assistant" | "error";
   retrievalType?: RetrievalType;
   query?: string | null;
+  language?: string;
+  luganda_message?: string | null;
   documents?: DanswerDocument[] | null;
   citations?: CitationMap;
 }
@@ -45,7 +47,7 @@ export interface BackendMessage {
   latest_child_message: number | null;
   message: string;
   language: string;
-  luganda_translation: string;
+  luganda_message: string;
   rephrased_query: string | null;
   context_docs: { top_documents: DanswerDocument[] } | null;
   message_type: "user" | "assistant" | "system";

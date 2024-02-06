@@ -11,7 +11,7 @@ export const SearchLanguageSelector: React.FC<Props> = ({
     language
 }) => {
     return (
-        <div className="flex text-xs mt-[3rem] mb-[1rem]">
+        <div className="flex text-xs mt-[1.5rem] mb-[1rem]">
             <div
                 className={
                     defaultStyle + `bg-white hover:bg-blue-700  border-[1px] hover:text-white ${language === 'english' ? "  " : "border-white bg-blue-700"} `
