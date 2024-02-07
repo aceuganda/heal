@@ -1,4 +1,5 @@
 from random import choice
+import requests
 
 def translate_to_english(text: str) -> str:
     # logic to translate to english

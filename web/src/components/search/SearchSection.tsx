@@ -23,6 +23,7 @@ import { useFilters, useObjectState } from "@/lib/hooks";
 import { questionValidationStreamed } from "@/lib/search/streamingQuestionValidation";
 import { Persona } from "@/app/admin/personas/interfaces";
 import { PersonaSelector } from "./PersonaSelector";
+// import SSE from "sse"
 
 const SEARCH_DEFAULT_OVERRIDES_START: SearchDefaultOverrides = {
   forceDisplayQA: false,
@@ -80,7 +81,7 @@ export const SearchSection = ({
 
   // Helpers
   const initialSearchResponse: SearchResponse = {
-    answer: null,
+    answer: '',
     quotes: null,
     documents: null,
     suggestedSearchType: null,
@@ -157,7 +158,11 @@ export const SearchSection = ({
       ) as Persona,
       updateCurrentAnswer: cancellable({
         cancellationToken: lastSearchCancellationToken.current,
-        fn: updateCurrentAnswer,
+        fn: (answer) => {
+          if (language === "english") {
+            updateCurrentAnswer(answer);
+          }
+        },
       }),
       updateQuotes: cancellable({
         cancellationToken: lastSearchCancellationToken.current,
@@ -206,67 +211,116 @@ export const SearchSection = ({
     ]);
 
 
-
-    setIsFetching(false);
+    if (language === "english") {
+      setIsFetching(false);
+    }
 
     return tempSearchResponse.answer;
   };
+  const updateCurrentLugandaAnswer = (newAnswer: string) =>
+    setSearchResponse((prevState) => ({
+      ...(prevState || initialSearchResponse),
+      answer: prevState ? prevState.answer + newAnswer : newAnswer,
+    }));
 
-  const translateToEnglish = async (text: string): Promise<string> => {
-    const response = await fetch('https://qo4le5gdg10o34m1.us-east-1.aws.endpoints.huggingface.cloud', {
-      method: 'POST',
+  const translateToEnglish = async (text: string) => {
+    // const response = await fetch('https://qo4le5gdg10o34m1.us-east-1.aws.endpoints.huggingface.cloud', {
+    //   method: 'POST',
+    //   headers: {
+    //     'Authorization': 'Bearer NSBAjgJJBYZFSyJQnKhWtqbnDiMjhvPZvEiJjwvqVoeojQjEpiGBimUYzwodfspAVLnISwxpBFmFHDZCRUkGcKOoymZGByldmNjRpGWYbCblafXvbEqOYdgZoOpJdAFk',
+    //     'Content-Type': 'application/json',
+    //   },
+    //   body: JSON.stringify({
+    //     'inputs': text,
+    //     'parameters': {
+    //       'temperature': 0.5, 'top_k': 5,
+    //       'top_p': 1.0, 'max_new_tokens': 512, 'repetition_penalty': 1.0
+    //     }
+    //   }),
+    // });
+
+    // const data = await response.json();
+    // console.log(data)
+    // console.log('inside translate luganda to english function')
+    // console.log(data[0].generated_text)
+    // return data[0].generated_text;  // Assuming the translated text is returned in this key
+    // TODO: add translation endpoint
+    // for now return the exact text since endpoint is not read yet
+    return text;
+  };
+
+  const translateToLuganda = async (text: string | null) => {
+    // if (text != null) {
+    //   const response = await fetch('https://t90ai8edum2silwl.us-east-1.aws.endpoints.huggingface.cloud', {
+    //     method: 'POST',
+    //     headers: {
+    //       "Authorization": "Bearer NSBAjgJJBYZFSyJQnKhWtqbnDiMjhvPZvEiJjwvqVoeojQjEpiGBimUYzwodfspAVLnISwxpBFmFHDZCRUkGcKOoymZGByldmNjRpGWYbCblafXvbEqOYdgZoOpJdAFk",
+    //       'Content-Type': 'application/json',
+    //     },
+    //     body: JSON.stringify({
+    //       'inputs': text, 'parameters': {
+    //         'temperature': 0.5, 'top_k': 5,
+    //         'top_p': 1.0, 'max_new_tokens': 512, 'repetition_penalty': 1.0
+    //       }
+    //     }),
+    //   });
+
+    //   const data = await response.json();
+    //   console.log('inside translate english to luganda function')
+    //   console.log(data[0].generated_text) //generated_text translation_text
+    //   return data[0].generated_text; //generated_text // Assuming the translated text is returned in this 
+    // } else {
+    //   console.log('error: input text is null')
+    //   return "input text is null"
+    // }
+    setIsFetching(true);
+    if (!text) return;
+
+    const input = text.trim();
+    console.log('translated answer back to luganda');
+
+    //nest api
+    await fetch('/api/query/generate-luganda', {
+      method: "POST",
       headers: {
-        'Authorization': 'Bearer NSBAjgJJBYZFSyJQnKhWtqbnDiMjhvPZvEiJjwvqVoeojQjEpiGBimUYzwodfspAVLnISwxpBFmFHDZCRUkGcKOoymZGByldmNjRpGWYbCblafXvbEqOYdgZoOpJdAFk',
-        'Content-Type': 'application/json',
+        "Content-Type": "application/json",
       },
-      body: JSON.stringify({
-        'inputs': text,
-        'parameters': {
-          'temperature': 0.5, 'top_k': 5,
-          'top_p': 1.0, 'max_new_tokens': 512, 'repetition_penalty': 1.0
-        }
-      }),
-    });
-
-    const data = await response.json();
-    console.log(data)
-    console.log('inside translate luganda to english function')
-    console.log(data[0].generated_text)
-    return data[0].generated_text;  // Assuming the translated text is returned in this key
-  };
-
-  const translateToLuganda = async (text: string | null): Promise<string> => {
-    if (text != null) {
-      const response = await fetch('https://t90ai8edum2silwl.us-east-1.aws.endpoints.huggingface.cloud', {
-        method: 'POST',
-        headers: {
-          "Authorization": "Bearer NSBAjgJJBYZFSyJQnKhWtqbnDiMjhvPZvEiJjwvqVoeojQjEpiGBimUYzwodfspAVLnISwxpBFmFHDZCRUkGcKOoymZGByldmNjRpGWYbCblafXvbEqOYdgZoOpJdAFk",
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          'inputs': text, 'parameters': {
-            'temperature': 0.5, 'top_k': 5,
-            'top_p': 1.0, 'max_new_tokens': 512, 'repetition_penalty': 1.0
-          }
-        }),
-      });
-
-      const data = await response.json();
-      console.log('inside translate english to luganda function')
-      console.log(data[0].generated_text) //generated_text translation_text
-      return data[0].generated_text; //generated_text // Assuming the translated text is returned in this 
-    } else {
-      console.log('error: input text is null')
-      return "input text is null"
-    }
-  };
+      body: JSON.stringify({ prompt: input, stream: true }),
+    }).then((response) => {
+      const reader = response?.body?.getReader();
+      const decoder = new TextDecoder();
+      if (reader) {
+        const readStream = () => {
+          reader.read().then(({ done, value }) => {
+            if (done) {
+              setIsFetching(false)
+              return;
+            }
+            const str = decoder.decode(value);
+            //console.log(str);
+            if (str) {
+              updateCurrentLugandaAnswer(str)
+            }
+            readStream();
+          }).catch((error) => {
+            const errorLog = { timestamp: new Date().toISOString(), message: "Error reading log stream" }
+            console.log(errorLog)
+          });
+        };
+        readStream();
+      }
+    })
+      .catch((error) => {
+        console.error('Fetch error:', error);
+      })
+  }
 
   const onSearchInLuganda = async ({
     searchType,
     offset,
   }: SearchRequestOverrides = {}) => {
     try {
-      console.log('translating to english')
+      console.log('translating to english (not ready yes)')
       // Step 1: Translate query from Luganda to English
 
       //   await translateToEnglish(query).then(result => {
@@ -290,7 +344,6 @@ export const SearchSection = ({
       console.log(query)
       const englishSearchResponse = await onSearch({ searchType, offset, query: translatedQuery });
       console.log('updated search response value from english')
-      console.log(searchResponse)
       console.log(englishSearchResponse)
       // Step 3: Translate search results back to Luganda
       // Here you might need to pick the relevant fields from the search response to translate
@@ -298,14 +351,14 @@ export const SearchSection = ({
       if (englishSearchResponse) {
 
         //englishResponse = searchResponse.answer
-        let lugandaSearchResponse = await translateToLuganda(englishSearchResponse);
+        await translateToLuganda(englishSearchResponse);
         //lugandaSearchResponse = lugandaSearchResponse.replace(/_/g, ' ');
-        console.log('translated answer back to luganda')
-        console.log(lugandaSearchResponse)
+
+        // console.log(lugandaSearchResponse)
 
 
         // Step 4: Update state with Luganda search results
-        updateCurrentAnswer(lugandaSearchResponse)
+        // updateCurrentAnswer(lugandaSearchResponse)
         // setSearchResponse({
         //   ...searchResponse,
         //   answer: lugandaSearchResponse
@@ -328,6 +381,7 @@ export const SearchSection = ({
       console.error('An error occurred during the Luganda search:', error);
     }
   };
+
 
   return (
     <div className="relative max-w-[2000px] xl:max-w-[1430px] mx-auto">
@@ -390,7 +444,11 @@ export const SearchSection = ({
           language={language}
           onSearch={async () => {
             setDefaultOverrides(SEARCH_DEFAULT_OVERRIDES_START);
-            await onSearch({ offset: 0, query });
+            if (language === 'luganda') {
+              await onSearchInLuganda({ offset: 0 });
+            } else {
+              await onSearch({ offset: 0, query });
+            }
           }}
         />
 

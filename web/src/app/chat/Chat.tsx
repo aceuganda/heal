@@ -492,7 +492,12 @@ export const Chat = ({
                   if (message.type === "user") {
                     return (
                       <div key={i}>
-                        <HumanMessage content={message.message} />
+                        <HumanMessage content={language === "luganda" && message.luganda_message
+                          ? message.luganda_message
+                          : message.message}
+                          language={language}
+                          luganda_message={message.luganda_message}
+                        />
                       </div>
                     );
                   } else if (message.type === "assistant") {
@@ -509,7 +514,7 @@ export const Chat = ({
                           messageId={message.messageId}
                           language={language}
                           luganda_message={message.luganda_message}
-                          content={message.language === "luganda" || (language === "luganda" && message.luganda_message)
+                          content={language === "luganda" && message.luganda_message
                             ? message.luganda_message
                             : message.message}
                           query={messageHistory[i]?.query || undefined}
@@ -576,6 +581,7 @@ export const Chat = ({
                   } else {
                     return (
                       <div key={i}>
+                        {/* error no need for transilation */}
                         <AIMessage
                           messageId={message.messageId}
                           content={

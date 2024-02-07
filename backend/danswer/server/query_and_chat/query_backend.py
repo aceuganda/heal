@@ -1,8 +1,10 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 from fastapi import Depends
 from fastapi import HTTPException
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
+from starlette.responses import JSONResponse 
+import aiohttp
 
 from danswer.auth.users import current_admin_user
 from danswer.auth.users import current_user
@@ -144,3 +146,33 @@ def get_answer_with_quote(
         query_req=query_request, user=user, db_session=db_session
     )
     return StreamingResponse(packets, media_type="application/json")
+
+
+@basic_router.post("/generate-luganda")
+async def generate(req:Request) -> StreamingResponse:
+    logger.info(f"Received request for Luganda translation: {req}")
+
+    try:
+        input_data = await req.json()   # Assuming query is in query parameter
+        if not input_data:
+            return JSONResponse({"error": "Query is required"}, status_code=400)
+
+        async def stream_words():
+            async with aiohttp.ClientSession() as session:  # Use aiohttp for asynchronous requests
+                async with session.post("http://65.108.33.93:5000/generate", json={"prompt": input_data['prompt'], "stream": True}) as response:
+                    if response.status != 200:
+                        raise Exception(f"Error fetching response: {response.status}")
+
+                    async for chunk in response.content.iter_chunked(1024):  # Stream in chunks
+                        decoded_chunk = chunk.decode("utf-8")
+                        lines = decoded_chunk.splitlines()
+                        for line in lines:
+                            if line.startswith("data: "):
+                                word = line[6:].strip()
+                                yield word + " "
+
+        return StreamingResponse(stream_words(), media_type="text/event-stream")
+
+    except Exception as e:
+        logger.exception(e)
+        return JSONResponse({"error": "Failed to process translation"}, status_code=500)

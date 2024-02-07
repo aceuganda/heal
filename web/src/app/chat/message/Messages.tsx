@@ -226,8 +226,12 @@ export const AIMessage = ({
 
 export const HumanMessage = ({
   content,
+  language,
+  luganda_message
 }: {
-  content: string | JSX.Element;
+  content: string | JSX.Element | null | undefined;
+  language?: string | null;
+  luganda_message?: string | null;
 }) => {
   return (
     <div className="py-5 px-5 flex -mr-6 w-full">
@@ -264,6 +268,13 @@ export const HumanMessage = ({
                 content
               )}
             </div>
+            {language === 'luganda' && !luganda_message &&
+              <button
+                onClick={() => { console.log('translate') }}
+                className="text-blue-500 text-[10px]"
+              >
+                Translate to Luganda
+              </button>}
           </div>
         </div>
       </div>
