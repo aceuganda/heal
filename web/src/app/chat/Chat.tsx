@@ -124,6 +124,26 @@ export const Chat = ({
     initialSessionFetch();
   }, [existingChatSessionId]);
 
+  const backgroundRefreashChatMessages = async () => {
+    const response = await fetch(
+      `/api/chat/get-chat-session/${existingChatSessionId}`
+    );
+    const chatSession = (await response.json()) as BackendChatSession;
+    setSelectedPersona(
+      availablePersonas.find(
+        (persona) => persona.id === chatSession.persona_id
+      )
+    );
+    const newMessageHistory = processRawChatHistory(chatSession.messages);
+    setMessageHistory(newMessageHistory);
+
+    const latestMessageId =
+      newMessageHistory[newMessageHistory.length - 1]?.messageId;
+    setSelectedMessageForDocDisplay(
+      latestMessageId !== undefined ? latestMessageId : null
+    );
+  }
+
 
   const [chatSessionId, setChatSessionId] = useState<number | null>(
     existingChatSessionId
@@ -426,6 +446,9 @@ export const Chat = ({
       retrievalType === RetrievalType.Search
     ) {
       setSelectedMessageForDocDisplay(finalMessage.message_id);
+    }
+    if (language === "luganda") {
+      await backgroundRefreashChatMessages();
     }
   };
 

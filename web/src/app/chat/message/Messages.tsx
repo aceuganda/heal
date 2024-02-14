@@ -284,7 +284,7 @@ export const HumanMessage = ({
           {language === 'luganda' && id && !luganda_message &&
             <button
               onClick={() => handleTranslation(id)}
-              className="text-blue-500 ml-8 text-[10px]"
+              className="text-blue-500 ml-16 text-[10px]"
             >
               {messageIdTranslating && messageIdTranslating === id ? "translating..." : "Translate to Luganda"}
             </button>}

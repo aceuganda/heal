@@ -5,8 +5,19 @@ import requests
 
 
 def translate_to_english(text: str) -> str:
-    # logic to translate to english
-    return text
+    url = "http://65.108.33.93:4002/translate"
+    headers = {
+        "Accept": "text/event-stream",
+        "Content-Type": "application/json",
+    }
+    data = {"prompt": text}
+
+    response = requests.post(url, headers=headers, json=data, stream=True)
+
+    if response.status_code != 200:
+        raise Exception(f"Error fetching response: {response.status_code}")
+
+    return response.text
 
 
 def translate_to_luganda(prompt) -> str:

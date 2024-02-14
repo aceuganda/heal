@@ -43,6 +43,7 @@ from danswer.server.query_and_chat.models import ChatMessageDetail
 from danswer.server.utils import get_json_line
 from danswer.utils.logger import setup_logger
 from danswer.utils.timing import log_generator_function_time
+# from danswer.utils.translation import translate_to_english
 
 logger = setup_logger()
 
@@ -268,6 +269,8 @@ def stream_search_answer(
     user: User | None,
     db_session: Session,
 ) -> Iterator[str]:
+    # if query_req.language == "luganda":
+    #     query_req.messages[0].message = translate_to_english(query_req.messages[0].message )
     objects = stream_answer_objects(
         query_req=query_req, user=user, db_session=db_session
     )

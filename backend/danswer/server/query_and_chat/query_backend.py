@@ -32,6 +32,7 @@ from danswer.server.query_and_chat.models import SimpleQueryRequest
 from danswer.server.query_and_chat.models import SourceTag
 from danswer.server.query_and_chat.models import TagResponse
 from danswer.utils.logger import setup_logger
+from danswer.utils.translation import translate_to_english
 
 logger = setup_logger()
 
@@ -178,3 +179,8 @@ async def generate(req:Request) -> StreamingResponse:
     except Exception as e:
         logger.exception(e)
         return JSONResponse({"error": "Failed to process translation"}, status_code=500)
+
+@basic_router.post("/generate-english")
+async def generateEnglish(req:Request) -> str:
+    input_data = await req.json() 
+    return translate_to_english(input_data['prompt'])
