@@ -37,6 +37,7 @@ from danswer.server.query_and_chat.models import RenameChatSessionResponse
 from danswer.server.query_and_chat.models import SearchFeedbackRequest
 from danswer.server.query_and_chat.models import TranslateChatMessagePayload
 from danswer.utils.logger import setup_logger
+from danswer.utils.translation import translate_to_luganda
 
 logger = setup_logger()
 
@@ -252,7 +253,8 @@ def upd_chat_message(
         user_id=user_id,
         db_session=db_session,
     )
-    chat_message.luganda_message = "this luganda"
+    chat_message.luganda_message = translate_to_luganda(chat_message.message)
+    
     db_session.commit()
 
     return chat_message

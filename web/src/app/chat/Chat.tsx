@@ -147,11 +147,16 @@ export const Chat = ({
       return
     }
     setMessageIdTranslating(messageId)
-    const respStream = await handleLugandaTranslation(messageId);
-    const respText = await respStream.text();
-    const resp = JSON.parse(respText);
-    await updateLugandaPart(messageId, resp.luganda_message);
-    setMessageIdTranslating(null)
+    try {
+      const respStream = await handleLugandaTranslation(messageId);
+      const respText = await respStream.text();
+      const resp = JSON.parse(respText);
+      await updateLugandaPart(messageId, resp.luganda_message);
+    } catch (e) {
+      console.log(e)
+      setMessageIdTranslating(null)
+    }
+
   }
 
   // for document display
