@@ -35,6 +35,7 @@ from danswer.server.query_and_chat.models import CreateChatMessageRequest
 from danswer.server.query_and_chat.models import CreateChatSessionID
 from danswer.server.query_and_chat.models import RenameChatSessionResponse
 from danswer.server.query_and_chat.models import SearchFeedbackRequest
+from danswer.server.query_and_chat.models import TranslateChatMessagePayload
 from danswer.utils.logger import setup_logger
 
 logger = setup_logger()
@@ -237,3 +238,22 @@ def create_search_feedback(
         document_index=get_default_document_index(),
         db_session=db_session,
     )
+
+@router.post("/translate-chat-message")
+def upd_chat_message(
+    payload: TranslateChatMessagePayload,
+    user: User | None = Depends(current_user),
+    db_session: Session = Depends(get_session),
+):
+    """Translate to luganda """
+    user_id = user.id if user is not None else None
+    chat_message = get_chat_message(
+        chat_message_id=payload.message_id,
+        user_id=user_id,
+        db_session=db_session,
+    )
+    chat_message.luganda_message = "this luganda"
+    db_session.commit()
+
+    return chat_message
+    

@@ -41,6 +41,7 @@ import { DanswerInitializingLoader } from "@/components/DanswerInitializingLoade
 import { ChatIntro } from "./ChatIntro";
 import { HEADER_PADDING } from "@/lib/constants";
 import { SearchLanguageSelector } from "@/components/search/SearchLanguageSelector";
+import { handleLugandaTranslation } from "./lib";
 
 const MAX_INPUT_HEIGHT = 200;
 
@@ -73,6 +74,8 @@ export const Chat = ({
   const [isFetchingChatMessages, setIsFetchingChatMessages] = useState(
     existingChatSessionId !== null
   );
+
+
 
   // this is triggered every time the user switches which chat
   // session they are using
@@ -128,6 +131,28 @@ export const Chat = ({
   const [message, setMessage] = useState("");
   const [messageHistory, setMessageHistory] = useState<Message[]>([]);
   const [isStreaming, setIsStreaming] = useState(false);
+  const [messageIdTranslating, setMessageIdTranslating] = useState<number | null>(null);
+  const updateLugandaPart = (messageIdToUpdate: number, luganda: string) => {
+    setMessageHistory((prevMessages) =>
+      prevMessages.map((message) =>
+        message.messageId === messageIdToUpdate
+          ? { ...message, luganda_message: luganda }
+          : message
+      )
+    );
+  };
+
+  const handleMessageTranslation = async (messageId: number | null) => {
+    if (!messageId) {
+      return
+    }
+    setMessageIdTranslating(messageId)
+    const respStream = await handleLugandaTranslation(messageId);
+    const respText = await respStream.text();
+    const resp = JSON.parse(respText);
+    await updateLugandaPart(messageId, resp.luganda_message);
+    setMessageIdTranslating(null)
+  }
 
   // for document display
   // NOTE: -1 is a special designation that means the latest AI message
@@ -348,7 +373,7 @@ export const Chat = ({
           },
           {
             messageId: finalMessage?.message_id || null,
-            message: error || answer,
+            message: error || finalMessage?.message || answer,
             type: error ? "error" : "assistant",
             retrievalType,
             query: finalMessage?.rephrased_query || query,
@@ -495,8 +520,11 @@ export const Chat = ({
                         <HumanMessage content={language === "luganda" && message.luganda_message
                           ? message.luganda_message
                           : message.message}
+                          id={message.messageId}
                           language={language}
                           luganda_message={message.luganda_message}
+                          handleTranslation={handleMessageTranslation}
+                          messageIdTranslating={messageIdTranslating}
                         />
                       </div>
                     );
@@ -512,6 +540,8 @@ export const Chat = ({
                       <div key={i}>
                         <AIMessage
                           messageId={message.messageId}
+                          messageIdTranslating={messageIdTranslating}
+                          handleTranslation={handleMessageTranslation}
                           language={language}
                           luganda_message={message.luganda_message}
                           content={language === "luganda" && message.luganda_message
@@ -584,6 +614,7 @@ export const Chat = ({
                         {/* error no need for transilation */}
                         <AIMessage
                           messageId={message.messageId}
+                          handleTranslation={handleMessageTranslation}
                           content={
                             <p className="text-red-700 text-sm my-auto">
                               {message.message}
@@ -601,6 +632,7 @@ export const Chat = ({
                     <div key={messageHistory.length}>
                       <AIMessage
                         messageId={null}
+                        handleTranslation={handleMessageTranslation}
                         content={
                           <div className="text-sm my-auto">
                             <ThreeDots

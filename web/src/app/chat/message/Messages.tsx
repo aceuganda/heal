@@ -41,7 +41,9 @@ export const AIMessage = ({
   handleFeedback,
   isCurrentlyShowingRetrieved,
   handleShowRetrieved,
+  handleTranslation,
   handleSearchQueryEdit,
+  messageIdTranslating
 }: {
   messageId: number | null;
   content: string | JSX.Element | null | undefined;
@@ -52,9 +54,11 @@ export const AIMessage = ({
   isComplete?: boolean;
   hasDocs?: boolean;
   handleFeedback?: (feedbackType: FeedbackType) => void;
+  handleTranslation: (id: number | null) => void;
   isCurrentlyShowingRetrieved?: boolean;
   handleShowRetrieved?: (messageNumber: number | null) => void;
   handleSearchQueryEdit?: (query: string) => void;
+  messageIdTranslating?: number | null;
 }) => {
   const [copyClicked, setCopyClicked] = useState(false);
   return (
@@ -190,12 +194,12 @@ export const AIMessage = ({
           </div>
           {handleFeedback && (
             <div className="flex flex-col gap-y-3 items-start">
-              {language === 'luganda' && !luganda_message &&
+              {language === 'luganda' && messageId && !luganda_message &&
                 <button
-                  onClick={() => { console.log('translate') }}
+                  onClick={() => handleTranslation(messageId)}
                   className="text-blue-500 text-[10px] ml-8 "
                 >
-                  Translate to Luganda
+                  {messageIdTranslating && messageIdTranslating === messageId ? "translating..." : "Translate to Luganda"}
                 </button>}
               <div className="flex flex-row gap-x-0.5 ml-8 mt-1">
                 <Hoverable
@@ -225,16 +229,22 @@ export const AIMessage = ({
 };
 
 export const HumanMessage = ({
+  id,
   content,
   language,
-  luganda_message
+  luganda_message,
+  handleTranslation,
+  messageIdTranslating
 }: {
+  id: number | null;
   content: string | JSX.Element | null | undefined;
   language?: string | null;
   luganda_message?: string | null;
+  handleTranslation: (id: number | null) => void;
+  messageIdTranslating?: number | null;
 }) => {
   return (
-    <div className="py-5 px-5 flex -mr-6 w-full">
+    <div className="py-5 px-5 flex flex-col -mr-6 w-full">
       <div className="mx-auto w-searchbar-xs 2xl:w-searchbar-sm 3xl:w-searchbar">
         <div className="ml-8">
           <div className="flex">
@@ -268,14 +278,16 @@ export const HumanMessage = ({
                 content
               )}
             </div>
-            {language === 'luganda' && !luganda_message &&
-              <button
-                onClick={() => { console.log('translate') }}
-                className="text-blue-500 text-[10px]"
-              >
-                Translate to Luganda
-              </button>}
           </div>
+        </div>
+        <div className="flex flex-col gap-y-3 items-start">
+          {language === 'luganda' && id && !luganda_message &&
+            <button
+              onClick={() => handleTranslation(id)}
+              className="text-blue-500 ml-8 text-[10px]"
+            >
+              {messageIdTranslating && messageIdTranslating === id ? "translating..." : "Translate to Luganda"}
+            </button>}
         </div>
       </div>
     </div>

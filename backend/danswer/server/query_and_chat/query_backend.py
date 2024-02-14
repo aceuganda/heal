@@ -5,6 +5,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from starlette.responses import JSONResponse 
 import aiohttp
+import asyncio
 
 from danswer.auth.users import current_admin_user
 from danswer.auth.users import current_user
@@ -170,6 +171,7 @@ async def generate(req:Request) -> StreamingResponse:
                             if line.startswith("data: "):
                                 word = line[6:].strip()
                                 yield word + " "
+                                await asyncio.sleep(0.09)
 
         return StreamingResponse(stream_words(), media_type="text/event-stream")
 

@@ -131,6 +131,21 @@ export async function handleChatFeedback(
   return response;
 }
 
+export async function handleLugandaTranslation(
+  messageId: number
+) {
+  const response = await fetch("/api/chat/translate-chat-message", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      message_id: messageId,
+    }),
+  });
+  return response;
+}
+
 export async function renameChatSession(
   chatSessionId: number,
   newName: string

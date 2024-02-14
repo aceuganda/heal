@@ -2,6 +2,8 @@ from collections.abc import Callable
 from collections.abc import Iterator
 from functools import partial
 from typing import cast
+import time
+import requests
 
 from sqlalchemy.orm import Session
 
@@ -444,8 +446,9 @@ def stream_chat_message(
             elif isinstance(packet, CitationInfo):
                 citations.append(packet)
                 continue
+            if not is_luganda:
+                yield get_json_line(packet.dict())
 
-            yield get_json_line(packet.dict())
     except Exception as e:
         logger.exception(e)
 
@@ -471,9 +474,26 @@ def stream_chat_message(
         luganda_response = None
         if is_luganda:
             # Translate english response to luganda
-            luganda_response = translate_to_luganda(llm_output)
+            luganda_response= ""
+            response = requests.post("http://65.108.33.93:5000/generate",
+                             json={"prompt": llm_output, "stream": True}, stream=True)
 
+            if response.status_code != 200:
+                yield get_json_line(json_dict={ 'error':'Error fetching response'})
+                raise Exception(f"Error fetching response: {response.status_code}")
+
+            for chunk in response.iter_content(chunk_size=1024):
+                decoded_chunk = chunk.decode("utf-8")
+                lines = decoded_chunk.splitlines()
+                for line in lines:
+                    if line.startswith("data: "):
+                        word = line[6:].strip()
+                        luganda_response = luganda_response + word + " "
+                        yield get_json_line(json_dict={'answer_piece':word + " "})
+                        time.sleep(0.09)                    
+            
         # Saving Gen AI answer and responding with message info
+        print(luganda_response)                
         gen_ai_response_message = partial_response(
             message=llm_output,
             language=new_msg_req.language,

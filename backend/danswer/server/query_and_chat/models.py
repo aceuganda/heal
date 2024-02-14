@@ -194,3 +194,6 @@ class AdminSearchResponse(BaseModel):
 
 class DanswerAnswer(BaseModel):
     answer: str | None
+
+class TranslateChatMessagePayload(BaseModel):
+    message_id: int 
