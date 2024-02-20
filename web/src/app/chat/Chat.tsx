@@ -504,7 +504,7 @@ export const Chat = ({
               className={`w-full h-screen ${HEADER_PADDING} flex flex-col overflow-y-auto relative`}
               ref={scrollableDivRef}
             >
-              {livePersona && (
+              {/* {livePersona && (
                 <div className="sticky top-0 left-80 z-10 w-full bg-background/90">
                   <div className="ml-2 p-1 rounded mt-2 w-fit">
                     <ChatPersonaSelector
@@ -519,7 +519,7 @@ export const Chat = ({
                     />
                   </div>
                 </div>
-              )}
+              )} */}
 
               {messageHistory.length === 0 &&
                 !isFetchingChatMessages &&
@@ -537,7 +537,7 @@ export const Chat = ({
 
               <div
                 className={
-                  "mt-4 pt-12 sm:pt-0 mx-8" +
+                  "mt-4 pt-12 sm:pt-0 sm:mx-8 mx-2" +
                   (hasPerformedInitialScroll ? "" : " invisible")
                 }
               >
@@ -689,7 +689,7 @@ export const Chat = ({
             <div className="absolute bottom-0 z-10 w-full bg-background border-t border-border">
               <div className="w-full pb-4 pt-2">
                 <div className="flex">
-                  <div className="w-searchbar-xs 2xl:w-searchbar-sm 3xl:w-searchbar mx-auto px-4 pt-1 flex">
+                  <div className="w- 2xl:w-searchbar-sm 3xl:w-searchbar sm:mx-auto px-4 pt-1 flex">
                     {/* {selectedDocuments.length > 0 ? (
                       <SelectedDocuments
                         selectedDocuments={selectedDocuments}
@@ -711,8 +711,8 @@ export const Chat = ({
                   </div>
                 </div>
 
-                <div className="flex justify-center py-2 max-w-screen-lg mx-auto mb-2">
-                  <div className="w-full shrink relative px-4 w-searchbar-xs 2xl:w-searchbar-sm 3xl:w-searchbar mx-auto">
+                <div className="flex justify-start sm:justify-center py-2 max-w-screen-lg sm:mx-auto mb-2">
+                  <div className="w-full shrink relative px-4 w-searchbar-xs 2xl:w-searchbar-sm 3xl:w-searchbar sm:mx-auto">
                     <textarea
                       ref={textareaRef}
                       autoFocus

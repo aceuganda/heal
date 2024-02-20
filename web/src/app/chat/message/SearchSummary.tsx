@@ -61,7 +61,7 @@ export function SearchSummary({
       if (current) {
         setIsOverflowed(
           current.scrollWidth > current.clientWidth ||
-            current.scrollHeight > current.clientHeight
+          current.scrollHeight > current.clientHeight
         );
       }
     };
@@ -170,13 +170,13 @@ export function SearchSummary({
           )}
         </>
       )}
-      {hasDocs && (
+      {/* {hasDocs && (
         <ShowHideDocsButton
           messageId={messageId}
           isCurrentlyShowingRetrieved={isCurrentlyShowingRetrieved}
           handleShowRetrieved={handleShowRetrieved}
         />
-      )}
+      )} */}
     </div>
   );
 }

@@ -24,10 +24,10 @@ module.exports = {
         sans: ["var(--font-inter)"],
       },
       width: {
-        "message-xs": "450px",
+        "message-xs": "350px",
         "message-sm": "550px",
         "message-default": "740px",
-        "searchbar-xs": "560px",
+        "searchbar-xs": "380px",
         "searchbar-sm": "660px",
         searchbar: "850px",
         "document-sidebar": "800px",

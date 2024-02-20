@@ -119,7 +119,7 @@ export default async function Home() {
       <ApiKeyModal />
       <InstantSSRAutoRefresh />
       {connectors.length === 0 && connectorsResponse?.ok && <WelcomeModal />}
-      <div className="px-24 pt-10 flex flex-col items-center min-h-screen">
+      <div className="px-[2rem] sm:px-24 pt-10 flex flex-col items-center min-h-screen">
         <div className="w-full">
           <SearchSection
             connectors={connectors}

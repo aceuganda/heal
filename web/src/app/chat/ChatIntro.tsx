@@ -189,14 +189,17 @@ export function ChatIntro({
             </div>
 
             <div className="mt-2">
-              <p className="font-bold text-xl mb-1 mt-4 text-emphasis text-center">
+              {/* <p className="font-bold text-xl mb-1 mt-4 text-emphasis text-center">
                 Which assistant do you want to chat with today?{" "}
               </p>
               <p className="text-sm text-center">
                 Or ask a question immediately to use the{" "}
                 <b>{availablePersonas[0]?.name}</b> assistant.
+              </p> */}
+              <p className="font-bold text-xl mb-1 mt-4 text-emphasis text-center">
+                Welcome to the Heal chat Assistant!
               </p>
-              <div className="flex flex-col gap-y-4 mt-8">
+              {/* <div className="flex flex-col gap-y-4 mt-8">
                 {availablePersonas
                   .slice(0, MAX_PERSONAS_TO_DISPLAY)
                   .map((persona) => (
@@ -210,8 +213,8 @@ export function ChatIntro({
                       />
                     </div>
                   ))}
-              </div>
-              {availablePersonas.length > MAX_PERSONAS_TO_DISPLAY && (
+              </div> */}
+              {/* {availablePersonas.length > MAX_PERSONAS_TO_DISPLAY && (
                 <div className="mt-4 flex">
                   <div
                     onClick={() => setIsAllPersonaOptionVisible(true)}
@@ -220,7 +223,7 @@ export function ChatIntro({
                     <FiZoomIn className="my-auto mr-1" /> See more
                   </div>
                 </div>
-              )}
+              )} */}
             </div>
           </div>
         )}

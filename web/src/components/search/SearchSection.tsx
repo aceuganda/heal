@@ -369,8 +369,8 @@ export const SearchSection = ({
           />
         </div>
       </div>
-      <div className="w-[800px] mx-auto">
-        {personas.length > 0 ? (
+      <div className="sm:w-[800px] mx-auto">
+        {/* {personas.length > 0 ? (
           <div className="flex mb-2 w-fit">
             <PersonaSelector
               personas={personas}
@@ -380,7 +380,7 @@ export const SearchSection = ({
           </div>
         ) : (
           <div className="pt-3" />
-        )}
+        )} */}
 
         <SearchLanguageSelector
           language={language}

@@ -63,8 +63,8 @@ export const AIMessage = ({
   const [copyClicked, setCopyClicked] = useState(false);
   return (
     <div className={"py-5 px-5 flex -mr-6 w-full"}>
-      <div className="mx-auto w-searchbar-xs 2xl:w-searchbar-sm 3xl:w-searchbar relative">
-        <div className="ml-8">
+      <div className="sm:mx-auto w-searchbar-xs 2xl:w-searchbar-sm 3xl:w-searchbar relative">
+        <div className="sm:ml-8 ml-[0.5rem]">
           <div className="flex">
             <div className="p-1 bg-ai rounded-lg h-fit my-auto">
               <div className="text-inverted">
@@ -80,11 +80,11 @@ export const AIMessage = ({
 
             <div className="font-bold text-emphasis ml-2 my-auto">Heal</div>
 
-            {query === undefined &&
+            {/* {query === undefined &&
               hasDocs &&
               handleShowRetrieved !== undefined &&
               isCurrentlyShowingRetrieved !== undefined && (
-                <div className="flex w-message-xs 2xl:w-message-sm 3xl:w-message-default absolute ml-8">
+                <div className="flex w-message-xs  2xl:w-message-sm 3xl:w-message-default absolute ml-8">
                   <div className="ml-auto">
                     <ShowHideDocsButton
                       messageId={messageId}
@@ -93,10 +93,10 @@ export const AIMessage = ({
                     />
                   </div>
                 </div>
-              )}
+              )} */}
           </div>
 
-          <div className="w-message-xs 2xl:w-message-sm 3xl:w-message-default break-words mt-1 ml-8">
+          <div className="w-message-xs 2xl:w-message-sm 3xl:w-message-default break-words mt-1 sm:ml-8">
             {query !== undefined &&
               handleShowRetrieved !== undefined &&
               isCurrentlyShowingRetrieved !== undefined && (
@@ -246,7 +246,7 @@ export const HumanMessage = ({
   return (
     <div className="py-5 px-5 flex flex-col -mr-6 w-full">
       <div className="mx-auto w-searchbar-xs 2xl:w-searchbar-sm 3xl:w-searchbar">
-        <div className="ml-8">
+        <div className="sm:ml-8 ml-[0.5rem]">
           <div className="flex">
             <div className="p-1 bg-user rounded-lg h-fit">
               <div className="text-inverted">
