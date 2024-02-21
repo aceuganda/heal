@@ -1,3 +1,4 @@
+import { Metadata } from "next";
 import "./globals.css";
 
 import { Inter } from "next/font/google";
@@ -7,12 +8,14 @@ const inter = Inter({
   variable: "--font-inter",
 });
 
-export const metadata = {
+export const metadata:Metadata = {
+  manifest: "/manifest.json",
   title: "HEAL",
   description: "Transforming Pandemic Preparedness in Uganda",
 };
 
 export const dynamic = "force-dynamic";
+
 
 export default async function RootLayout({
   children,
