@@ -245,7 +245,7 @@ export const HumanMessage = ({
 }) => {
   return (
     <div className="py-5 px-5 flex flex-col -mr-6 w-full">
-      <div className="mx-auto w-searchbar-xs 2xl:w-searchbar-sm 3xl:w-searchbar">
+      <div className="sm:mx-auto w-searchbar-xs 2xl:w-searchbar-sm 3xl:w-searchbar">
         <div className="sm:ml-8 ml-[0.5rem]">
           <div className="flex">
             <div className="p-1 bg-user rounded-lg h-fit">

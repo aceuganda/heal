@@ -6,9 +6,7 @@ services:
       context: ../../backend
       dockerfile: Dockerfile
     command: >
-      /bin/sh -c "alembic upgrade head &&
-      echo \"Starting Danswer Api Server\" &&
-      uvicorn danswer.main:app --host 0.0.0.0 --port 8080"
+      /bin/sh -c "alembic upgrade head && echo \"Starting Danswer Api Server\" && uvicorn danswer.main:app --host 0.0.0.0 --port 8080"
     depends_on:
       - relational_db
       - index
@@ -112,8 +110,8 @@ services:
       - api_server
       - web_server
     ports:
-      - "80:80"
-      - "443:443"
+      - "8680:80"
+      - "8443:443"
     volumes:
       - ../data/nginx:/etc/nginx/conf.d
       - ../data/certbot/conf:/etc/letsencrypt
@@ -126,7 +124,7 @@ services:
       options:
         max-size: "50m"
         max-file: "6"
-    command: > 
+    command: >
       /bin/sh -c "sleep 10 &&
         envsubst '$$\{DOMAIN\}' < /etc/nginx/conf.d/app.conf.template > /etc/nginx/conf.d/app.conf &&
         while :; do sleep 6h & wait $${!}; nginx -s reload; done & nginx -g \"daemon off;\""
@@ -171,7 +169,7 @@ services:
         max-file: "6"
 volumes:
   local_dynamic_storage:
-  file_connector_tmp_storage:  # used to store files uploaded by the user temporarily while we are indexing them
+  file_connector_tmp_storage: # used to store files uploaded by the user temporarily while we are indexing them
   db_volume:
   vespa_volume:
   model_cache_torch:
