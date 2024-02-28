@@ -686,7 +686,7 @@ export const Chat = ({
               </div>
             </div>
 
-            <div className="absolute bottom-0 z-10 w-full bg-background border-t border-border">
+            <div className="absolute bottom-0 max-sm:left-0 sm:z-10 w-full bg-background border-t border-border">
               <div className="w-full pb-4 pt-2">
                 <div className="flex">
                   <div className="w- 2xl:w-searchbar-sm 3xl:w-searchbar sm:mx-auto px-4 pt-1 flex">

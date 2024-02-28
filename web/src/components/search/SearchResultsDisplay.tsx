@@ -52,7 +52,7 @@ export const SearchResultsDisplay = ({
   const isPersona = personaName !== null;
   const { answer, quotes, documents, error, queryEventId } = searchResponse;
 
-  if (isFetching) {
+  if (isFetching && !answer) {
     return (
       <div className="flex">
         <div className="mx-auto">

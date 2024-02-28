@@ -84,7 +84,7 @@ export const ChatSidebar = ({
         ${HEADER_PADDING}
         border-r 
         border-border 
-        ${menuHider ? " flex " : "hidden sm:flex"}
+        ${menuHider ? " flex max-sm:z-10  max-sm:relative  max-sm:bg-white" : "hidden sm:flex "}
         flex-col 
         h-screen
         transition-transform`}

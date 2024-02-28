@@ -264,7 +264,7 @@ export const SearchSection = ({
               return;
             }
             const str = decoder.decode(value);
-            //console.log(str);
+            // console.log(str);
             if (str) {
               updateCurrentLugandaAnswer(str)
             }
