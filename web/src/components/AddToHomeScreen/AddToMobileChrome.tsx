@@ -20,7 +20,7 @@ export default function AddToMobileChrome(props: Props) {
                 <button className="absolute top-0 right-0 p-3" onClick={closePrompt}>
                     <FaTimes className="text-2xl" />
                 </button>
-                <p className="text-lg">For the best experience, we recommend installing the Valley Trader app to your home screen!</p>
+                <p className="text-lg">For the best experience, we recommend installing the Heal app to your home screen!!</p>
                 <div className="flex gap-2 items-center text-lg">
                     <p>Click the</p>
                     <HiDotsVertical className="text-4xl" />
@@ -30,8 +30,9 @@ export default function AddToMobileChrome(props: Props) {
                     <p>Scroll down and then click:</p>
                     <div className="bg-zinc-50 flex justify-between items-center w-full px-4 py-2 rounded-lg text-zinc-900">
                         <MdAddToHomeScreen className="text-2xl" />
-                        <p>Add to Home Screen</p>
+                        <p>Install</p>
                     </div>
+                    <p>Should show open heal if the app is already installed</p>
                 </div>
                 <button className="border-2 p-1" onClick={doNotShowAgain}>Don&apos;t show again</button>
             </div>

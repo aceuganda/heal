@@ -20,7 +20,7 @@ export default function AddToSamsung(props: Props) {
                 <button className="absolute top-0 right-0 p-3" onClick={closePrompt}>
                     <FaTimes className="text-2xl" />
                 </button>
-                <p className="text-lg">For the best experience, we recommend installing the Valley Trader app to your home screen!</p>
+                <p className="text-lg">For the best experience, we recommend installing the Heal app to your home screen!</p>
                 <div className="flex gap-2 items-center text-lg">
                     <p>Click the</p>
                     <FaBars className="text-4xl" />
