@@ -12,6 +12,7 @@ import { SignInButton } from "./SignInButton";
 import { EmailPasswordForm } from "./EmailPasswordForm";
 import { Card, Title, Text } from "@tremor/react";
 import Link from "next/link";
+import AddToHomeScreen from '../../../components/AddToHomeScreen'
 
 const Page = async ({
   searchParams,
@@ -104,6 +105,7 @@ const Page = async ({
           )}
         </div>
       </div>
+      <AddToHomeScreen/>
     </main>
   );
 };

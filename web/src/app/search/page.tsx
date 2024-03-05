@@ -17,6 +17,7 @@ import { WelcomeModal } from "@/components/WelcomeModal";
 import { unstable_noStore as noStore } from "next/cache";
 import { InstantSSRAutoRefresh } from "@/components/SSRAutoRefresh";
 import { personaComparator } from "../admin/personas/lib";
+import AddToHomeScreen from '../../components/AddToHomeScreen'
 
 export default async function Home() {
   // Disable caching so we always get the up to date connector / document set / persona info
@@ -130,6 +131,7 @@ export default async function Home() {
           />
         </div>
       </div>
+      <AddToHomeScreen />
     </>
   );
 }
