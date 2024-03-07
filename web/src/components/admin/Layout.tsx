@@ -164,6 +164,20 @@ export async function Layout({ children }: { children: React.ReactNode }) {
                   },
                 ],
               },
+              {
+                name: "Sessions",
+                items: [
+                  {
+                    name: (
+                      <div className="flex">
+                        <ConnectorIcon size={18} />
+                        <div className="ml-1">Chat sessions</div>
+                      </div>
+                    ),
+                    link: "/admin/sessions",
+                  },
+                ],
+              },
             ]}
           />
         </div>

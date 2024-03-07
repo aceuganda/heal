@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from danswer.auth.users import current_user
 from danswer.chat.chat_utils import create_chat_chain
-from danswer.chat.process_message import stream_chat_message
+from danswer.chat.process_message import stream_chat_message,download_chat_sessions_helper
 from danswer.db.chat import create_chat_session
 from danswer.db.chat import delete_chat_session
 from danswer.db.chat import get_chat_message
@@ -258,4 +258,9 @@ def upd_chat_message(
     db_session.commit()
 
     return chat_message
-    
+
+@router.get("/user-chats")
+def download_chat_sessions(
+    db_session: Session = Depends(get_session),
+):
+    return download_chat_sessions_helper(db_session=db_session)

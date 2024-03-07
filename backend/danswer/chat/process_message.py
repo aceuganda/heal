@@ -4,9 +4,10 @@ from functools import partial
 from typing import cast
 import time
 import requests
-
 from sqlalchemy.orm import Session
-
+from io import StringIO
+from fastapi import HTTPException
+from fastapi.responses import JSONResponse
 from danswer.chat.chat_utils import build_chat_system_message
 from danswer.chat.chat_utils import build_chat_user_message
 from danswer.chat.chat_utils import create_chat_chain
@@ -28,13 +29,13 @@ from danswer.configs.constants import MessageType
 from danswer.db.chat import create_db_search_doc
 from danswer.db.chat import create_new_chat_message
 from danswer.db.chat import get_chat_message
-from danswer.db.chat import get_chat_session_by_id
+from danswer.db.chat import get_chat_session_by_id,get_chat_messages_by_session
 from danswer.db.chat import get_db_search_doc_by_id
 from danswer.db.chat import get_doc_query_identifiers_from_model
 from danswer.db.chat import get_or_create_root_message
 from danswer.db.chat import translate_db_message_to_chat_message_detail
 from danswer.db.chat import translate_db_search_doc_to_server_search_doc
-from danswer.db.models import ChatMessage
+from danswer.db.models import ChatMessage,ChatSession
 from danswer.db.models import SearchDoc as DbSearchDoc
 from danswer.db.models import User
 from danswer.document_index.factory import get_default_document_index
@@ -515,3 +516,25 @@ def stream_chat_message(
         error_packet = StreamingError(error="Failed to parse LLM output")
 
         yield get_json_line(error_packet.dict())
+
+def download_chat_sessions_helper(db_session: Session):
+    """
+    Download all chat sessions as an csv file.
+    """
+    try:
+        all_sessions = db_session.query(ChatSession).all()
+        sessions_with_messages = {}
+
+        for session in all_sessions:
+            messages = get_chat_messages_by_session(session.id, None, db_session=db_session, skip_permission_check=True)
+            sessions_with_messages[session.id] = {
+                'session_id': session.id,
+                'session_description': session.description,
+                'messages': [{'message_type': message.message_type, 'message': message.message} for message in messages]
+            }
+
+        return JSONResponse(content=sessions_with_messages)
+
+    except Exception as e:
+        print(e)
+        raise RuntimeError("failed to download chat sessions")
