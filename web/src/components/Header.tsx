@@ -56,7 +56,7 @@ export const Header: React.FC<HeaderProps> = ({ user }) => {
   return (
     <header className="border-b border-border bg-background-emphasis">
       <div className="mx-8 flex h-16">
-        <Link className="py-4" href="/search">
+        <Link className="py-4" href="/chat">
           <div className="flex">
             <div className="h-[32px] w-[30px]">
               <Image src="/logo.png" alt="Logo" width="1419" height="1520" />
@@ -67,7 +67,7 @@ export const Header: React.FC<HeaderProps> = ({ user }) => {
           </div>
         </Link>
 
-        <Link
+        {/* <Link
           href="/search"
           className={"ml-6 h-full flex flex-col hover:bg-hover"}
         >
@@ -77,7 +77,7 @@ export const Header: React.FC<HeaderProps> = ({ user }) => {
               <h1 className="flex text-sm font-bold my-auto">Search</h1>
             </div>
           </div>
-        </Link>
+        </Link> */}
 
         <Link href="/chat" className="h-full flex flex-col hover:bg-hover">
           <div className="w-24 flex my-auto">

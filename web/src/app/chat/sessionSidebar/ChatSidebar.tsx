@@ -146,13 +146,13 @@ export const ChatSidebar = ({
                   " absolute top-0 bg-background border border-border z-30 w-full rounded text-strong text-sm"
                 }
               >
-                <Link
+                {/* <Link
                   href="/search"
                   className="flex py-3 px-4 cursor-pointer hover:bg-hover"
                 >
                   <FiSearch className="my-auto mr-2" />
                   Heal Search
-                </Link>
+                </Link> */}
                 <Link
                   href="/chat"
                   className="flex py-3 px-4 cursor-pointer hover:bg-hover"

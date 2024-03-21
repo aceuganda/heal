@@ -17,10 +17,10 @@ const withPWA = require("@ducanh2912/next-pwa").default({
 });
 const nextConfig = {
   reactStrictMode: true,
-	swcMinify: true,
-	images: {
-		unoptimized: true
-	},
+  swcMinify: true,
+  images: {
+    unoptimized: true
+  },
   output: "standalone",
   rewrites: async () => {
     // In production, something else (nginx in the one box setup) should take
@@ -42,7 +42,7 @@ const nextConfig = {
     const defaultRedirects = [
       {
         source: "/",
-        destination: "/search",
+        destination: "/chat",
         permanent: true,
       },
     ];
