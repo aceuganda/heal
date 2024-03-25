@@ -6,7 +6,7 @@ import { Divider } from "@tremor/react";
 import { FiBookmark, FiCpu, FiInfo, FiX, FiZoomIn } from "react-icons/fi";
 import { HoverPopup } from "@/components/HoverPopup";
 import { Modal } from "@/components/Modal";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { FaRobot } from "react-icons/fa";
 
 const MAX_PERSONAS_TO_DISPLAY = 4;
@@ -81,11 +81,15 @@ export function ChatIntro({
   availablePersonas,
   selectedPersona,
   handlePersonaSelect,
+  setInput,
+  language
 }: {
   availableSources: ValidSources[];
   availablePersonas: Persona[];
   selectedPersona?: Persona;
   handlePersonaSelect: (persona: Persona) => void;
+  setInput: (input: string) => void;
+  language: string;
 }) {
   const [isAllPersonaOptionVisible, setIsAllPersonaOptionVisible] =
     useState(false);
@@ -94,6 +98,52 @@ export function ChatIntro({
   const availableSourceMetadata = allSources.filter((source) =>
     availableSources.includes(source.internalName)
   );
+  const exampleMessages = [
+    {
+      heading: 'What is yellow fever?',
+      message: `What is yellow fever?`
+    },
+    {
+      heading: 'What is Covid-19?',
+      message: `What is Covid-19?`
+    },
+    {
+      heading: 'What are the symptoms of Covid-19?',
+      message: `What are the symptoms of Covid-19?`
+    },
+    {
+      heading: 'What is Chikungunya?',
+      message: `What is Chikungunya?`
+    },
+  ]
+  const lugandaExampleMessages = [
+    {
+      heading: 'Omusujja gwe nkaka kyeki?',
+      message: `Omusujja gwe nkaka kyeki?`
+    },
+    {
+      heading: 'Nyonyola ssenyiga omukambwe.',
+      message: `Nyonyola ssenyiga omukambwe.`
+    },
+    {
+      heading: 'Omusujja kyeki?',
+      message: `Omusujja kyeki?`
+    },
+    {
+      heading: 'Omusujja gujja gutya?',
+      message: `Omusujja gujja gutya?`
+    },
+  ]
+  const [displayExampleQuestion, setDisplayExampleQuestion] = useState(language === "luganda" ? lugandaExampleMessages : exampleMessages);
+
+  useEffect(() => {
+    if (language === "luganda") {
+      setDisplayExampleQuestion([...lugandaExampleMessages]);
+    } else {
+      setDisplayExampleQuestion([...exampleMessages]);
+    }
+
+  }, [language]);
 
   return (
     <>
@@ -181,7 +231,7 @@ export function ChatIntro({
             </div>
           </div>
         ) : (
-          <div className="px-12 w-searchbar-xs 2xl:w-searchbar-sm 3xl:w-searchbar">
+          <div className="px-12 w-[100%]">
             <div className="mx-auto">
               <div className="m-auto h-[80px] w-[80px]">
                 <Image src="/logo.png" alt="Logo" width="1419" height="1520" />
@@ -199,6 +249,22 @@ export function ChatIntro({
               <p className="font-bold text-xl mb-1 mt-4 text-emphasis text-center">
                 Welcome to the Heal chat Assistant!
               </p>
+              <div className="mt-[11rem] sm:mt-[13rem] grid grid-cols-1 lg:grid-cols-2 gap-[0.8rem] place-content-center ">
+                {displayExampleQuestion.map((message, index) => (
+                  <div
+                    key={index}
+                    // variant="link"
+                    className="border-[#000000] border-[2px] rounded-[10px] p-4 h-[3rem] flex items-center justify-center hover:bg-hover-light text-base  cursor-pointer"
+                    onClick={() => setInput(message.message)}
+                  >
+                    {/* <IconArrowRight className="mr-2 text-muted-foreground" /> */}
+                    <div >
+                      {message.heading}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
               {/* <div className="flex flex-col gap-y-4 mt-8">
                 {availablePersonas
                   .slice(0, MAX_PERSONAS_TO_DISPLAY)

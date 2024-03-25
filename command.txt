@@ -16,7 +16,10 @@ shutdown:
 docker compose -f docker-compose.prod.yml -p danswer-stack down -v
 
 only the frontend and backend services 
+frontend
 docker compose -f docker-compose.prod.yml -p danswer-stack up -d --build --force-recreate web_server
+backend
+docker compose -f docker-compose.prod.yml -p danswer-stack up -d --build --force-recreate api_server
 
 docker-compose -f docker-compose.prod.yml -p danswer-stack down --rmi all -v --remove-orphans
 

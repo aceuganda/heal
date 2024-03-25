@@ -532,6 +532,10 @@ export const Chat = ({
                       setSelectedPersona(persona);
                       router.push(`/chat?personaId=${persona.id}`);
                     }}
+                    setInput={(input: string) => {
+                      setMessage(input)
+                    }}
+                    language={language}
                   />
                 )}
 
@@ -795,9 +799,9 @@ export const Chat = ({
             </div>
           </div>
 
-          {/* <ResizableSection
+          <ResizableSection
             intialWidth={documentSidebarInitialWidth}
-            minWidth={400}
+            minWidth={300}
             maxWidth={maxDocumentSidebarWidth || undefined}
           >
             <DocumentSidebar
@@ -806,7 +810,7 @@ export const Chat = ({
               setSelectedDocuments={setSelectedDocuments}
               isLoading={isFetchingChatMessages}
             />
-          </ResizableSection> */}
+          </ResizableSection>
         </>
       ) : (
         <div className="mx-auto h-full flex flex-col">
