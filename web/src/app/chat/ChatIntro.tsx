@@ -254,7 +254,7 @@ export function ChatIntro({
                   <div
                     key={index}
                     // variant="link"
-                    className="border-[#000000] border-[2px] rounded-[10px] p-4 h-[3rem] flex items-center justify-center hover:bg-hover-light text-base  cursor-pointer"
+                    className="border-[#000000] border-[2px] rounded-[10px] p-4 h-[3rem] min-w-[18rem]  max-sm:text-[12px] flex items-center justify-center hover:bg-hover-light text-base  cursor-pointer"
                     onClick={() => setInput(message.message)}
                   >
                     {/* <IconArrowRight className="mr-2 text-muted-foreground" /> */}
