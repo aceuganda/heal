@@ -530,7 +530,7 @@ def download_chat_sessions_helper(db_session: Session):
             sessions_with_messages[session.id] = {
                 'session_id': session.id,
                 'session_description': session.description,
-                'messages': [{'message_type': message.message_type, 'message': message.message} for message in messages]
+                'messages': [{'message_type': message.message_type, 'message': message.message, 'luganda_message': message.luganda_message} for message in messages]
             }
 
         return JSONResponse(content=sessions_with_messages)
