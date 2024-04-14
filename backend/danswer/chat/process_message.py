@@ -5,6 +5,7 @@ from typing import cast
 import time
 import requests
 from sqlalchemy.orm import Session
+from sqlalchemy.orm import joinedload
 from io import StringIO
 from fastapi import HTTPException
 from fastapi.responses import JSONResponse
@@ -519,22 +520,25 @@ def stream_chat_message(
 
 def download_chat_sessions_helper(db_session: Session):
     """
-    Download all chat sessions as an csv file.
+    Download all chat sessions as a JSON response.
     """
     try:
-        all_sessions = db_session.query(ChatSession).all()
-        sessions_with_messages = {}
+        all_sessions = db_session.query(ChatSession).options(joinedload(ChatSession.user)).all()
+        sessions_with_messages = []
 
         for session in all_sessions:
+            user_email = session.user.email if session.user else None  # Assuming the user email is stored in the 'email' attribute
             messages = get_chat_messages_by_session(session.id, None, db_session=db_session, skip_permission_check=True)
-            sessions_with_messages[session.id] = {
+            session_data = {
                 'session_id': session.id,
                 'session_description': session.description,
+                'user_email': user_email,
                 'messages': [{'message_type': message.message_type, 'message': message.message, 'luganda_message': message.luganda_message} for message in messages]
             }
+            sessions_with_messages.append(session_data)
 
         return JSONResponse(content=sessions_with_messages)
 
     except Exception as e:
         print(e)
-        raise RuntimeError("failed to download chat sessions")
+        raise RuntimeError("Failed to download chat sessions")

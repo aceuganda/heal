@@ -25,3 +25,8 @@ docker-compose -f docker-compose.prod.yml -p danswer-stack down --rmi all -v --r
 
 
 docker-compose -f docker-compose.prod.yml -p danswer-stack build --no-cache web_server
+
+extract db infor
+ssh into container
+pg_dump --username pg_username database_name" > 
+docker cp <cntId>:dump.sql dump.sql

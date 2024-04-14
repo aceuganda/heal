@@ -89,18 +89,19 @@ const SessionsDownloadPage = () => {
     }
 
     function jsonToCsv(jsonData: any): string {
-        let csv = 'Session ID,Session Description,Message Type,Message,Luganda Message\n';
+        let csv = 'Session ID,Session Description,User Email,Message Type,Message,Luganda Message\n';
 
         for (const key in jsonData) {
             const session = jsonData[key];
             const sessionId = session.session_id;
             const sessionDescription = session.session_description;
+            const userEmail = session.user_email || '';
 
             session.messages.forEach((message: any) => {
                 const messageType = message.message_type;
                 const messageContent = message.message.replace(/\n/g, ' ').replace(/"/g, '""');
                 const lugandaMessageContent = message.luganda_message ? message.luganda_message.replace(/\n/g, ' ').replace(/"/g, '""') : ''; // Handle cases where luganda_message is null or undefined
-                csv += `${sessionId},"${sessionDescription}","${messageType}","${messageContent}","${lugandaMessageContent}"\n`;
+                csv += `${sessionId},"${sessionDescription}","${userEmail}","${messageType}","${messageContent}","${lugandaMessageContent}"\n`;
             });
         }
 
