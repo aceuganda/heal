@@ -217,6 +217,8 @@ def create_new_chat_message(
     parent_message: ChatMessage,
     message: str,
     prompt_id: int | None,
+    luganda_message: str | None,
+    language : str,
     token_count: int,
     message_type: MessageType,
     db_session: Session,
@@ -234,6 +236,8 @@ def create_new_chat_message(
         message=message,
         rephrased_query=rephrased_query,
         prompt_id=prompt_id,
+        luganda_message=luganda_message,
+        language = language,
         token_count=token_count,
         message_type=message_type,
         citations=citations,
@@ -303,14 +307,14 @@ def get_prompt_by_id(
 
 def get_persona_by_id(
     persona_id: int,
+    # if user_id is `None` assume the user is an admin or auth is disabled
     user_id: UUID | None,
     db_session: Session,
     include_deleted: bool = False,
 ) -> Persona:
-    stmt = select(Persona).where(
-        Persona.id == persona_id,
-        or_(Persona.user_id == user_id, Persona.user_id.is_(None)),
-    )
+    stmt = select(Persona).where(Persona.id == persona_id)
+    if user_id is not None:
+        stmt = stmt.where(or_(Persona.user_id == user_id, Persona.user_id.is_(None)))
 
     if not include_deleted:
         stmt = stmt.where(Persona.deleted.is_(False))
@@ -534,6 +538,34 @@ def mark_persona_as_deleted(
     db_session.commit()
 
 
+def update_persona_visibility(
+    persona_id: int,
+    is_visible: bool,
+    db_session: Session,
+) -> None:
+    persona = get_persona_by_id(
+        persona_id=persona_id, user_id=None, db_session=db_session
+    )
+    persona.is_visible = is_visible
+    db_session.commit()
+
+
+def update_all_personas_display_priority(
+    display_priority_map: dict[int, int],
+    db_session: Session,
+) -> None:
+    """Updates the display priority of all lives Personas"""
+    personas = get_personas(user_id=None, db_session=db_session)
+    available_persona_ids = {persona.id for persona in personas}
+    if available_persona_ids != set(display_priority_map.keys()):
+        raise ValueError("Invalid persona IDs provided")
+
+    for persona in personas:
+        persona.display_priority = display_priority_map[persona.id]
+
+    db_session.commit()
+
+
 def get_prompts(
     user_id: UUID | None,
     db_session: Session,
@@ -553,15 +585,16 @@ def get_prompts(
 
 
 def get_personas(
+    # if user_id is `None` assume the user is an admin or auth is disabled
     user_id: UUID | None,
     db_session: Session,
     include_default: bool = True,
     include_slack_bot_personas: bool = False,
     include_deleted: bool = False,
 ) -> Sequence[Persona]:
-    stmt = select(Persona).where(
-        or_(Persona.user_id == user_id, Persona.user_id.is_(None))
-    )
+    stmt = select(Persona)
+    if user_id is not None:
+        stmt = stmt.where(or_(Persona.user_id == user_id, Persona.user_id.is_(None)))
 
     if not include_default:
         stmt = stmt.where(Persona.default_persona.is_(False))
@@ -613,6 +646,7 @@ def create_db_search_doc(
         source_type=server_search_doc.source_type,
         boost=server_search_doc.boost,
         hidden=server_search_doc.hidden,
+        doc_metadata=server_search_doc.metadata,
         score=server_search_doc.score,
         match_highlights=server_search_doc.match_highlights,
         updated_at=server_search_doc.updated_at,
@@ -645,6 +679,7 @@ def translate_db_search_doc_to_server_search_doc(
         source_type=db_search_doc.source_type,
         boost=db_search_doc.boost,
         hidden=db_search_doc.hidden,
+        metadata=db_search_doc.doc_metadata,
         score=db_search_doc.score,
         match_highlights=db_search_doc.match_highlights,
         updated_at=db_search_doc.updated_at,
@@ -670,6 +705,8 @@ def translate_db_message_to_chat_message_detail(
         parent_message=chat_message.parent_message,
         latest_child_message=chat_message.latest_child_message,
         message=chat_message.message,
+        luganda_message=chat_message.luganda_message,
+        language=chat_message.language,
         rephrased_query=chat_message.rephrased_query,
         context_docs=get_retrieval_docs_from_chat_message(chat_message),
         message_type=chat_message.message_type,

@@ -28,8 +28,17 @@ export interface Message {
   type: "user" | "assistant" | "error";
   retrievalType?: RetrievalType;
   query?: string | null;
+  language?: string;
+  luganda_message?: string | null;
   documents?: DanswerDocument[] | null;
   citations?: CitationMap;
+}
+
+export interface BackendChatSession {
+  chat_session_id: number;
+  description: string;
+  persona_id: number;
+  messages: BackendMessage[];
 }
 
 export interface BackendMessage {
@@ -37,6 +46,8 @@ export interface BackendMessage {
   parent_message: number | null;
   latest_child_message: number | null;
   message: string;
+  language: string;
+  luganda_message: string;
   rephrased_query: string | null;
   context_docs: { top_documents: DanswerDocument[] } | null;
   message_type: "user" | "assistant" | "system";

@@ -6,9 +6,7 @@ services:
       context: ../../backend
       dockerfile: Dockerfile
     command: >
-      /bin/sh -c "alembic upgrade head &&
-      echo \"Starting Danswer Api Server\" &&
-      uvicorn danswer.main:app --host 0.0.0.0 --port 8080"
+      /bin/sh -c "alembic upgrade head && echo \"Starting Danswer Api Server\" && uvicorn danswer.main:app --host 0.0.0.0 --port 8080"
     depends_on:
       - relational_db
       - index
@@ -25,6 +23,11 @@ services:
       - model_cache_torch:/root/.cache/torch/
       - model_cache_nltk:/root/nltk_data/
       - model_cache_huggingface:/root/.cache/huggingface/
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "6"
   background:
     image: danswer/danswer-backend:latest
     build:
@@ -47,6 +50,11 @@ services:
       - model_cache_torch:/root/.cache/torch/
       - model_cache_nltk:/root/nltk_data/
       - model_cache_huggingface:/root/.cache/huggingface/
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "6"
   web_server:
     image: danswer/danswer-web-server:latest
     build:
@@ -61,6 +69,11 @@ services:
       - .env
     environment:
       - INTERNAL_URL=http://api_server:8080
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "6"
   relational_db:
     image: postgres:15.2-alpine
     restart: always
@@ -69,15 +82,25 @@ services:
       - .env
     volumes:
       - db_volume:/var/lib/postgresql/data
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "6"
   # This container name cannot have an underscore in it due to Vespa expectations of the URL
   index:
-    image: vespaengine/vespa:8.249.12
+    image: vespaengine/vespa:8.277.17
     restart: always
     ports:
       - "19071:19071"
       - "8081:8081"
     volumes:
       - vespa_volume:/opt/vespa/var
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "6"
   nginx:
     image: nginx:1.23.4-alpine
     restart: always
@@ -96,7 +119,12 @@ services:
     # sleep a little bit to allow the web_server / api_server to start up. 
     # Without this we've seen issues where nginx shows no error logs but 
     # does not recieve any traffic
-    command: > 
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "6"
+    command: >
       /bin/sh -c "sleep 10 &&
         envsubst '$$\{DOMAIN\}' < /etc/nginx/conf.d/app.conf.template > /etc/nginx/conf.d/app.conf &&
         while :; do sleep 6h & wait $${!}; nginx -s reload; done & nginx -g \"daemon off;\""
@@ -109,6 +137,11 @@ services:
     volumes:
       - ../data/certbot/conf:/etc/letsencrypt
       - ../data/certbot/www:/var/www/certbot
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "6"
     entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew; sleep 12h & wait $${!}; done;'"
   # Run with --profile model-server to bring up the danswer-model-server container
   model_server:
@@ -129,9 +162,14 @@ services:
     volumes:
       - model_cache_torch:/root/.cache/torch/
       - model_cache_huggingface:/root/.cache/huggingface/
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "6"
 volumes:
   local_dynamic_storage:
-  file_connector_tmp_storage:  # used to store files uploaded by the user temporarily while we are indexing them
+  file_connector_tmp_storage: # used to store files uploaded by the user temporarily while we are indexing them
   db_volume:
   vespa_volume:
   model_cache_torch:

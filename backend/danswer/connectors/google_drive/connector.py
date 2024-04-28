@@ -46,8 +46,6 @@ from danswer.utils.logger import setup_logger
 
 logger = setup_logger()
 
-# allow 10 minutes for modifiedTime to get propagated
-DRIVE_START_TIME_OFFSET = 60 * 10
 DRIVE_FOLDER_TYPE = "application/vnd.google-apps.folder"
 DRIVE_SHORTCUT_TYPE = "application/vnd.google-apps.shortcut"
 UNSUPPORTED_FILE_TYPE_CONTENT = ""  # keep empty for now
@@ -466,24 +464,20 @@ class GoogleDriveConnector(LoadConnector, PollConnector):
             doc_batch = []
             for file in files_batch:
                 try:
-                    text_contents = extract_text(file, service)
-                    if text_contents:
-                        full_context = file["name"] + " - " + text_contents
-                    else:
-                        full_context = file["name"]
+                    text_contents = extract_text(file, service) or ""
 
                     doc_batch.append(
                         Document(
                             id=file["webViewLink"],
                             sections=[
-                                Section(link=file["webViewLink"], text=full_context)
+                                Section(link=file["webViewLink"], text=text_contents)
                             ],
                             source=DocumentSource.GOOGLE_DRIVE,
                             semantic_identifier=file["name"],
                             doc_updated_at=datetime.fromisoformat(
                                 file["modifiedTime"]
                             ).astimezone(timezone.utc),
-                            metadata={} if text_contents else {IGNORE_FOR_QA: True},
+                            metadata={} if text_contents else {IGNORE_FOR_QA: "True"},
                         )
                     )
                 except Exception as e:
@@ -506,9 +500,7 @@ class GoogleDriveConnector(LoadConnector, PollConnector):
         # propogation if a document is modified, it takes some time for the API to
         # reflect these changes if we do not have an offset, then we may "miss" the
         # update when polling
-        yield from self._fetch_docs_from_drive(
-            max(start - DRIVE_START_TIME_OFFSET, 0, 0), end
-        )
+        yield from self._fetch_docs_from_drive(start, end)
 
 
 if __name__ == "__main__":

@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from danswer.auth.users import current_user
 from danswer.chat.chat_utils import create_chat_chain
-from danswer.chat.process_message import stream_chat_packets
+from danswer.chat.process_message import stream_chat_message,download_chat_sessions_helper
 from danswer.db.chat import create_chat_session
 from danswer.db.chat import delete_chat_session
 from danswer.db.chat import get_chat_message
@@ -35,8 +35,9 @@ from danswer.server.query_and_chat.models import CreateChatMessageRequest
 from danswer.server.query_and_chat.models import CreateChatSessionID
 from danswer.server.query_and_chat.models import RenameChatSessionResponse
 from danswer.server.query_and_chat.models import SearchFeedbackRequest
+from danswer.server.query_and_chat.models import TranslateChatMessagePayload
 from danswer.utils.logger import setup_logger
-
+from danswer.utils.translation import translate_to_luganda
 
 logger = setup_logger()
 
@@ -68,7 +69,7 @@ def get_user_chat_sessions(
 
 
 @router.get("/get-chat-session/{session_id}")
-def get_chat_session_messages(
+def get_chat_session(
     session_id: int,
     user: User | None = Depends(current_user),
     db_session: Session = Depends(get_session),
@@ -89,6 +90,7 @@ def get_chat_session_messages(
     return ChatSessionDetailResponse(
         chat_session_id=session_id,
         description=chat_session.description,
+        persona_id=chat_session.persona_id,
         messages=[
             translate_db_message_to_chat_message_detail(msg) for msg in session_messages
         ],
@@ -172,7 +174,7 @@ def handle_new_chat_message(
     if not chat_message_req.message and chat_message_req.prompt_id is not None:
         raise HTTPException(status_code=400, detail="Empty chat message is invalid")
 
-    packets = stream_chat_packets(
+    packets = stream_chat_message(
         new_msg_req=chat_message_req,
         user=user,
         db_session=db_session,
@@ -237,3 +239,28 @@ def create_search_feedback(
         document_index=get_default_document_index(),
         db_session=db_session,
     )
+
+@router.post("/translate-chat-message")
+def upd_chat_message(
+    payload: TranslateChatMessagePayload,
+    user: User | None = Depends(current_user),
+    db_session: Session = Depends(get_session),
+):
+    """Translate to luganda """
+    user_id = user.id if user is not None else None
+    chat_message = get_chat_message(
+        chat_message_id=payload.message_id,
+        user_id=user_id,
+        db_session=db_session,
+    )
+    chat_message.luganda_message = translate_to_luganda(chat_message.message)
+    
+    db_session.commit()
+
+    return chat_message
+
+@router.get("/user-chats")
+def download_chat_sessions(
+    db_session: Session = Depends(get_session),
+):
+    return download_chat_sessions_helper(db_session=db_session)

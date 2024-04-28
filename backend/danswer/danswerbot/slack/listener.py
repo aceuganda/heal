@@ -14,13 +14,24 @@ from danswer.configs.danswerbot_configs import DANSWER_BOT_RESPOND_EVERY_CHANNEL
 from danswer.configs.danswerbot_configs import NOTIFY_SLACKBOT_NO_ANSWER
 from danswer.configs.model_configs import ENABLE_RERANKING_ASYNC_FLOW
 from danswer.danswerbot.slack.config import get_slack_bot_config_for_channel
+from danswer.danswerbot.slack.constants import DISLIKE_BLOCK_ACTION_ID
+from danswer.danswerbot.slack.constants import FEEDBACK_DOC_BUTTON_BLOCK_ACTION_ID
+from danswer.danswerbot.slack.constants import FOLLOWUP_BUTTON_ACTION_ID
+from danswer.danswerbot.slack.constants import FOLLOWUP_BUTTON_RESOLVED_ACTION_ID
+from danswer.danswerbot.slack.constants import LIKE_BLOCK_ACTION_ID
 from danswer.danswerbot.slack.constants import SLACK_CHANNEL_ID
-from danswer.danswerbot.slack.handlers.handle_feedback import handle_slack_feedback
+from danswer.danswerbot.slack.constants import VIEW_DOC_FEEDBACK_ID
+from danswer.danswerbot.slack.handlers.handle_buttons import handle_doc_feedback_button
+from danswer.danswerbot.slack.handlers.handle_buttons import handle_followup_button
+from danswer.danswerbot.slack.handlers.handle_buttons import (
+    handle_followup_resolved_button,
+)
+from danswer.danswerbot.slack.handlers.handle_buttons import handle_slack_feedback
 from danswer.danswerbot.slack.handlers.handle_message import handle_message
 from danswer.danswerbot.slack.models import SlackMessageInfo
 from danswer.danswerbot.slack.tokens import fetch_tokens
 from danswer.danswerbot.slack.utils import ChannelIdAdapter
-from danswer.danswerbot.slack.utils import decompose_block_id
+from danswer.danswerbot.slack.utils import decompose_action_id
 from danswer.danswerbot.slack.utils import get_channel_name_from_id
 from danswer.danswerbot.slack.utils import get_danswer_bot_app_id
 from danswer.danswerbot.slack.utils import read_slack_thread
@@ -32,7 +43,6 @@ from danswer.one_shot_answer.models import ThreadMessage
 from danswer.search.search_nlp_models import warm_up_models
 from danswer.server.manage.models import SlackBotTokens
 from danswer.utils.logger import setup_logger
-
 
 logger = setup_logger()
 
@@ -131,28 +141,28 @@ def prefilter_requests(req: SocketModeRequest, client: SocketModeClient) -> bool
 
 
 def process_feedback(req: SocketModeRequest, client: SocketModeClient) -> None:
-    actions = req.payload.get("actions")
-    if not actions:
-        logger.error("Unable to process block actions - no actions found")
+    if actions := req.payload.get("actions"):
+        action = cast(dict[str, Any], actions[0])
+        feedback_type = cast(str, action.get("action_id"))
+        feedback_id = cast(str, action.get("block_id"))
+        channel_id = cast(str, req.payload["container"]["channel_id"])
+        thread_ts = cast(str, req.payload["container"]["thread_ts"])
+    else:
+        logger.error("Unable to process feedback. Action not found")
         return
 
-    action = cast(dict[str, Any], actions[0])
-    action_id = cast(str, action.get("action_id"))
-    block_id = cast(str, action.get("block_id"))
     user_id = cast(str, req.payload["user"]["id"])
-    channel_id = cast(str, req.payload["container"]["channel_id"])
-    thread_ts = cast(str, req.payload["container"]["thread_ts"])
 
     handle_slack_feedback(
-        block_id=block_id,
-        feedback_type=action_id,
+        feedback_id=feedback_id,
+        feedback_type=feedback_type,
         client=client.web_client,
         user_id_to_post_confirmation=user_id,
         channel_id_to_post_confirmation=channel_id,
         thread_ts_to_post_confirmation=thread_ts,
     )
 
-    query_event_id, _, _ = decompose_block_id(block_id)
+    query_event_id, _, _ = decompose_action_id(feedback_id)
     logger.info(f"Successfully handled QA feedback for event: {query_event_id}")
 
 
@@ -186,8 +196,9 @@ def build_request_details(
             channel_to_respond=channel,
             msg_to_respond=cast(str, message_ts or thread_ts),
             sender=event.get("user") or None,
-            bipass_filters=tagged,
+            bypass_filters=tagged,
             is_bot_msg=False,
+            is_bot_dm=event.get("channel_type") == "im",
         )
 
     elif req.type == "slash_commands":
@@ -202,8 +213,9 @@ def build_request_details(
             channel_to_respond=channel,
             msg_to_respond=None,
             sender=sender,
-            bipass_filters=True,
+            bypass_filters=True,
             is_bot_msg=True,
+            is_bot_dm=False,
         )
 
     raise RuntimeError("Programming fault, this should never happen.")
@@ -252,8 +264,9 @@ def process_message(
             and not respond_every_channel
             # Can't have configs for DMs so don't toss them out
             and not is_dm
-            # If @DanswerBot or /DanswerBot, always respond with the default configs
-            and not (details.is_bot_msg or details.bipass_filters)
+            # If /DanswerBot (is_bot_msg) or @DanswerBot (bypass_filters)
+            # always respond with the default configs
+            and not (details.is_bot_msg or details.bypass_filters)
         ):
             return
 
@@ -273,15 +286,39 @@ def acknowledge_message(req: SocketModeRequest, client: SocketModeClient) -> Non
     client.send_socket_mode_response(response)
 
 
+def action_routing(req: SocketModeRequest, client: SocketModeClient) -> None:
+    if actions := req.payload.get("actions"):
+        action = cast(dict[str, Any], actions[0])
+
+        if action["action_id"] in [DISLIKE_BLOCK_ACTION_ID, LIKE_BLOCK_ACTION_ID]:
+            # AI Answer feedback
+            return process_feedback(req, client)
+        elif action["action_id"] == FEEDBACK_DOC_BUTTON_BLOCK_ACTION_ID:
+            # Activation of the "source feedback" button
+            return handle_doc_feedback_button(req, client)
+        elif action["action_id"] == FOLLOWUP_BUTTON_ACTION_ID:
+            return handle_followup_button(req, client)
+        elif action["action_id"] == FOLLOWUP_BUTTON_RESOLVED_ACTION_ID:
+            return handle_followup_resolved_button(req, client)
+
+
+def view_routing(req: SocketModeRequest, client: SocketModeClient) -> None:
+    if view := req.payload.get("view"):
+        if view["callback_id"] == VIEW_DOC_FEEDBACK_ID:
+            return process_feedback(req, client)
+
+
 def process_slack_event(client: SocketModeClient, req: SocketModeRequest) -> None:
     # Always respond right away, if Slack doesn't receive these frequently enough
     # it will assume the Bot is DEAD!!! :(
     acknowledge_message(req, client)
 
     try:
-        if req.type == "interactive" and req.payload.get("type") == "block_actions":
-            return process_feedback(req, client)
-
+        if req.type == "interactive":
+            if req.payload.get("type") == "block_actions":
+                return action_routing(req, client)
+            elif req.payload.get("type") == "view_submission":
+                return view_routing(req, client)
         elif req.type == "events_api" or req.type == "slash_commands":
             return process_message(req, client)
     except Exception:

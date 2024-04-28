@@ -1,11 +1,11 @@
 "use client";
 
-import Image from "next/image";
 import { useEffect, useRef, useState } from "react";
 import { FiRefreshCcw, FiSend, FiStopCircle } from "react-icons/fi";
 import { AIMessage, HumanMessage } from "./message/Messages";
 import { AnswerPiecePacket, DanswerDocument } from "@/lib/search/interfaces";
 import {
+  BackendChatSession,
   BackendMessage,
   DocumentsResponse,
   Message,
@@ -22,6 +22,7 @@ import {
   handleAutoScroll,
   handleChatFeedback,
   nameChatSession,
+  processRawChatHistory,
   sendMessage,
 } from "./lib";
 import { ThreeDots } from "react-loader-spinner";
@@ -30,56 +31,163 @@ import { DocumentSidebar } from "./documentSidebar/DocumentSidebar";
 import { Persona } from "../admin/personas/interfaces";
 import { ChatPersonaSelector } from "./ChatPersonaSelector";
 import { useFilters } from "@/lib/hooks";
-import { DocumentSet, ValidSources } from "@/lib/types";
+import { DocumentSet, Tag, ValidSources } from "@/lib/types";
 import { ChatFilters } from "./modifiers/ChatFilters";
 import { buildFilters } from "@/lib/search/utils";
-import { QA, SearchTypeSelector } from "./modifiers/SearchTypeSelector";
 import { SelectedDocuments } from "./modifiers/SelectedDocuments";
 import { usePopup } from "@/components/admin/connectors/Popup";
 import { ResizableSection } from "@/components/resizable/ResizableSection";
 import { DanswerInitializingLoader } from "@/components/DanswerInitializingLoader";
+import { ChatIntro } from "./ChatIntro";
+import { HEADER_PADDING } from "@/lib/constants";
+import { SearchLanguageSelector } from "@/components/search/SearchLanguageSelector";
+import { handleLugandaTranslation } from "./lib";
 
 const MAX_INPUT_HEIGHT = 200;
 
 export const Chat = ({
   existingChatSessionId,
   existingChatSessionPersonaId,
-  existingMessages,
   availableSources,
   availableDocumentSets,
   availablePersonas,
+  availableTags,
+  defaultSelectedPersonaId,
   documentSidebarInitialWidth,
   shouldhideBeforeScroll,
 }: {
   existingChatSessionId: number | null;
   existingChatSessionPersonaId: number | undefined;
-  existingMessages: Message[];
   availableSources: ValidSources[];
   availableDocumentSets: DocumentSet[];
   availablePersonas: Persona[];
+  availableTags: Tag[];
+  defaultSelectedPersonaId?: number; // what persona to default to
   documentSidebarInitialWidth?: number;
   shouldhideBeforeScroll?: boolean;
 }) => {
   const router = useRouter();
   const { popup, setPopup } = usePopup();
+  const [language, setLanguage] = useState('english');
 
-  const [chatSessionId, setChatSessionId] = useState(existingChatSessionId);
+  // fetch messages for the chat session
+  const [isFetchingChatMessages, setIsFetchingChatMessages] = useState(
+    existingChatSessionId !== null
+  );
+
+
+
+  // this is triggered every time the user switches which chat
+  // session they are using
+  useEffect(() => {
+    textareaRef.current?.focus();
+    setChatSessionId(existingChatSessionId);
+
+    async function initialSessionFetch() {
+      if (existingChatSessionId === null) {
+        setIsFetchingChatMessages(false);
+        if (defaultSelectedPersonaId !== undefined) {
+          setSelectedPersona(
+            availablePersonas.find(
+              (persona) => persona.id === defaultSelectedPersonaId
+            )
+          );
+        } else {
+          setSelectedPersona(undefined);
+        }
+        setMessageHistory([]);
+        return;
+      }
+
+      setIsFetchingChatMessages(true);
+      const response = await fetch(
+        `/api/chat/get-chat-session/${existingChatSessionId}`
+      );
+      const chatSession = (await response.json()) as BackendChatSession;
+      setSelectedPersona(
+        availablePersonas.find(
+          (persona) => persona.id === chatSession.persona_id
+        )
+      );
+      const newMessageHistory = processRawChatHistory(chatSession.messages);
+      setMessageHistory(newMessageHistory);
+
+      const latestMessageId =
+        newMessageHistory[newMessageHistory.length - 1]?.messageId;
+      setSelectedMessageForDocDisplay(
+        latestMessageId !== undefined ? latestMessageId : null
+      );
+
+      setIsFetchingChatMessages(false);
+    }
+
+    initialSessionFetch();
+  }, [existingChatSessionId]);
+
+  const backgroundRefreashChatMessages = async () => {
+    const response = await fetch(
+      `/api/chat/get-chat-session/${existingChatSessionId}`
+    );
+    const chatSession = (await response.json()) as BackendChatSession;
+    setSelectedPersona(
+      availablePersonas.find(
+        (persona) => persona.id === chatSession.persona_id
+      )
+    );
+    const newMessageHistory = processRawChatHistory(chatSession.messages);
+    setMessageHistory(newMessageHistory);
+
+    const latestMessageId =
+      newMessageHistory[newMessageHistory.length - 1]?.messageId;
+    setSelectedMessageForDocDisplay(
+      latestMessageId !== undefined ? latestMessageId : null
+    );
+  }
+
+
+  const [chatSessionId, setChatSessionId] = useState<number | null>(
+    existingChatSessionId
+  );
   const [message, setMessage] = useState("");
-  const [messageHistory, setMessageHistory] =
-    useState<Message[]>(existingMessages);
+  const [messageHistory, setMessageHistory] = useState<Message[]>([]);
   const [isStreaming, setIsStreaming] = useState(false);
+  const [messageIdTranslating, setMessageIdTranslating] = useState<number | null>(null);
+  const updateLugandaPart = (messageIdToUpdate: number, luganda: string) => {
+    setMessageHistory((prevMessages) =>
+      prevMessages.map((message) =>
+        message.messageId === messageIdToUpdate
+          ? { ...message, luganda_message: luganda }
+          : message
+      )
+    );
+  };
+
+  const handleMessageTranslation = async (messageId: number | null) => {
+    if (!messageId) {
+      return
+    }
+    setMessageIdTranslating(messageId)
+    try {
+      const respStream = await handleLugandaTranslation(messageId);
+      const respText = await respStream.text();
+      const resp = JSON.parse(respText);
+      await updateLugandaPart(messageId, resp.luganda_message);
+    } catch (e) {
+      console.log(e)
+      setMessageIdTranslating(null)
+    }
+
+  }
 
   // for document display
   // NOTE: -1 is a special designation that means the latest AI message
   const [selectedMessageForDocDisplay, setSelectedMessageForDocDisplay] =
-    useState<number | null>(
-      messageHistory[messageHistory.length - 1]?.messageId || null
-    );
+    useState<number | null>(null);
   const { aiMessage } = selectedMessageForDocDisplay
     ? getHumanAndAIMessageFromMessageNumber(
-        messageHistory,
-        selectedMessageForDocDisplay
-      )
+      messageHistory,
+      selectedMessageForDocDisplay
+    )
     : { aiMessage: null };
   const [selectedDocuments, setSelectedDocuments] = useState<DanswerDocument[]>(
     []
@@ -88,14 +196,27 @@ export const Chat = ({
   const [selectedPersona, setSelectedPersona] = useState<Persona | undefined>(
     existingChatSessionPersonaId !== undefined
       ? availablePersonas.find(
-          (persona) => persona.id === existingChatSessionPersonaId
+        (persona) => persona.id === existingChatSessionPersonaId
+      )
+      : defaultSelectedPersonaId !== undefined
+        ? availablePersonas.find(
+          (persona) => persona.id === defaultSelectedPersonaId
         )
-      : availablePersonas.find((persona) => persona.name === "Default")
+        : undefined
   );
+  const livePersona = selectedPersona || availablePersonas[0];
+
+  useEffect(() => {
+    if (messageHistory.length === 0) {
+      setSelectedPersona(
+        availablePersonas.find(
+          (persona) => persona.id === defaultSelectedPersonaId
+        )
+      );
+    }
+  }, [defaultSelectedPersonaId]);
 
   const filterManager = useFilters();
-
-  const [selectedSearchType, setSelectedSearchType] = useState(QA);
 
   // state for cancelling streaming
   const [isCancelled, setIsCancelled] = useState(false);
@@ -124,12 +245,7 @@ export const Chat = ({
   useEffect(() => {
     endDivRef.current?.scrollIntoView();
     setHasPerformedInitialScroll(true);
-  }, []);
-
-  // handle refreshes of the server-side props
-  useEffect(() => {
-    setMessageHistory(existingMessages);
-  }, [existingMessages]);
+  }, [isFetchingChatMessages]);
 
   // handle re-sizing of the text area
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -154,10 +270,13 @@ export const Chat = ({
       // numbers below are based on the actual width the center section for different
       // screen sizes. `1700` corresponds to the custom "3xl" tailwind breakpoint
       // NOTE: some buffer is needed to account for scroll bars
-      setMaxDocumentSidebarWidth(
-        masterFlexboxRef.current.clientWidth -
-          (document.documentElement.clientWidth > 1700 ? 950 : 810)
-      );
+      if (document.documentElement.clientWidth > 1700) {
+        setMaxDocumentSidebarWidth(masterFlexboxRef.current.clientWidth - 950);
+      } else if (document.documentElement.clientWidth > 1420) {
+        setMaxDocumentSidebarWidth(masterFlexboxRef.current.clientWidth - 760);
+      } else {
+        setMaxDocumentSidebarWidth(masterFlexboxRef.current.clientWidth - 660);
+      }
     }
   };
   useEffect(() => {
@@ -173,24 +292,46 @@ export const Chat = ({
     documentSidebarInitialWidth = Math.min(700, maxDocumentSidebarWidth);
   }
 
-  const onSubmit = async (messageOverride?: string) => {
+  const onSubmit = async ({
+    messageIdToResend,
+    queryOverride,
+  }: { messageIdToResend?: number; queryOverride?: string } = {}) => {
     let currChatSessionId: number;
     let isNewSession = chatSessionId === null;
     if (isNewSession) {
-      currChatSessionId = await createChatSession(selectedPersona?.id || 0);
+      currChatSessionId = await createChatSession(livePersona?.id || 0);
     } else {
       currChatSessionId = chatSessionId as number;
     }
     setChatSessionId(currChatSessionId);
 
-    const currMessage = messageOverride || message;
-    const currMessageHistory = messageHistory;
+    const messageToResend = messageHistory.find(
+      (message) => message.messageId === messageIdToResend
+    );
+    const messageToResendIndex = messageToResend
+      ? messageHistory.indexOf(messageToResend)
+      : null;
+    if (!messageToResend && messageIdToResend !== undefined) {
+      setPopup({
+        message:
+          "Failed to re-send message - please refresh the page and try again.",
+        type: "error",
+      });
+      return;
+    }
+
+    const currMessage = messageToResend ? messageToResend.message : message;
+    const currMessageHistory =
+      messageToResendIndex !== null
+        ? messageHistory.slice(0, messageToResendIndex)
+        : messageHistory;
     setMessageHistory([
       ...currMessageHistory,
       {
         messageId: 0,
         message: currMessage,
         type: "user",
+        language: language,
       },
     ]);
     setMessage("");
@@ -212,20 +353,21 @@ export const Chat = ({
         message: currMessage,
         parentMessageId: lastSuccessfulMessageId,
         chatSessionId: currChatSessionId,
-        // if search-only set prompt to null to tell backend to not give an answer
-        promptId:
-          selectedSearchType === QA ? selectedPersona?.prompts[0]?.id : null,
+        promptId: selectedPersona?.prompts[0]?.id || 0,
         filters: buildFilters(
           filterManager.selectedSources,
           filterManager.selectedDocumentSets,
-          filterManager.timeRange
+          filterManager.timeRange,
+          filterManager.selectedTags
         ),
+        language: language,
         selectedDocumentIds: selectedDocuments
           .filter(
             (document) =>
               document.db_doc_id !== undefined && document.db_doc_id !== null
           )
           .map((document) => document.db_doc_id as number),
+        queryOverride,
       })) {
         for (const packet of packetBunch) {
           if (Object.hasOwn(packet, "answer_piece")) {
@@ -245,21 +387,25 @@ export const Chat = ({
             finalMessage = packet as BackendMessage;
           }
         }
+        // console.log(finalMessage)
         setMessageHistory([
           ...currMessageHistory,
           {
             messageId: finalMessage?.parent_message || null,
             message: currMessage,
             type: "user",
+            language: language,
           },
           {
             messageId: finalMessage?.message_id || null,
-            message: error || answer,
+            message: error || finalMessage?.message || answer,
             type: error ? "error" : "assistant",
             retrievalType,
             query: finalMessage?.rephrased_query || query,
             documents: finalMessage?.context_docs?.top_documents || documents,
             citations: finalMessage?.citations || {},
+            language: finalMessage?.language || language,
+            luganda_message: finalMessage?.luganda_message || null,
           },
         ]);
         if (isCancelledRef.current) {
@@ -275,6 +421,7 @@ export const Chat = ({
           messageId: null,
           message: currMessage,
           type: "user",
+          language: language,
         },
         {
           messageId: null,
@@ -289,7 +436,7 @@ export const Chat = ({
         setSelectedMessageForDocDisplay(finalMessage.message_id);
       }
       await nameChatSession(currChatSessionId, currMessage);
-      router.push(`/chat/${currChatSessionId}?shouldhideBeforeScroll=true`, {
+      router.push(`/chat?chatId=${currChatSessionId}`, {
         scroll: false,
       });
     }
@@ -299,6 +446,9 @@ export const Chat = ({
       retrievalType === RetrievalType.Search
     ) {
       setSelectedMessageForDocDisplay(finalMessage.message_id);
+    }
+    if (language === "luganda") {
+      await backgroundRefreashChatMessages();
     }
   };
 
@@ -348,50 +498,50 @@ export const Chat = ({
 
       {documentSidebarInitialWidth !== undefined ? (
         <>
+
           <div className="w-full sm:relative">
             <div
-              className="w-full h-screen flex flex-col overflow-y-auto relative"
+              className={`w-full h-screen ${HEADER_PADDING} flex flex-col overflow-y-auto relative`}
               ref={scrollableDivRef}
             >
-              {selectedPersona && (
+              {/* {livePersona && (
                 <div className="sticky top-0 left-80 z-10 w-full bg-background/90">
                   <div className="ml-2 p-1 rounded mt-2 w-fit">
                     <ChatPersonaSelector
                       personas={availablePersonas}
-                      selectedPersonaId={selectedPersona?.id}
+                      selectedPersonaId={livePersona.id}
                       onPersonaChange={(persona) => {
                         if (persona) {
                           setSelectedPersona(persona);
+                          router.push(`/chat?personaId=${persona.id}`);
                         }
                       }}
                     />
                   </div>
                 </div>
-              )}
+              )} */}
 
-              {messageHistory.length === 0 && !isStreaming && (
-                <div className="flex justify-center items-center h-full">
-                  <div className="px-8 w-searchbar-small 3xl:w-searchbar">
-                    <div className="flex">
-                      <div className="mx-auto h-[80px] w-[80px]">
-                        <Image
-                          src="/logo.png"
-                          alt="Logo"
-                          width="1419"
-                          height="1520"
-                        />
-                      </div>
-                    </div>
-                    <div className="mx-auto text-2xl font-bold text-strong p-4 w-fit">
-                      What are you looking for today?
-                    </div>
-                  </div>
-                </div>
-              )}
+              {messageHistory.length === 0 &&
+                !isFetchingChatMessages &&
+                !isStreaming && (
+                  <ChatIntro
+                    availableSources={availableSources}
+                    availablePersonas={availablePersonas}
+                    selectedPersona={selectedPersona}
+                    handlePersonaSelect={(persona) => {
+                      setSelectedPersona(persona);
+                      router.push(`/chat?personaId=${persona.id}`);
+                    }}
+                    setInput={(input: string) => {
+                      setMessage(input)
+                    }}
+                    language={language}
+                  />
+                )}
 
               <div
                 className={
-                  "mt-4 pt-12 sm:pt-0 mx-8" +
+                  "mt-4 pt-12 sm:pt-0 sm:mx-8 mx-2" +
                   (hasPerformedInitialScroll ? "" : " invisible")
                 }
               >
@@ -399,7 +549,15 @@ export const Chat = ({
                   if (message.type === "user") {
                     return (
                       <div key={i}>
-                        <HumanMessage content={message.message} />
+                        <HumanMessage content={language === "luganda" && message.luganda_message
+                          ? message.luganda_message
+                          : message.message}
+                          id={message.messageId}
+                          language={language}
+                          luganda_message={message.luganda_message}
+                          handleTranslation={handleMessageTranslation}
+                          messageIdTranslating={messageIdTranslating}
+                        />
                       </div>
                     );
                   } else if (message.type === "assistant") {
@@ -408,11 +566,19 @@ export const Chat = ({
                         selectedMessageForDocDisplay === message.messageId) ||
                       (selectedMessageForDocDisplay === -1 &&
                         i === messageHistory.length - 1);
+                    const previousMessage =
+                      i !== 0 ? messageHistory[i - 1] : null;
                     return (
                       <div key={i}>
                         <AIMessage
                           messageId={message.messageId}
-                          content={message.message}
+                          messageIdTranslating={messageIdTranslating}
+                          handleTranslation={handleMessageTranslation}
+                          language={language}
+                          luganda_message={message.luganda_message}
+                          content={language === "luganda" && message.luganda_message
+                            ? message.luganda_message
+                            : message.message}
                           query={messageHistory[i]?.query || undefined}
                           citedDocuments={getCitedDocumentsFromMessage(message)}
                           isComplete={
@@ -426,10 +592,38 @@ export const Chat = ({
                             i === messageHistory.length - 1 && isStreaming
                               ? undefined
                               : (feedbackType) =>
-                                  setCurrentFeedback([
-                                    feedbackType,
-                                    message.messageId as number,
-                                  ])
+                                setCurrentFeedback([
+                                  feedbackType,
+                                  message.messageId as number,
+                                ])
+                          }
+                          handleSearchQueryEdit={
+                            i === messageHistory.length - 1 && !isStreaming
+                              ? (newQuery) => {
+                                if (!previousMessage) {
+                                  setPopup({
+                                    type: "error",
+                                    message:
+                                      "Cannot edit query of first message - please refresh the page and try again.",
+                                  });
+                                  return;
+                                }
+
+                                if (previousMessage.messageId === null) {
+                                  setPopup({
+                                    type: "error",
+                                    message:
+                                      "Cannot edit query of a pending message - please wait a few seconds and try again.",
+                                  });
+                                  return;
+                                }
+                                onSubmit({
+                                  messageIdToResend:
+                                    previousMessage.messageId,
+                                  queryOverride: newQuery,
+                                });
+                              }
+                              : undefined
                           }
                           isCurrentlyShowingRetrieved={isShowingRetrieved}
                           handleShowRetrieved={(messageNumber) => {
@@ -449,8 +643,10 @@ export const Chat = ({
                   } else {
                     return (
                       <div key={i}>
+                        {/* error no need for transilation */}
                         <AIMessage
                           messageId={message.messageId}
+                          handleTranslation={handleMessageTranslation}
                           content={
                             <p className="text-red-700 text-sm my-auto">
                               {message.message}
@@ -468,6 +664,7 @@ export const Chat = ({
                     <div key={messageHistory.length}>
                       <AIMessage
                         messageId={null}
+                        handleTranslation={handleMessageTranslation}
                         content={
                           <div className="text-sm my-auto">
                             <ThreeDots
@@ -493,48 +690,11 @@ export const Chat = ({
               </div>
             </div>
 
-            <div className="absolute bottom-0 z-10 w-full bg-background border-t border-border">
+            <div className="absolute bottom-0 max-sm:left-0 sm:z-10 w-full bg-background border-t border-border">
               <div className="w-full pb-4 pt-2">
-                {/* {(isStreaming || messageHistory.length > 0) && (
-              <div className="flex justify-center w-full">
-                <div className="w-[800px] flex">
-                  <div className="cursor-pointer flex w-fit p-2 rounded border border-neutral-400 text-sm hover:bg-neutral-200 ml-auto mr-4">
-                    {isStreaming ? (
-                      <div
-                        onClick={() => setIsCancelled(true)}
-                        className="flex"
-                      >
-                        <FiStopCircle className="my-auto mr-1" />
-                        <div>Stop Generating</div>
-                      </div>
-                    ) : (
-                      <div
-                        className="flex"
-                        onClick={() => {
-                          if (chatSessionId) {
-                            handleRegenerate(chatSessionId);
-                          }
-                        }}
-                      >
-                        <FiRefreshCcw className="my-auto mr-1" />
-                        <div>Regenerate</div>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-            )} */}
-
                 <div className="flex">
-                  <div className="w-searchbar-small 3xl:w-searchbar mx-auto px-4 pt-1 flex">
-                    <div className="mr-3">
-                      <SearchTypeSelector
-                        selectedSearchType={selectedSearchType}
-                        setSelectedSearchType={setSelectedSearchType}
-                      />
-                    </div>
-
-                    {selectedDocuments.length > 0 ? (
+                  <div className="w- 2xl:w-searchbar-sm 3xl:w-searchbar sm:mx-auto px-4 pt-1 flex">
+                    {/* {selectedDocuments.length > 0 ? (
                       <SelectedDocuments
                         selectedDocuments={selectedDocuments}
                       />
@@ -543,13 +703,20 @@ export const Chat = ({
                         {...filterManager}
                         existingSources={availableSources}
                         availableDocumentSets={availableDocumentSets}
+                        availableTags={availableTags}
                       />
-                    )}
+                    )} */}
+                    <SearchLanguageSelector
+                      language={language}
+                      setLanguage={(language: string) => {
+                        setLanguage(language)
+                      }}
+                    />
                   </div>
                 </div>
 
-                <div className="flex justify-center py-2 max-w-screen-lg mx-auto mb-2">
-                  <div className="w-full shrink relative px-4 w-searchbar-small 3xl:w-searchbar mx-auto">
+                <div className="flex justify-start sm:justify-center py-2 max-w-screen-lg sm:mx-auto mb-2">
+                  <div className="w-full shrink relative px-4 w-searchbar-xs 2xl:w-searchbar-sm 3xl:w-searchbar sm:mx-auto">
                     <textarea
                       ref={textareaRef}
                       autoFocus
@@ -567,12 +734,11 @@ export const Chat = ({
                     py-4 
                     overflow-hidden
                     h-14
-                    ${
-                      (textareaRef?.current?.scrollHeight || 0) >
-                      MAX_INPUT_HEIGHT
-                        ? "overflow-y-auto"
-                        : ""
-                    } 
+                    ${(textareaRef?.current?.scrollHeight || 0) >
+                          MAX_INPUT_HEIGHT
+                          ? "overflow-y-auto"
+                          : ""
+                        } 
                     whitespace-normal 
                     break-word
                     overscroll-contain
@@ -581,11 +747,15 @@ export const Chat = ({
                       style={{ scrollbarWidth: "thin" }}
                       role="textarea"
                       aria-multiline
-                      placeholder="Ask me anything..."
+                      placeholder={language === "luganda" ? "Nonyelezaa.." : "Ask me anything..."}
                       value={message}
                       onChange={(e) => setMessage(e.target.value)}
                       onKeyDown={(event) => {
-                        if (event.key === "Enter" && !event.shiftKey) {
+                        if (
+                          event.key === "Enter" &&
+                          !event.shiftKey &&
+                          message
+                        ) {
                           onSubmit();
                           event.preventDefault();
                         }
@@ -595,15 +765,32 @@ export const Chat = ({
                     <div className="absolute bottom-4 right-10">
                       <div
                         className={"cursor-pointer"}
-                        onClick={() => onSubmit()}
-                      >
-                        <FiSend
-                          size={18}
-                          className={
-                            "text-emphasis w-9 h-9 p-2 rounded-lg " +
-                            (message ? "bg-blue-200" : "")
+                        onClick={() => {
+                          if (!isStreaming) {
+                            if (message) {
+                              onSubmit();
+                            }
+                          } else {
+                            setIsCancelled(true);
                           }
-                        />
+                        }}
+                      >
+                        {isStreaming ? (
+                          <FiStopCircle
+                            size={18}
+                            className={
+                              "text-emphasis w-9 h-9 p-2 rounded-lg hover:bg-hover"
+                            }
+                          />
+                        ) : (
+                          <FiSend
+                            size={18}
+                            className={
+                              "text-emphasis w-9 h-9 p-2 rounded-lg " +
+                              (message ? "bg-blue-200" : "")
+                            }
+                          />
+                        )}
                       </div>
                     </div>
                   </div>
@@ -611,18 +798,20 @@ export const Chat = ({
               </div>
             </div>
           </div>
-
-          <ResizableSection
-            intialWidth={documentSidebarInitialWidth}
-            minWidth={400}
-            maxWidth={maxDocumentSidebarWidth || undefined}
-          >
-            <DocumentSidebar
-              selectedMessage={aiMessage}
-              selectedDocuments={selectedDocuments}
-              setSelectedDocuments={setSelectedDocuments}
-            />
-          </ResizableSection>
+          <div className='max-sm:hidden' >
+            <ResizableSection
+              intialWidth={documentSidebarInitialWidth}
+              minWidth={300}
+              maxWidth={maxDocumentSidebarWidth || undefined}
+            >
+              <DocumentSidebar
+                selectedMessage={aiMessage}
+                selectedDocuments={selectedDocuments}
+                setSelectedDocuments={setSelectedDocuments}
+                isLoading={isFetchingChatMessages}
+              />
+            </ResizableSection>
+          </div>
         </>
       ) : (
         <div className="mx-auto h-full flex flex-col">

@@ -4,6 +4,7 @@ from datetime import datetime
 from typing import Any
 
 from danswer.access.models import DocumentAccess
+from danswer.configs.model_configs import DOC_EMBEDDING_DIM
 from danswer.indexing.models import DocMetadataAwareIndexChunk
 from danswer.indexing.models import InferenceChunk
 from danswer.search.models import IndexFilters
@@ -50,7 +51,7 @@ class Verifiable(abc.ABC):
         self.index_name = index_name
 
     @abc.abstractmethod
-    def ensure_indices_exist(self) -> None:
+    def ensure_indices_exist(self, embedding_dim: int = DOC_EMBEDDING_DIM) -> None:
         raise NotImplementedError
 
 
@@ -96,6 +97,7 @@ class KeywordCapable(abc.ABC):
         filters: IndexFilters,
         time_decay_multiplier: float,
         num_to_retrieve: int,
+        offset: int = 0,
     ) -> list[InferenceChunk]:
         raise NotImplementedError
 
@@ -108,6 +110,7 @@ class VectorCapable(abc.ABC):
         filters: IndexFilters,
         time_decay_multiplier: float,
         num_to_retrieve: int,
+        offset: int = 0,
     ) -> list[InferenceChunk]:
         raise NotImplementedError
 
@@ -120,6 +123,7 @@ class HybridCapable(abc.ABC):
         filters: IndexFilters,
         time_decay_multiplier: float,
         num_to_retrieve: int,
+        offset: int = 0,
         hybrid_alpha: float | None = None,
     ) -> list[InferenceChunk]:
         raise NotImplementedError
@@ -132,6 +136,7 @@ class AdminCapable(abc.ABC):
         query: str,
         filters: IndexFilters,
         num_to_retrieve: int,
+        offset: int = 0,
     ) -> list[InferenceChunk]:
         raise NotImplementedError
 

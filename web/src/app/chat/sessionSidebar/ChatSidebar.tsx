@@ -18,6 +18,9 @@ import Image from "next/image";
 import { ChatSessionDisplay } from "./SessionDisplay";
 import { ChatSession } from "../interfaces";
 import { groupSessionsByDateRange } from "../lib";
+import { HEADER_PADDING } from "@/lib/constants";
+
+
 interface ChatSidebarProps {
   existingChats: ChatSession[];
   currentChatId: number | null;
@@ -34,6 +37,7 @@ export const ChatSidebar = ({
   const groupedChatSessions = groupSessionsByDateRange(existingChats);
 
   const [userInfoVisible, setUserInfoVisible] = useState(false);
+  const [menuHider, setMenuHider] = useState(false);
   const userInfoRef = useRef<HTMLDivElement>(null);
 
   const handleLogout = () => {
@@ -64,62 +68,63 @@ export const ChatSidebar = ({
   }, []);
 
   return (
-    <div
-      className={`
-        w-80
+    <div className="relative">
+      <div onClick={() => { setMenuHider(!menuHider) }} className={`${menuHider ? "left-[100%] top-[5.25rem] " : "top-[5.25rem] left-[1rem]"} sm:hidden  flex w-[35px] h-[35px] absolute  z-50`}>
+        <Image
+          alt={'Menu'}
+          src={menuHider ? '/cancel.svg' : '/humbager.svg'}
+          fill
+          className="relative"
+        />
+      </div>
+      <div
+        className={`
+        w-72
+        2xl:w-80
+        ${HEADER_PADDING}
         border-r 
         border-border 
-        flex 
+        ${menuHider ? " flex max-sm:z-10  max-sm:relative  max-sm:bg-white" : "hidden sm:flex "}
         flex-col 
-        h-screen 
+        h-screen
         transition-transform`}
-      id="chat-sidebar"
-    >
-      <Link href="/" className="ml-3">
-        <div className="flex mb-4 mt-4">
-          <div className="h-[32px] w-[30px]">
-            <Image src="/logo.png" alt="Logo" width="1419" height="1520" />
-          </div>
-          <h1 className="flex text-2xl font-bold my-auto text-emphasis ml-2">
-            Danswer
-          </h1>
-        </div>
-      </Link>
+        id="chat-sidebar"
+      >
 
-      <Link href="/chat" className="mx-3">
-        <BasicClickable fullWidth>
-          <div className="flex text-sm">
-            <FiPlusSquare className="my-auto mr-2" /> New Chat
-          </div>
-        </BasicClickable>
-      </Link>
 
-      <div className="mt-1 pb-1 mb-1 ml-3 overflow-y-auto h-full">
-        {Object.entries(groupedChatSessions).map(
-          ([dateRange, chatSessions]) => {
-            if (chatSessions.length > 0) {
-              return (
-                <div key={dateRange}>
-                  <div className="text-xs text-subtle flex pb-0.5 mb-1.5 mt-5 font-bold">
-                    {dateRange}
+        <Link href="/chat" className="mx-3 mt-5">
+          <BasicClickable fullWidth>
+            <div className="flex text-sm">
+              <FiPlusSquare className="my-auto mr-2" /> New Chat
+            </div>
+          </BasicClickable>
+        </Link>
+        <div className="mt-1 pb-1 mb-1 ml-3 overflow-y-auto h-full">
+          {Object.entries(groupedChatSessions).map(
+            ([dateRange, chatSessions]) => {
+              if (chatSessions.length > 0) {
+                return (
+                  <div key={dateRange}>
+                    <div className="text-xs text-subtle flex pb-0.5 mb-1.5 mt-5 font-bold">
+                      {dateRange}
+                    </div>
+                    {chatSessions.map((chat) => {
+                      const isSelected = currentChatId === chat.id;
+                      return (
+                        <div key={chat.id} className="mr-3">
+                          <ChatSessionDisplay
+                            chatSession={chat}
+                            isSelected={isSelected}
+                          />
+                        </div>
+                      );
+                    })}
                   </div>
-                  {chatSessions.map((chat) => {
-                    const isSelected = currentChatId === chat.id;
-                    return (
-                      <div key={chat.id} className="mr-3">
-                        <ChatSessionDisplay
-                          chatSession={chat}
-                          isSelected={isSelected}
-                        />
-                      </div>
-                    );
-                  })}
-                </div>
-              );
+                );
+              }
             }
-          }
-        )}
-        {/* {existingChats.map((chat) => {
+          )}
+          {/* {existingChats.map((chat) => {
           const isSelected = currentChatId === chat.id;
           return (
             <div key={chat.id} className="mr-3">
@@ -127,68 +132,69 @@ export const ChatSidebar = ({
             </div>
           );
         })} */}
-      </div>
+        </div>
 
-      <div
-        className="mt-auto py-2 border-t border-border px-3"
-        ref={userInfoRef}
-      >
-        <div className="relative text-strong">
-          {userInfoVisible && (
-            <div
-              className={
-                (user ? "translate-y-[-110%]" : "translate-y-[-115%]") +
-                " absolute top-0 bg-background border border-border z-30 w-full rounded text-strong text-sm"
-              }
-            >
-              <Link
-                href="/search"
-                className="flex py-3 px-4 cursor-pointer hover:bg-hover"
+        <div
+          className="mt-auto py-2 border-t border-border px-3"
+          ref={userInfoRef}
+        >
+          <div className="relative text-strong">
+            {userInfoVisible && (
+              <div
+                className={
+                  (user ? "translate-y-[-110%]" : "translate-y-[-115%]") +
+                  " absolute top-0 bg-background border border-border z-30 w-full rounded text-strong text-sm"
+                }
               >
-                <FiSearch className="my-auto mr-2" />
-                Danswer Search
-              </Link>
-              <Link
-                href="/chat"
-                className="flex py-3 px-4 cursor-pointer hover:bg-hover"
-              >
-                <FiMessageSquare className="my-auto mr-2" />
-                Danswer Chat
-              </Link>
-              {(!user || user.role === "admin") && (
+                {/* <Link
+                  href="/search"
+                  className="flex py-3 px-4 cursor-pointer hover:bg-hover"
+                >
+                  <FiSearch className="my-auto mr-2" />
+                  Heal Search
+                </Link> */}
                 <Link
-                  href="/admin/indexing/status"
-                  className="flex py-3 px-4 cursor-pointer border-t border-border hover:bg-hover"
+                  href="/chat"
+                  className="flex py-3 px-4 cursor-pointer hover:bg-hover"
                 >
-                  <FiTool className="my-auto mr-2" />
-                  Admin Panel
+                  <FiMessageSquare className="my-auto mr-2" />
+                  Heal Chat
                 </Link>
-              )}
-              {user && (
-                <div
-                  onClick={handleLogout}
-                  className="flex py-3 px-4 cursor-pointer border-t border-border rounded hover:bg-hover"
-                >
-                  <FiLogOut className="my-auto mr-2" />
-                  Log out
-                </div>
-              )}
-            </div>
-          )}
-          <BasicSelectable fullWidth selected={false}>
-            <div
-              onClick={() => setUserInfoVisible(!userInfoVisible)}
-              className="flex h-8"
-            >
-              <div className="my-auto mr-2 bg-user rounded-lg px-1.5">
-                {user && user.email ? user.email[0].toUpperCase() : "A"}
+                {(!user || user.role === "admin") && (
+                  <Link
+                    href="/admin/indexing/status"
+                    className="flex py-3 px-4 cursor-pointer border-t border-border hover:bg-hover"
+                  >
+                    <FiTool className="my-auto mr-2" />
+                    Admin Panel
+                  </Link>
+                )}
+                {user && (
+                  <div
+                    onClick={handleLogout}
+                    className="flex py-3 px-4 cursor-pointer border-t border-border rounded hover:bg-hover"
+                  >
+                    <FiLogOut className="my-auto mr-2" />
+                    Log out
+                  </div>
+                )}
               </div>
-              <p className="my-auto">
-                {user ? user.email : "Anonymous Possum"}
-              </p>
-              <FiMoreHorizontal className="my-auto ml-auto mr-2" size={20} />
-            </div>
-          </BasicSelectable>
+            )}
+            <BasicSelectable fullWidth selected={false}>
+              <div
+                onClick={() => setUserInfoVisible(!userInfoVisible)}
+                className="flex h-8"
+              >
+                <div className="my-auto mr-2 bg-user rounded-lg px-1.5">
+                  {user && user.email ? user.email[0].toUpperCase() : "A"}
+                </div>
+                <p className="my-auto">
+                  {user ? user.email : "Anonymous Possum"}
+                </p>
+                <FiMoreHorizontal className="my-auto ml-auto mr-2" size={20} />
+              </div>
+            </BasicSelectable>
+          </div>
         </div>
       </div>
     </div>

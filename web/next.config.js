@@ -5,7 +5,22 @@ const env_version = process.env.DANSWER_VERSION; // version from env variable
 const version = env_version || package_version;
 
 /** @type {import('next').NextConfig} */
+const withPWA = require("@ducanh2912/next-pwa").default({
+  dest: "public",
+  cacheOnFrontEndNav: true,
+  aggressiveFrontEndNavCaching: true,
+  reloadOnOnline: true,
+  swcMinify: true,
+  workboxOptions: {
+    disableDevLogs: true,
+  },
+});
 const nextConfig = {
+  reactStrictMode: true,
+  swcMinify: true,
+  images: {
+    unoptimized: true
+  },
   output: "standalone",
   rewrites: async () => {
     // In production, something else (nginx in the one box setup) should take
@@ -27,7 +42,7 @@ const nextConfig = {
     const defaultRedirects = [
       {
         source: "/",
-        destination: "/search",
+        destination: "/chat",
         permanent: true,
       },
     ];
@@ -59,4 +74,4 @@ const nextConfig = {
   },
 };
 
-module.exports = nextConfig;
+module.exports = withPWA(nextConfig);

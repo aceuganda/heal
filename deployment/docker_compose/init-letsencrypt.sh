@@ -11,7 +11,9 @@ if ! docker compose --version >/dev/null 2>&1; then
   exit 1
 fi
 
-domains=("$DOMAIN" "www.$DOMAIN")
+#you may need to remove the second domain for this case
+
+domains=("$DOMAIN" )
 rsa_key_size=4096
 data_path="../data/certbot"
 email="$EMAIL" # Adding a valid address is strongly recommended

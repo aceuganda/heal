@@ -22,6 +22,7 @@ from sqlalchemy import Integer
 from sqlalchemy import Sequence
 from sqlalchemy import String
 from sqlalchemy import Text
+from sqlalchemy import UniqueConstraint
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import DeclarativeBase
 from sqlalchemy.orm import Mapped
@@ -60,6 +61,10 @@ class TaskStatus(str, PyEnum):
     SUCCESS = "SUCCESS"
     FAILURE = "FAILURE"
 
+# class LanguageType(str, PyEnum):
+#     LUGANDA = "luganda"
+#     ENGLISH = "english"
+
 
 class Base(DeclarativeBase):
     pass
@@ -94,6 +99,21 @@ class User(SQLAlchemyBaseUserTableUUID, Base):
 
 class AccessToken(SQLAlchemyBaseAccessTokenTableUUID, Base):
     pass
+
+
+class ApiKey(Base):
+    __tablename__ = "api_key"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    hashed_api_key: Mapped[str] = mapped_column(String, unique=True)
+    api_key_display: Mapped[str] = mapped_column(String, unique=True)
+    # the ID of the "user" who represents the access credentials for the API key
+    user_id: Mapped[UUID] = mapped_column(ForeignKey("user.id"), nullable=False)
+    # the ID of the user who owns the key
+    owner_id: Mapped[UUID | None] = mapped_column(ForeignKey("user.id"), nullable=True)
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
 
 
 """
@@ -153,6 +173,15 @@ class ChatMessage__SearchDoc(Base):
     )
 
 
+class Document__Tag(Base):
+    __tablename__ = "document__tag"
+
+    document_id: Mapped[str] = mapped_column(
+        ForeignKey("document.id"), primary_key=True
+    )
+    tag_id: Mapped[int] = mapped_column(ForeignKey("tag.id"), primary_key=True)
+
+
 """
 Documents/Indexing Tables
 """
@@ -173,9 +202,7 @@ class ConnectorCredentialPair(Base):
         unique=True,
         nullable=False,
     )
-    name: Mapped[str] = mapped_column(
-        String, unique=True, nullable=True
-    )  # nullable for backwards compatability
+    name: Mapped[str] = mapped_column(String, nullable=False)
     connector_id: Mapped[int] = mapped_column(
         ForeignKey("connector.id"), primary_key=True
     )
@@ -248,6 +275,32 @@ class Document(Base):
 
     retrieval_feedbacks: Mapped[List["DocumentRetrievalFeedback"]] = relationship(
         "DocumentRetrievalFeedback", back_populates="document"
+    )
+    tags = relationship(
+        "Tag",
+        secondary="document__tag",
+        back_populates="documents",
+    )
+
+
+class Tag(Base):
+    __tablename__ = "tag"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tag_key: Mapped[str] = mapped_column(String)
+    tag_value: Mapped[str] = mapped_column(String)
+    source: Mapped[DocumentSource] = mapped_column(Enum(DocumentSource))
+
+    documents = relationship(
+        "Document",
+        secondary="document__tag",
+        back_populates="tags",
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "tag_key", "tag_value", "source", name="_tag_key_value_source_uc"
+        ),
     )
 
 
@@ -426,6 +479,7 @@ class SearchDoc(Base):
     boost: Mapped[int] = mapped_column(Integer)
     source_type: Mapped[DocumentSource] = mapped_column(Enum(DocumentSource))
     hidden: Mapped[bool] = mapped_column(Boolean)
+    doc_metadata: Mapped[dict[str, str | list[str]]] = mapped_column(postgresql.JSONB())
     score: Mapped[float] = mapped_column(Float)
     match_highlights: Mapped[list[str]] = mapped_column(postgresql.ARRAY(String))
     # This is for the document, not this row in the table
@@ -513,6 +567,8 @@ class ChatMessage(Base):
     document_feedbacks: Mapped[List["DocumentRetrievalFeedback"]] = relationship(
         "DocumentRetrievalFeedback", back_populates="chat_message"
     )
+    language: Mapped[str] = mapped_column(Text,nullable=False, default="english")
+    luganda_message: Mapped[str] = mapped_column(Text, nullable=True)
     search_docs = relationship(
         "SearchDoc",
         secondary="chat_message__search_doc",
@@ -552,6 +608,7 @@ class ChatMessageFeedback(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     chat_message_id: Mapped[int] = mapped_column(ForeignKey("chat_message.id"))
     is_positive: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    required_followup: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     feedback_text: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     chat_message: Mapped[ChatMessage] = relationship(
@@ -644,6 +701,12 @@ class Persona(Base):
     # Default personas are configured via backend during deployment
     # Treated specially (cannot be user edited etc.)
     default_persona: Mapped[bool] = mapped_column(Boolean, default=False)
+    # controls whether the persona is available to be selected by users
+    is_visible: Mapped[bool] = mapped_column(Boolean, default=True)
+    # controls the ordering of personas in the UI
+    # higher priority personas are displayed first, ties are resolved by the ID,
+    # where lower value IDs (e.g. created earlier) are displayed first
+    display_priority: Mapped[int] = mapped_column(Integer, nullable=True, default=None)
     deleted: Mapped[bool] = mapped_column(Boolean, default=False)
 
     # These are only defaults, users can select from all if desired
@@ -684,6 +747,9 @@ class ChannelConfig(TypedDict):
     respond_tag_only: NotRequired[bool]  # defaults to False
     respond_team_member_list: NotRequired[list[str]]
     answer_filters: NotRequired[list[AllowedAnswerFilters]]
+    # If None then no follow up
+    # If empty list, follow up with no tags
+    follow_up_tags: NotRequired[list[str]]
 
 
 class SlackBotConfig(Base):

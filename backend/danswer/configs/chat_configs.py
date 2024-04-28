@@ -31,6 +31,7 @@ QA_PROMPT_OVERRIDE = os.environ.get("QA_PROMPT_OVERRIDE") or None
 DOC_TIME_DECAY = float(
     os.environ.get("DOC_TIME_DECAY") or 0.5  # Hits limit at 2 years by default
 )
+BASE_RECENCY_DECAY = 0.5
 FAVOR_RECENT_DECAY_MULTIPLIER = 2.0
 # Currently this next one is not configurable via env
 DISABLE_LLM_QUERY_ANSWERABILITY = QA_PROMPT_OVERRIDE == "weak"
@@ -59,10 +60,20 @@ if os.environ.get("EDIT_KEYWORD_QUERY"):
 else:
     EDIT_KEYWORD_QUERY = not os.environ.get("DOCUMENT_ENCODER_MODEL")
 # Weighting factor between Vector and Keyword Search, 1 for completely vector search
-HYBRID_ALPHA = max(0, min(1, float(os.environ.get("HYBRID_ALPHA") or 0.6)))
+HYBRID_ALPHA = max(0, min(1, float(os.environ.get("HYBRID_ALPHA") or 0.66)))
+# Weighting factor between Title and Content of documents during search, 1 for completely
+# Title based. Default heavily favors Content because Title is also included at the top of
+# Content. This is to avoid cases where the Content is very relevant but it may not be clear
+# if the title is separated out. Title is most of a "boost" than a separate field.
+TITLE_CONTENT_RATIO = max(
+    0, min(1, float(os.environ.get("TITLE_CONTENT_RATIO") or 0.20))
+)
 # A list of languages passed to the LLM to rephase the query
 # For example "English,French,Spanish", be sure to use the "," separator
 MULTILINGUAL_QUERY_EXPANSION = os.environ.get("MULTILINGUAL_QUERY_EXPANSION") or None
+
+# Stops streaming answers back to the UI if this pattern is seen:
+STOP_STREAM_PAT = os.environ.get("STOP_STREAM_PAT") or None
 
 # The backend logic for this being True isn't fully supported yet
 HARD_DELETE_CHATS = False

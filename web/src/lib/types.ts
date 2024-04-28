@@ -12,8 +12,10 @@ export interface User {
 export type ValidSources =
   | "web"
   | "github"
+  | "gitlab"
   | "slack"
   | "google_drive"
+  | "gmail"
   | "bookstack"
   | "confluence"
   | "jira"
@@ -29,6 +31,7 @@ export type ValidSources =
   | "requesttracker"
   | "file"
   | "google_sites"
+  | "loopio"
   | "zendesk";
 
 export type ValidInputTypes = "load_state" | "poll" | "event";
@@ -76,11 +79,20 @@ export interface GithubConfig {
   include_issues: boolean;
 }
 
+export interface GitlabConfig {
+  project_owner: string;
+  project_name: string;
+  include_mrs: boolean;
+  include_issues: boolean;
+}
+
 export interface GoogleDriveConfig {
   folder_paths?: string[];
   include_shared?: boolean;
   follow_shortcuts?: boolean;
 }
+
+export interface GmailConfig {}
 
 export interface BookstackConfig {}
 
@@ -107,6 +119,10 @@ export interface GuruConfig {}
 
 export interface GongConfig {
   workspaces?: string[];
+}
+
+export interface LoopioConfig {
+  loopio_stack_name?: string;
 }
 
 export interface FileConfig {
@@ -184,6 +200,11 @@ export interface GithubCredentialJson {
   github_access_token: string;
 }
 
+export interface GitlabCredentialJson {
+  gitlab_url: string;
+  gitlab_access_token: string;
+}
+
 export interface BookstackCredentialJson {
   bookstack_base_url: string;
   bookstack_api_token_id: string;
@@ -208,8 +229,17 @@ export interface SlackCredentialJson {
   slack_bot_token: string;
 }
 
+export interface GmailCredentialJson {
+  gmail_tokens: string;
+}
+
 export interface GoogleDriveCredentialJson {
   google_drive_tokens: string;
+}
+
+export interface GmailServiceAccountCredentialJson {
+  gmail_service_account_key: string;
+  gmail_delegated_user: string;
 }
 
 export interface GoogleDriveServiceAccountCredentialJson {
@@ -237,6 +267,12 @@ export interface GuruCredentialJson {
 export interface GongCredentialJson {
   gong_access_key: string;
   gong_access_key_secret: string;
+}
+
+export interface LoopioCredentialJson {
+  loopio_subdomain: string;
+  loopio_client_id: string;
+  loopio_client_token: string;
 }
 
 export interface LinearCredentialJson {
@@ -288,6 +324,12 @@ export interface DocumentSet {
   is_up_to_date: boolean;
 }
 
+export interface Tag {
+  tag_key: string;
+  tag_value: string;
+  source: ValidSources;
+}
+
 // SLACK BOT CONFIGS
 
 export type AnswerFilterOption =
@@ -299,6 +341,7 @@ export interface ChannelConfig {
   respond_tag_only?: boolean;
   respond_team_member_list?: string[];
   answer_filters?: AnswerFilterOption[];
+  follow_up_tags?: string[];
 }
 
 export interface SlackBotConfig {

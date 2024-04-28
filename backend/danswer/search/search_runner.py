@@ -76,6 +76,7 @@ def query_processing(
     return query
 
 
+@log_function_time(print_only=True)
 def embed_query(
     query: str,
     prefix: str = ASYM_QUERY_PREFIX,
@@ -96,6 +97,7 @@ def chunks_to_search_docs(chunks: list[InferenceChunk] | None) -> list[SearchDoc
                 source_type=chunk.source_type,
                 boost=chunk.boost,
                 hidden=chunk.hidden,
+                metadata=chunk.metadata,
                 score=chunk.score,
                 match_highlights=chunk.match_highlights,
                 updated_at=chunk.updated_at,
@@ -134,7 +136,7 @@ def combine_retrieval_results(
     return sorted_chunks
 
 
-@log_function_time()
+@log_function_time(print_only=True)
 def doc_index_retrieval(
     query: SearchQuery,
     document_index: DocumentIndex,
@@ -162,6 +164,7 @@ def doc_index_retrieval(
             filters=query.filters,
             time_decay_multiplier=query.recency_bias_multiplier,
             num_to_retrieve=query.num_hits,
+            offset=query.offset,
             hybrid_alpha=hybrid_alpha,
         )
 
@@ -171,7 +174,7 @@ def doc_index_retrieval(
     return top_chunks
 
 
-@log_function_time()
+@log_function_time(print_only=True)
 def semantic_reranking(
     query: str,
     chunks: list[InferenceChunk],
@@ -433,6 +436,7 @@ def rerank_chunks(
     return ranked_chunks
 
 
+@log_function_time(print_only=True)
 def filter_chunks(
     query: SearchQuery,
     chunks_to_filter: list[InferenceChunk],

@@ -3,12 +3,12 @@
 import { Button } from "@tremor/react";
 import { CCPairFullInfo } from "./types";
 import { usePopup } from "@/components/admin/connectors/Popup";
-import { useRouter } from "next/navigation";
 import { FiTrash } from "react-icons/fi";
 import { deleteCCPair } from "@/lib/documentDeletion";
+import { mutate } from "swr";
+import { buildCCPairInfoUrl } from "./lib";
 
 export function DeletionButton({ ccPair }: { ccPair: CCPairFullInfo }) {
-  const router = useRouter();
   const { popup, setPopup } = usePopup();
 
   const isDeleting =
@@ -23,7 +23,7 @@ export function DeletionButton({ ccPair }: { ccPair: CCPairFullInfo }) {
       tooltip = "Click to delete";
     }
   } else {
-    tooltip = "You must disable the connector before deleting it";
+    tooltip = "You must pause the connector before deleting it";
   }
 
   return (
@@ -37,7 +37,7 @@ export function DeletionButton({ ccPair }: { ccPair: CCPairFullInfo }) {
             ccPair.connector.id,
             ccPair.credential.id,
             setPopup,
-            () => router.refresh()
+            () => mutate(buildCCPairInfoUrl(ccPair.id))
           )
         }
         icon={FiTrash}
