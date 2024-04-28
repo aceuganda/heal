@@ -23,6 +23,17 @@ Ask questions in Luganda or english, and Heal will understand.
 How It Works:
 Simply input your question, and Heal will retrieve relevant information from trusted private sources, helping medical personnel make informed decisions swiftly and accurately.
 
+<h3>Screenshots </h3>
+<img width="1438" alt="Screenshot 2024-04-28 at 12 44 04" src="https://github.com/aceuganda/heal/assets/69305400/eeb79f2a-9454-44c9-b9a5-ea4475194271">
+<img width="343" alt="Screenshot 2024-04-28 at 12 14 40" src="https://github.com/aceuganda/heal/assets/69305400/cbb9681e-54e6-4695-b311-9a3b224675d6">
+
+<h3>Usage</h3>
+Heal provides a fully-featured web UI that is also mobile responsive:
+
+https://github.com/aceuganda/heal/assets/69305400/b4fa755a-6172-4d50-a760-f44145ceb4fa
+
+
+
 <h2>Acknowledgement:</h2> This project is built upon the foundation laid by the original Danswer repository, which focused on providing reliable answers backed by quotes and references from source material.
 
 Origin Copy-
@@ -37,10 +48,6 @@ Origin Copy-
     <img src="https://img.shields.io/static/v1?label=license&message=MIT&color=blue" alt="License">
 </a>
 </p>
-
-<h3>Usage</h3>
-Heal provides a fully-featured web UI that is also mobile responsive:
-https://github.com/danswer-ai/danswer/assets/32520769/563be14c-9304-47b5-bf0a-9049c2b6f410
 
 ## 💃Original Features
 
