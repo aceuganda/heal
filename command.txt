@@ -21,7 +21,7 @@ docker compose -f docker-compose.prod.yml -p danswer-stack up -d --build --force
 backend
 docker compose -f docker-compose.prod.yml -p danswer-stack up -d --build --force-recreate api_server
 
-docker-compose -f docker-compose.prod.yml -p danswer-stack down --rmi all -v --remove-orphans
+docker compose -f docker-compose.prod.yml -p danswer-stack down --rmi all -v --remove-orphans
 
 
 docker-compose -f docker-compose.prod.yml -p danswer-stack build --no-cache web_server
@@ -30,3 +30,8 @@ extract db infor
 ssh into container
 pg_dump --username pg_username database_name" > 
 docker cp <cntId>:dump.sql dump.sql
+
+
+docker compose -f docker-compose.iptest.yml -p danswer-stack up -d --build  --force-recreate
+docker compose -f docker-compose.iptest.yml -p danswer-stack down -v
+docker compose -f docker-compose.iptest.yml -p danswer-stack build --no-cache web_server

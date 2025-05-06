@@ -477,7 +477,7 @@ def stream_chat_message(
         if is_luganda:
             # Translate english response to luganda
             luganda_response= ""
-            response = requests.post("http://65.108.33.93:5000/generate",
+            response = requests.post("http://135.181.63.203:4020/generate",
                              json={"prompt": llm_output, "stream": True}, stream=True)
 
             if response.status_code != 200:

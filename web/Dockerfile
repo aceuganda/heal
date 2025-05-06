@@ -47,7 +47,7 @@ WORKDIR /app
 RUN rm -rf /usr/local/lib/node_modules
 
 # Not needed, set by compose 
-# ENV NODE_ENV production  
+ENV NODE_ENV development  
 
 # Disable automatic telemetry collection
 ENV NEXT_TELEMETRY_DISABLED 1

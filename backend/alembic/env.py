@@ -64,18 +64,32 @@ def do_run_migrations(connection: Connection) -> None:
 async def run_async_migrations() -> None:
     """In this scenario we need to create an Engine
     and associate a connection with the context.
-
     """
 
+    print("Building async engine...")
+    connection_string = build_connection_string()
+    print(f"Using connection string: {connection_string}")
+
     connectable = create_async_engine(
-        build_connection_string(),
+        connection_string,
         poolclass=pool.NullPool,
     )
 
-    async with connectable.connect() as connection:
-        await connection.run_sync(do_run_migrations)
+    try:
+        print("Connecting to the database...")
+        async with connectable.connect() as connection:
+            print("Connection established.")
+            print("Running migrations...")
+            await connection.run_sync(do_run_migrations)
+            print("Migrations completed.")
+    except Exception as e:
+        print(f"Error during migration: {e}")
+        raise
+    finally:
+        print("Disposing engine...")
+        await connectable.dispose()
+        print("Engine disposed.")
 
-    await connectable.dispose()
 
 
 def run_migrations_online() -> None:

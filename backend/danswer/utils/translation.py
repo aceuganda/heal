@@ -5,7 +5,7 @@ import requests
 
 
 def translate_to_english(text: str) -> str:
-    url = "http://65.108.33.93:4002/translate"
+    url = "http://135.181.63.203:4002/translate"
     headers = {
         "Accept": "text/event-stream",
         "Content-Type": "application/json",
@@ -21,7 +21,7 @@ def translate_to_english(text: str) -> str:
 
 
 def translate_to_luganda(prompt) -> str:
-    response = requests.post("http://65.108.33.93:5000/generate",
+    response = requests.post("http://135.181.63.203:4020/generate",
                              json={"prompt": prompt, "stream": True}, stream=True)
 
     if response.status_code != 200:

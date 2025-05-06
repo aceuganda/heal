@@ -161,7 +161,7 @@ async def generate(req:Request) -> StreamingResponse:
 
         async def stream_words():
             async with aiohttp.ClientSession() as session:  # Use aiohttp for asynchronous requests
-                async with session.post("http://65.108.33.93:5000/generate", json={"prompt": input_data['prompt'], "stream": True}) as response:
+                async with session.post("http://135.181.63.203:4020/generate", json={"prompt": input_data['prompt'], "stream": True}) as response:
                     if response.status != 200:
                         raise Exception(f"Error fetching response: {response.status}")
 
