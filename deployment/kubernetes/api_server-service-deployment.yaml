@@ -28,8 +28,8 @@ spec:
     spec:
       containers:
       - name: api-server
-        image: danswer/danswer-backend:latest
-        imagePullPolicy: IfNotPresent
+        image: heal-backend:latest
+        imagePullPolicy: Never
         command:
           - "/bin/sh"
           - "-c"

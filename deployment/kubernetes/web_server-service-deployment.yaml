@@ -27,8 +27,8 @@ spec:
     spec:
       containers:
       - name: web-server
-        image: danswer/danswer-web-server:latest
-        imagePullPolicy: IfNotPresent
+        image: heal-frontend:latest
+        imagePullPolicy: Never
         ports:
         - containerPort: 3000
         # There are some extra values since this is shared between services
