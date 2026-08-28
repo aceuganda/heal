@@ -37,6 +37,9 @@ RUN apt-get remove -y --allow-remove-essential perl-base xserver-common xvfb cma
 # Set up application files
 WORKDIR /app
 COPY ./danswer /app/danswer
+# Heal-owned modules. `deprecated/` is deliberately not copied -- nothing in
+# the image should be able to import it.
+COPY ./heal /app/heal
 COPY ./shared_models /app/shared_models
 COPY ./alembic /app/alembic
 COPY ./alembic.ini /app/alembic.ini

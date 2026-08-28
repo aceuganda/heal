@@ -37,39 +37,82 @@ module.exports = {
         "document-sidebar": "1000px",
       },
       colors: {
-        link: "#3b82f6", // blue-500
-        subtle: "#6b7280", // gray-500
-        default: "#4b5563", // gray-600
-        emphasis: "#374151", // gray-700
-        strong: "#111827", // gray-900
-        inverted: "#ffffff", // white
-        background: "#f9fafb", // gray-50
-        "background-emphasis": "#f6f7f8",
-        "background-strong": "#eaecef",
-        border: "#e5e7eb", // gray-200
-        "border-light": "#f3f4f6", // gray-100
-        "border-strong": "#9ca3af", // gray-400
-        "hover-light": "#f3f4f6", // gray-100
-        hover: "#e5e7eb", // gray-200
-        popup: "#ffffff", // white
-        accent: "#6671d0",
-        "accent-hover": "#6671d0",
-        highlight: {
-          text: "#fef9c3", // yellow-100
+        // ---------------------------------------------------------------
+        // Heal palette: a white page, carried by red and black.
+        //
+        // `red` is the brand and every action. It is a deep clinical red
+        // rather than an alarm red, so it can hold large surfaces without
+        // shouting at a health worker reading it all day.
+        //
+        // `ink` is the neutral ramp -- warm blacks for text and chrome.
+        // Blue and indigo are gone from the design entirely.
+        // ---------------------------------------------------------------
+        heal: {
+          red: {
+            50: "#fef3f2",
+            100: "#fee4e2",
+            200: "#fecdca",
+            300: "#fda29b",
+            400: "#f97066",
+            500: "#f04438",
+            600: "#d92d20", // primary action
+            700: "#b42318", // pressed / hover
+            800: "#912018",
+            900: "#7a271a",
+          },
+          ink: {
+            50: "#f8f8f8",
+            100: "#f1f1f1",
+            200: "#e4e4e5",
+            300: "#c9c9cb",
+            400: "#9a9a9e",
+            500: "#6e6e73",
+            600: "#4b4b4f",
+            700: "#333336",
+            800: "#1f1f22",
+            900: "#141416",
+            950: "#0a0a0b",
+          },
         },
-        error: "#ef4444", // red-500
-        success: "#059669", // emerald-600
-        user: "#fb7185", // yellow-400
-        ai: "#60a5fa", // blue-400
+
+        // Semantic tokens. Components use these, not the ramps above, so a
+        // palette change stays a one-file change.
+        link: "#d92d20", // heal.red.600
+        subtle: "#9a9a9e", // heal.ink.400
+        default: "#6e6e73", // heal.ink.500
+        emphasis: "#333336", // heal.ink.700
+        strong: "#141416", // heal.ink.900
+        inverted: "#ffffff",
+        background: "#ffffff", // the page is white, not gray-50
+        "background-emphasis": "#fafafa",
+        "background-strong": "#f1f1f1", // heal.ink.100
+        border: "#e8e8e9",
+        "border-light": "#f3f3f4",
+        "border-strong": "#c9c9cb", // heal.ink.300
+        "hover-light": "#fef3f2", // heal.red.50 -- hover reads as red
+        hover: "#f1f1f1", // heal.ink.100
+        popup: "#ffffff",
+        accent: "#d92d20", // heal.red.600
+        "accent-hover": "#b42318", // heal.red.700
+        highlight: {
+          text: "#fee4e2", // heal.red.100 -- search highlight, was yellow
+        },
+        // Error shares the brand hue, so it is pitched darker than `accent`
+        // and should always be paired with an icon or a wash, never colour
+        // alone. See the note in the UI section of the plan.
+        error: "#912018", // heal.red.800
+        success: "#047857", // emerald-700
+        user: "#d92d20", // heal.red.600
+        ai: "#141416", // heal.ink.900
         // light mode
         tremor: {
           brand: {
-            faint: "#eff6ff", // blue-50
-            muted: "#bfdbfe", // blue-200
-            subtle: "#60a5fa", // blue-400
-            DEFAULT: "#3b82f6", // blue-500
-            emphasis: "#1d4ed8", // blue-700
-            inverted: "#ffffff", // white
+            faint: "#fef3f2", // heal.red.50
+            muted: "#fecdca", // heal.red.200
+            subtle: "#f97066", // heal.red.400
+            DEFAULT: "#d92d20", // heal.red.600
+            emphasis: "#b42318", // heal.red.700
+            inverted: "#ffffff",
           },
           background: {
             muted: "#f9fafb", // gray-50
@@ -84,22 +127,22 @@ module.exports = {
             DEFAULT: "#e5e7eb", // gray-200
           },
           content: {
-            subtle: "#9ca3af", // gray-400
-            DEFAULT: "#4b5563", // gray-600
-            emphasis: "#374151", // gray-700
-            strong: "#111827", // gray-900
-            inverted: "#ffffff", // white
+            subtle: "#9a9a9e", // heal.ink.400
+            DEFAULT: "#6e6e73", // heal.ink.500
+            emphasis: "#333336", // heal.ink.700
+            strong: "#141416", // heal.ink.900
+            inverted: "#ffffff",
           },
         },
         // dark mode
         "dark-tremor": {
           brand: {
-            faint: "#0B1229", // custom
-            muted: "#172554", // blue-950
-            subtle: "#1e40af", // blue-800
-            DEFAULT: "#3b82f6", // blue-500
-            emphasis: "#60a5fa", // blue-400
-            inverted: "#030712", // gray-950
+            faint: "#2a0f0d", // heal.red, deepened for dark surfaces
+            muted: "#7a271a", // heal.red.900
+            subtle: "#912018", // heal.red.800
+            DEFAULT: "#d92d20", // heal.red.600
+            emphasis: "#f97066", // heal.red.400
+            inverted: "#0a0a0b", // heal.ink.950
           },
           background: {
             muted: "#131A2B", // custom

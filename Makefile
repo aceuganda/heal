@@ -1,0 +1,156 @@
+# Heal -- developer entry points.
+#
+# Everything here runs the same commands CI runs, so `make check` passing
+# locally means the pull request is green. See docs/keep-and-simplify-plan.md.
+
+SHELL       := /bin/bash
+BACKEND     := backend
+WEB         := web
+VENV        := .venv
+PY          := $(VENV)/bin/python
+PIP         := $(VENV)/bin/pip
+COMPOSE     := docker compose -f deployment/docker_compose/docker-compose.local.yml -p heal-stack
+
+.DEFAULT_GOAL := help
+
+# ---------------------------------------------------------------------------
+# Help
+# ---------------------------------------------------------------------------
+
+.PHONY: help
+help: ## Show this help
+	@echo "Heal — make targets"
+	@echo
+	@grep -hE '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
+		| awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}'
+	@echo
+
+# ---------------------------------------------------------------------------
+# Setup
+# ---------------------------------------------------------------------------
+
+$(VENV)/bin/activate: $(BACKEND)/requirements/default.txt $(BACKEND)/requirements/dev.txt
+	python3 -m venv $(VENV)
+	$(PIP) install --upgrade pip
+	$(PIP) install -r $(BACKEND)/requirements/default.txt
+	$(PIP) install -r $(BACKEND)/requirements/dev.txt
+	@touch $(VENV)/bin/activate
+
+.PHONY: venv
+venv: $(VENV)/bin/activate ## Create the Python venv and install backend deps
+
+.PHONY: install
+install: venv ## Install backend and web dependencies
+	cd $(WEB) && npm install
+
+# ---------------------------------------------------------------------------
+# Code quality — these are exactly the CI steps
+# ---------------------------------------------------------------------------
+
+.PHONY: test
+test: venv ## Run backend unit tests
+	cd $(BACKEND) && ../$(PY) -m pytest tests/unit
+
+.PHONY: test-heal
+test-heal: venv ## Run only the heal/ tests (fast: no external deps)
+	cd $(BACKEND) && PYTHONPATH=. ../$(PY) -m pytest tests/unit/heal -q
+
+.PHONY: lint
+lint: venv ## Run ruff
+	cd $(BACKEND) && ../$(VENV)/bin/ruff .
+
+.PHONY: typecheck
+typecheck: venv ## Run mypy
+	cd $(BACKEND) && ../$(VENV)/bin/mypy .
+
+.PHONY: format
+format: venv ## Apply black and reorder-python-imports
+	cd $(BACKEND) && ../$(VENV)/bin/black .
+	cd $(BACKEND) && find ./danswer ./heal -name "*.py" \
+		| xargs ../$(VENV)/bin/reorder-python-imports --py311-plus || true
+
+.PHONY: format-check
+format-check: venv ## Check formatting without changing files
+	cd $(BACKEND) && ../$(VENV)/bin/black --check .
+
+.PHONY: deprecated-gate
+deprecated-gate: ## Fail if live code imports anything under deprecated/
+	@cd $(BACKEND) && ! grep -rnE "^\s*(from|import)\s+deprecated\b" danswer heal \
+		&& echo "deprecated/ is not imported by live code"
+
+.PHONY: check
+check: format-check lint typecheck test deprecated-gate ## Everything CI runs
+
+# ---------------------------------------------------------------------------
+# Local stack
+#
+# docker-compose.local.yml drops the `background` supervisord fleet and the
+# model server. Vespa is still present only because startup_event calls
+# ensure_indices_exist(); it goes when the chat-only flow lands.
+# ---------------------------------------------------------------------------
+
+.PHONY: up
+up: ## Build and start the local stack (web on :3000)
+	$(COMPOSE) up -d --build
+	@echo "Web http://localhost:3000   API http://localhost:8080"
+
+.PHONY: down
+down: ## Stop the local stack, keeping volumes
+	$(COMPOSE) down
+
+.PHONY: reset
+reset: ## Stop the local stack and DELETE its volumes (destroys local data)
+	$(COMPOSE) down -v
+
+.PHONY: logs
+logs: ## Tail logs from the local stack
+	$(COMPOSE) logs -f --tail=100
+
+.PHONY: ps
+ps: ## Show local stack status
+	$(COMPOSE) ps
+
+.PHONY: api-logs
+api-logs: ## Tail only the API server
+	$(COMPOSE) logs -f --tail=100 api_server
+
+# ---------------------------------------------------------------------------
+# Web
+# ---------------------------------------------------------------------------
+
+.PHONY: web-dev
+web-dev: ## Run the Next.js dev server against a running API
+	cd $(WEB) && npm run dev
+
+.PHONY: web-build
+web-build: ## Production build of the web app
+	cd $(WEB) && npm run build
+
+# ---------------------------------------------------------------------------
+# Database
+#
+# `migrate` is safe on an empty database. NEVER run it against production
+# during the Alembic rebaseline -- production is stamped, not upgraded.
+# See docs/keep-and-simplify-plan.md § Database migrations.
+# ---------------------------------------------------------------------------
+
+.PHONY: migrate
+migrate: ## Apply migrations to the local database
+	$(COMPOSE) exec api_server alembic upgrade head
+
+.PHONY: db-shell
+db-shell: ## psql into the local database
+	$(COMPOSE) exec relational_db psql -U postgres
+
+.PHONY: db-dump
+db-dump: ## Schema-only dump of the local database, for the rebaseline diff
+	$(COMPOSE) exec -T relational_db pg_dump --schema-only -U postgres postgres
+
+# ---------------------------------------------------------------------------
+# Housekeeping
+# ---------------------------------------------------------------------------
+
+.PHONY: clean
+clean: ## Remove the venv and Python caches
+	rm -rf $(VENV) $(BACKEND)/.mypy_cache $(BACKEND)/.pytest_cache
+	find $(BACKEND) -name "__pycache__" -type d -prune -exec rm -rf {} +

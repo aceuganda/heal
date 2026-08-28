@@ -787,7 +787,7 @@ export const Chat = ({
                             size={18}
                             className={
                               "text-emphasis w-9 h-9 p-2 rounded-lg " +
-                              (message ? "bg-blue-200" : "")
+                              (message ? "bg-heal-red-100" : "")
                             }
                           />
                         )}

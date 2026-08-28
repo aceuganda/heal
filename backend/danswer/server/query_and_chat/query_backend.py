@@ -1,11 +1,10 @@
-from fastapi import APIRouter, Request
+from fastapi import APIRouter
 from fastapi import Depends
 from fastapi import HTTPException
+from fastapi import Request
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
-from starlette.responses import JSONResponse 
-import aiohttp
-import asyncio
+from starlette.responses import JSONResponse
 
 from danswer.auth.users import current_admin_user
 from danswer.auth.users import current_user
@@ -32,7 +31,8 @@ from danswer.server.query_and_chat.models import SimpleQueryRequest
 from danswer.server.query_and_chat.models import SourceTag
 from danswer.server.query_and_chat.models import TagResponse
 from danswer.utils.logger import setup_logger
-from danswer.utils.translation import translate_to_english
+from heal.language import get_language_service
+from heal.language import TranslationError
 
 logger = setup_logger()
 
@@ -151,36 +151,38 @@ def get_answer_with_quote(
 
 
 @basic_router.post("/generate-luganda")
-async def generate(req:Request) -> StreamingResponse:
+async def generate(req: Request) -> StreamingResponse:
     logger.info(f"Received request for Luganda translation: {req}")
 
     try:
-        input_data = await req.json()   # Assuming query is in query parameter
+        input_data = await req.json()  # Assuming query is in query parameter
         if not input_data:
             return JSONResponse({"error": "Query is required"}, status_code=400)
 
         async def stream_words():
-            async with aiohttp.ClientSession() as session:  # Use aiohttp for asynchronous requests
-                async with session.post("http://65.108.33.93:5000/generate", json={"prompt": input_data['prompt'], "stream": True}) as response:
-                    if response.status != 200:
-                        raise Exception(f"Error fetching response: {response.status}")
-
-                    async for chunk in response.content.iter_chunked(1024):  # Stream in chunks
-                        decoded_chunk = chunk.decode("utf-8")
-                        lines = decoded_chunk.splitlines()
-                        for line in lines:
-                            if line.startswith("data: "):
-                                word = line[6:].strip()
-                                yield word + " "
-                                await asyncio.sleep(0.09)
+            # Transport, retries and pacing live in the provider; this endpoint
+            # only forwards tokens and turns a failure into readable text
+            # instead of a silently truncated stream.
+            try:
+                async for token in get_language_service().astream_to_luganda(
+                    input_data["prompt"]
+                ):
+                    yield token
+            except TranslationError as e:
+                logger.error(f"Luganda translation failed: {e}")
+                yield e.user_message
 
         return StreamingResponse(stream_words(), media_type="text/event-stream")
 
+    except TranslationError as e:
+        logger.error(f"Luganda translation failed: {e}")
+        return JSONResponse({"error": e.user_message}, status_code=503)
     except Exception as e:
         logger.exception(e)
         return JSONResponse({"error": "Failed to process translation"}, status_code=500)
 
+
 @basic_router.post("/generate-english")
-async def generateEnglish(req:Request) -> str:
-    input_data = await req.json() 
-    return translate_to_english(input_data['prompt'])
+async def generateEnglish(req: Request) -> str:
+    input_data = await req.json()
+    return get_language_service().to_english(input_data["prompt"])

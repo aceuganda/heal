@@ -36,7 +36,7 @@ export default function AddToMobileFirefox(props: Props) {
                     </div>
                 </div>
                 <button className="border-2 p-1" onClick={doNotShowAgain}>Don&apos;t show again</button>
-                <ImArrowDownRight className="text-4xl absolute -bottom-[50px] right-1 text-indigo-700 z-10 animate-bounce" />
+                <ImArrowDownRight className="text-4xl absolute -bottom-[50px] right-1 text-accent z-10 animate-bounce" />
             </div>
 
         </div>

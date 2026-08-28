@@ -2,28 +2,40 @@
 @tailwind components;
 @tailwind utilities;
 
-::-webkit-scrollbar-track {
-  background: #f9fafb; /* Track background color */
+html,
+body {
+  background-color: #ffffff;
+  color: #141416; /* heal.ink.900 */
 }
 
-/* Style the scrollbar handle */
+/* Focus rings pick up the brand red so keyboard users see the same accent. */
+:focus-visible {
+  outline: 2px solid #d92d20; /* heal.red.600 */
+  outline-offset: 2px;
+}
+
+/* Scrollbars follow the palette: an invisible track on the white page and an
+   ink thumb, so chrome never competes with the red used for actions. */
+::-webkit-scrollbar-track {
+  background: #ffffff;
+}
+
 ::-webkit-scrollbar-thumb {
-  background: #e5e7eb; /* Handle color */
+  background: #e4e4e5; /* heal.ink.200 */
   border-radius: 10px;
 }
 
-/* Handle on hover */
 ::-webkit-scrollbar-thumb:hover {
-  background: #d1d5db; /* Handle color on hover */
+  background: #c9c9cb; /* heal.ink.300 */
 }
 
 .dark-scrollbar::-webkit-scrollbar-thumb {
-  background: #c7cdd2; /* Handle color */
+  background: #c9c9cb; /* heal.ink.300 */
   border-radius: 10px;
 }
 
 .dark-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: #989a9c; /* Handle color on hover */
+  background: #9a9a9e; /* heal.ink.400 */
 }
 
 ::-webkit-scrollbar {

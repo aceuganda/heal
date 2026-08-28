@@ -114,14 +114,14 @@ const SessionsDownloadPage = () => {
             <AdminPageTitle title="Download Chat Sessions" icon={<ConnectorIcon size={32} />} />
             <div className='flex flex-row w-full gap-[2rem]'>
                 <button
-                    className={`bg-blue-500 p-3 text-white rounded ${loading ? 'opacity-50 cursor-not-allowed' : ''}`}
+                    className={`bg-accent p-3 text-white rounded ${loading ? 'opacity-50 cursor-not-allowed' : ''}`}
                     onClick={() => downloadChatSessions()}
                     disabled={loading}
                 >
                     {loading ? 'Downloading...' : 'Download Current Chat Json'}
                 </button>
                 <button
-                    className={`bg-blue-500 p-3 text-white rounded ${loading ? 'opacity-50 cursor-not-allowed' : ''}`}
+                    className={`bg-accent p-3 text-white rounded ${loading ? 'opacity-50 cursor-not-allowed' : ''}`}
                     onClick={() => downloadChatSessionsAsCSV()}
                     disabled={loading}
                 >

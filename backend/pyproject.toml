@@ -3,12 +3,25 @@ plugins = "sqlalchemy.ext.mypy.plugin"
 mypy_path = "$MYPY_CONFIG_FILE_DIR"
 explicit_package_bases = true
 disallow_untyped_defs = true
+# `deprecated/` is frozen text that nothing imports. Type-checking it would
+# block removals on errors in code that is already retired.
+exclude = ["^deprecated/"]
 
 [tool.ruff]
 ignore = []
 line-length = 130
+exclude = ["deprecated"]
 select = [
     "E",
     "F",
     "W",
 ]
+
+[tool.black]
+extend-exclude = "^/deprecated/"
+
+[tool.pytest.ini_options]
+testpaths = ["tests/unit"]
+# pytest-asyncio strict mode: async tests must carry @pytest.mark.asyncio, so
+# an accidentally-sync test cannot pass by never being awaited.
+asyncio_mode = "strict"

@@ -43,6 +43,7 @@ from danswer.server.query_and_chat.models import ChatMessageDetail
 from danswer.server.utils import get_json_line
 from danswer.utils.logger import setup_logger
 from danswer.utils.timing import log_generator_function_time
+
 # from danswer.utils.translation import translate_to_english
 
 logger = setup_logger()
@@ -207,8 +208,8 @@ def stream_answer_objects(
         parent_message=root_message,
         prompt_id=query_req.prompt_id,
         message=full_prompt_str,
-        language='english',
-        luganda_message= None,
+        language="english",
+        luganda_message=None,
         token_count=len(llm_tokenizer(full_prompt_str)),
         message_type=MessageType.USER,
         db_session=db_session,
@@ -246,8 +247,8 @@ def stream_answer_objects(
         parent_message=new_user_message,
         prompt_id=query_req.prompt_id,
         message=llm_output,
-        language='english',
-        luganda_message= None,
+        language="english",
+        luganda_message=None,
         token_count=len(llm_tokenizer(llm_output)),
         message_type=MessageType.ASSISTANT,
         error=error,

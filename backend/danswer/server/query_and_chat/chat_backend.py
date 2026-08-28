@@ -6,7 +6,8 @@ from sqlalchemy.orm import Session
 
 from danswer.auth.users import current_user
 from danswer.chat.chat_utils import create_chat_chain
-from danswer.chat.process_message import stream_chat_message,download_chat_sessions_helper
+from danswer.chat.process_message import download_chat_sessions_helper
+from danswer.chat.process_message import stream_chat_message
 from danswer.db.chat import create_chat_session
 from danswer.db.chat import delete_chat_session
 from danswer.db.chat import get_chat_message
@@ -37,7 +38,7 @@ from danswer.server.query_and_chat.models import RenameChatSessionResponse
 from danswer.server.query_and_chat.models import SearchFeedbackRequest
 from danswer.server.query_and_chat.models import TranslateChatMessagePayload
 from danswer.utils.logger import setup_logger
-from danswer.utils.translation import translate_to_luganda
+from heal.language import get_language_service
 
 logger = setup_logger()
 
@@ -240,24 +241,28 @@ def create_search_feedback(
         db_session=db_session,
     )
 
+
 @router.post("/translate-chat-message")
 def upd_chat_message(
     payload: TranslateChatMessagePayload,
     user: User | None = Depends(current_user),
     db_session: Session = Depends(get_session),
 ):
-    """Translate to luganda """
+    """Translate to luganda"""
     user_id = user.id if user is not None else None
     chat_message = get_chat_message(
         chat_message_id=payload.message_id,
         user_id=user_id,
         db_session=db_session,
     )
-    chat_message.luganda_message = translate_to_luganda(chat_message.message)
-    
+    chat_message.luganda_message = get_language_service().to_luganda(
+        chat_message.message
+    )
+
     db_session.commit()
 
     return chat_message
+
 
 @router.get("/user-chats")
 def download_chat_sessions(

@@ -156,7 +156,7 @@ class ChatMessageDetail(BaseModel):
     parent_message: int | None
     latest_child_message: int | None
     message: str
-    language: str = "english" 
+    language: str = "english"
     luganda_message: str | None
     rephrased_query: str | None
     context_docs: RetrievalDocs | None
@@ -195,5 +195,6 @@ class AdminSearchResponse(BaseModel):
 class DanswerAnswer(BaseModel):
     answer: str | None
 
+
 class TranslateChatMessagePayload(BaseModel):
-    message_id: int 
+    message_id: int

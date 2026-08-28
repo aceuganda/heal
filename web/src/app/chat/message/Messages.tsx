@@ -121,7 +121,7 @@ export const AIMessage = ({
                       a: ({ node, ...props }) => (
                         <a
                           {...props}
-                          className="text-blue-500 hover:text-blue-700"
+                          className="text-link hover:text-accent-hover"
                           target="_blank"
                           rel="noopener noreferrer"
                         />
@@ -197,7 +197,7 @@ export const AIMessage = ({
               {language === 'luganda' && messageId && !luganda_message &&
                 <button
                   onClick={() => handleTranslation(messageId)}
-                  className="text-blue-500 text-[10px] ml-8 "
+                  className="text-link text-[10px] ml-8 "
                 >
                   {messageIdTranslating && messageIdTranslating === messageId ? "translating..." : "Translate to Luganda"}
                 </button>}
@@ -265,7 +265,7 @@ export const HumanMessage = ({
                     a: ({ node, ...props }) => (
                       <a
                         {...props}
-                        className="text-blue-500 hover:text-blue-700"
+                        className="text-link hover:text-accent-hover"
                         target="_blank"
                         rel="noopener noreferrer"
                       />
@@ -284,7 +284,7 @@ export const HumanMessage = ({
           {language === 'luganda' && id && !luganda_message &&
             <button
               onClick={() => handleTranslation(id)}
-              className="text-blue-500 ml-16 text-[10px]"
+              className="text-link ml-16 text-[10px]"
             >
               {messageIdTranslating && messageIdTranslating === id ? "translating..." : "Translate to Luganda"}
             </button>}

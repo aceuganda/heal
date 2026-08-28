@@ -1,3 +1,8 @@
+"""RETIRED. Replaced by heal/language/. Kept for reference only.
+
+The service addresses have been redacted; they now come from
+TRANSLATION_EN_URL / TRANSLATION_LUG_URL. See docs/deprecated/MOVED.md.
+"""
 from random import choice
 import time
 import requests
@@ -5,7 +10,7 @@ import requests
 
 
 def translate_to_english(text: str) -> str:
-    url = "http://65.108.33.93:4002/translate"
+    url = "http://<TRANSLATION_EN_HOST_REDACTED>/translate"
     headers = {
         "Accept": "text/event-stream",
         "Content-Type": "application/json",
@@ -21,7 +26,7 @@ def translate_to_english(text: str) -> str:
 
 
 def translate_to_luganda(prompt) -> str:
-    response = requests.post("http://65.108.33.93:5000/generate",
+    response = requests.post("http://<TRANSLATION_LUG_HOST_REDACTED>/generate",
                              json={"prompt": prompt, "stream": True}, stream=True)
 
     if response.status_code != 200:

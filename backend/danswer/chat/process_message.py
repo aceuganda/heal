@@ -2,13 +2,11 @@ from collections.abc import Callable
 from collections.abc import Iterator
 from functools import partial
 from typing import cast
-import time
-import requests
-from sqlalchemy.orm import Session
-from sqlalchemy.orm import joinedload
-from io import StringIO
-from fastapi import HTTPException
+
 from fastapi.responses import JSONResponse
+from sqlalchemy.orm import joinedload
+from sqlalchemy.orm import Session
+
 from danswer.chat.chat_utils import build_chat_system_message
 from danswer.chat.chat_utils import build_chat_user_message
 from danswer.chat.chat_utils import create_chat_chain
@@ -30,13 +28,15 @@ from danswer.configs.constants import MessageType
 from danswer.db.chat import create_db_search_doc
 from danswer.db.chat import create_new_chat_message
 from danswer.db.chat import get_chat_message
-from danswer.db.chat import get_chat_session_by_id,get_chat_messages_by_session
+from danswer.db.chat import get_chat_messages_by_session
+from danswer.db.chat import get_chat_session_by_id
 from danswer.db.chat import get_db_search_doc_by_id
 from danswer.db.chat import get_doc_query_identifiers_from_model
 from danswer.db.chat import get_or_create_root_message
 from danswer.db.chat import translate_db_message_to_chat_message_detail
 from danswer.db.chat import translate_db_search_doc_to_server_search_doc
-from danswer.db.models import ChatMessage,ChatSession
+from danswer.db.models import ChatMessage
+from danswer.db.models import ChatSession
 from danswer.db.models import SearchDoc as DbSearchDoc
 from danswer.db.models import User
 from danswer.document_index.factory import get_default_document_index
@@ -58,7 +58,8 @@ from danswer.server.query_and_chat.models import CreateChatMessageRequest
 from danswer.server.utils import get_json_line
 from danswer.utils.logger import setup_logger
 from danswer.utils.timing import log_generator_function_time
-from danswer.utils.translation import translate_to_english, translate_to_luganda
+from heal.language import get_language_service
+from heal.language import TranslationError
 
 
 logger = setup_logger()
@@ -172,20 +173,21 @@ def stream_chat_message(
             user_id=user_id,
             db_session=db_session,
         )
-        # Check the language of the incoming message
-        is_luganda = new_msg_req.language == 'luganda'
+        # Design A: Luganda is translated on the way in, and everything
+        # downstream -- retrieval, ranking, generation -- runs in English only.
+        language_service = get_language_service()
+        is_luganda = language_service.is_luganda(new_msg_req.language)
 
-        message_text = new_msg_req.message 
+        message_text = new_msg_req.message
         luganda_message = None
 
         if is_luganda:
-            # Translate Luganda message to English
+            # Keep the original alongside the translation; the user's own words
+            # are what gets shown back to them and stored for review.
             luganda_message = message_text
-            translated_message_english = translate_to_english(message_text)
-            message_text = translated_message_english
-            
+            message_text = language_service.to_english(message_text)
 
-        #message_text = new_msg_req.message
+        # message_text = new_msg_req.message
         chat_session_id = new_msg_req.chat_session_id
         parent_id = new_msg_req.parent_message_id
         prompt_id = new_msg_req.prompt_id
@@ -451,6 +453,11 @@ def stream_chat_message(
             if not is_luganda:
                 yield get_json_line(packet.dict())
 
+    except TranslationError as e:
+        logger.error(f"Inbound translation failed: {e}")
+        yield get_json_line(StreamingError(error=e.user_message).dict())
+        return
+
     except Exception as e:
         logger.exception(e)
 
@@ -472,30 +479,21 @@ def stream_chat_message(
                 db_docs=reference_db_search_docs,
             )
 
-        # Luganda translation
+        # Outbound translation. The English answer is already complete, so the
+        # Luganda text is streamed to the browser as it is produced rather than
+        # made the user wait for the whole translation.
         luganda_response = None
         if is_luganda:
-            # Translate english response to luganda
-            luganda_response= ""
-            response = requests.post("http://65.108.33.93:5000/generate",
-                             json={"prompt": llm_output, "stream": True}, stream=True)
+            luganda_response = ""
+            try:
+                for token in language_service.stream_to_luganda(llm_output):
+                    luganda_response += token
+                    yield get_json_line(json_dict={"answer_piece": token})
+            except TranslationError as e:
+                logger.error(f"Luganda translation failed: {e}")
+                yield get_json_line(json_dict={"error": e.user_message})
+                return
 
-            if response.status_code != 200:
-                yield get_json_line(json_dict={ 'error':'Error fetching response'})
-                raise Exception(f"Error fetching response: {response.status_code}")
-
-            for chunk in response.iter_content(chunk_size=1024):
-                decoded_chunk = chunk.decode("utf-8")
-                lines = decoded_chunk.splitlines()
-                for line in lines:
-                    if line.startswith("data: "):
-                        word = line[6:].strip()
-                        luganda_response = luganda_response + word + " "
-                        yield get_json_line(json_dict={'answer_piece':word + " "})
-                        time.sleep(0.09)                    
-            
-        # Saving Gen AI answer and responding with message info
-        print(luganda_response)                
         gen_ai_response_message = partial_response(
             message=llm_output,
             language=new_msg_req.language,
@@ -518,22 +516,36 @@ def stream_chat_message(
 
         yield get_json_line(error_packet.dict())
 
+
 def download_chat_sessions_helper(db_session: Session):
     """
     Download all chat sessions as a JSON response.
     """
     try:
-        all_sessions = db_session.query(ChatSession).options(joinedload(ChatSession.user)).all()
+        all_sessions = (
+            db_session.query(ChatSession).options(joinedload(ChatSession.user)).all()
+        )
         sessions_with_messages = []
 
         for session in all_sessions:
-            user_email = session.user.email if session.user else None  # Assuming the user email is stored in the 'email' attribute
-            messages = get_chat_messages_by_session(session.id, None, db_session=db_session, skip_permission_check=True)
+            user_email = (
+                session.user.email if session.user else None
+            )  # Assuming the user email is stored in the 'email' attribute
+            messages = get_chat_messages_by_session(
+                session.id, None, db_session=db_session, skip_permission_check=True
+            )
             session_data = {
-                'session_id': session.id,
-                'session_description': session.description,
-                'user_email': user_email,
-                'messages': [{'message_type': message.message_type, 'message': message.message, 'luganda_message': message.luganda_message} for message in messages]
+                "session_id": session.id,
+                "session_description": session.description,
+                "user_email": user_email,
+                "messages": [
+                    {
+                        "message_type": message.message_type,
+                        "message": message.message,
+                        "luganda_message": message.luganda_message,
+                    }
+                    for message in messages
+                ],
             }
             sessions_with_messages.append(session_data)
 

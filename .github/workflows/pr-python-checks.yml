@@ -38,9 +38,21 @@ jobs:
     - name: Check import order with reorder-python-imports
       run: |
         cd backend
-        find ./danswer -name "*.py" | xargs reorder-python-imports --py311-plus
+        find ./danswer ./heal -name "*.py" | xargs reorder-python-imports --py311-plus
 
     - name: Check code formatting with Black
       run: |
         cd backend
         black --check .
+
+    - name: Run unit tests
+      run: |
+        cd backend
+        pytest tests/unit
+
+    # Nothing under deprecated/ may be imported by live code. The rule is
+    # enforced as a test as well; this keeps it visible in the CI log.
+    - name: Check deprecated code is not imported
+      run: |
+        cd backend
+        ! grep -rnE "^\s*(from|import)\s+deprecated\b" danswer heal

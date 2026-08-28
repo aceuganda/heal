@@ -7,7 +7,6 @@ Create Date: 2024-02-05 14:54:09.485586
 """
 from alembic import op
 import sqlalchemy as sa
-from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
 revision = "853cc4ff26b5"
@@ -17,9 +16,7 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.add_column(
-        "chat_message", sa.Column("language", sa.Text(), nullable=False)
-    )
+    op.add_column("chat_message", sa.Column("language", sa.Text(), nullable=False))
     op.add_column(
         "chat_message", sa.Column("luganda_message", sa.Text(), nullable=True)
     )
