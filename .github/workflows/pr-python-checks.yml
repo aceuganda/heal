@@ -8,6 +8,22 @@ jobs:
   mypy-check:
     runs-on: ubuntu-latest
 
+    # Scratch database for the migration check below. Never points anywhere
+    # near production -- production is stamped, not upgraded.
+    services:
+      postgres:
+        image: postgres:15.2-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
     steps:
     - name: Checkout code
       uses: actions/checkout@v3
@@ -55,4 +71,81 @@ jobs:
     - name: Check deprecated code is not imported
       run: |
         cd backend
-        ! grep -rnE "^\s*(from|import)\s+deprecated\b" danswer heal
+        ! grep -rnE "^\s*(from|import)\s+deprecated\b" heal_app heal
+
+    # Static analysis proved the import graph resolves; this proves the
+    # interpreter agrees. A dependency removed from default.txt that still has
+    # an indirect consumer shows up here and nowhere earlier.
+    - name: Check the app imports
+      run: |
+        cd backend
+        python -c "import heal_app.main"
+
+    - name: Check migrations apply to an empty database
+      env:
+        POSTGRES_HOST: localhost
+        POSTGRES_USER: postgres
+        POSTGRES_PASSWORD: password
+      run: |
+        cd backend
+        alembic upgrade head
+
+  # The images had never been built when the Phase 1 modules landed. This is
+  # the gate that catches a missing runtime-only dependency or a path the
+  # Dockerfile forgets to copy.
+  docker-build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Validate the compose files
+      run: |
+        cd deployment/docker_compose
+        docker compose -f docker-compose.local.yml config -q
+        docker compose -f docker-compose.local.yml --profile knowledge config -q
+        touch .env .env.nginx
+        docker compose -f docker-compose.prod.yml config -q
+        docker compose -f docker-compose.prod.yml --profile letsencrypt --profile knowledge config -q
+        rm -f .env .env.nginx
+
+    - name: Build the backend image
+      uses: docker/build-push-action@v5
+      with:
+        context: ./backend
+        file: ./backend/Dockerfile
+        push: false
+        load: true
+        tags: heal-backend:ci
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+
+    - name: Check the app imports inside the image
+      run: |
+        docker run --rm heal-backend:ci python -c "import heal_app.main; print('heal_app.main imports')"
+
+    - name: Build the web image
+      uses: docker/build-push-action@v5
+      with:
+        context: ./web
+        file: ./web/Dockerfile
+        push: false
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+
+    # No deployed service may reach Vespa. Matches configuration, not prose:
+    # the compose and Dockerfile comments explaining why Vespa is gone are
+    # worth keeping, and docker-compose.dev.yml is the frozen Danswer-era
+    # reference, so both are out of scope here.
+    - name: Check no deployed service reaches Vespa
+      run: |
+        ! grep -rniE "vespaengine/|VESPA_[A-Z_]+=" \
+            deployment/docker_compose/docker-compose.local.yml \
+            deployment/docker_compose/docker-compose.prod.yml \
+            deployment/kubernetes
+        ! grep -rnE "^\s*(from|import)\s+danswer\.(document_index|search|indexing)\b" \
+            backend/heal

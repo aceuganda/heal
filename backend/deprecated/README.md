@@ -2,7 +2,7 @@
 
 Frozen code from the Danswer fork, kept for review and revert only.
 
-Rules (from `docs/keep-and-simplify-plan.md`):
+Rules (from `docs/architecture-decisions.md`):
 
 1. Nothing here may be imported by live code. Enforced by
    `backend/tests/unit/heal/test_no_hardcoded_endpoints.py` and a CI grep.

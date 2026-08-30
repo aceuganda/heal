@@ -30,13 +30,13 @@ jobs:
         platforms: linux/amd64,linux/arm64
         push: true
         tags: |
-          danswer/danswer-web-server:${{ github.ref_name }}
-          danswer/danswer-web-server:latest
+          khalifan1126/heal-web:${{ github.ref_name }}
+          khalifan1126/heal-web:latest
         build-args: |
-          DANSWER_VERSION=${{ github.ref_name }}
+          HEAL_VERSION=${{ github.ref_name }}
 
     - name: Run Trivy vulnerability scanner
       uses: aquasecurity/trivy-action@master
       with:
-        image-ref: docker.io/danswer/danswer-web-server:${{ github.ref_name }}
+        image-ref: docker.io/khalifan1126/heal-web:${{ github.ref_name }}
         severity: 'CRITICAL,HIGH'

@@ -1,9 +1,9 @@
 FROM node:20-alpine AS base
 
-# Default DANSWER_VERSION, typically overriden during builds by GitHub Actions.
-ARG DANSWER_VERSION=0.3-dev
-ENV DANSWER_VERSION=${DANSWER_VERSION}
-RUN echo "DANSWER_VERSION: ${DANSWER_VERSION}"
+# Image version, normally overridden by the release workflow with the git tag.
+ARG HEAL_VERSION=0.3-dev
+ENV HEAL_VERSION=${HEAL_VERSION}
+RUN echo "HEAL_VERSION: ${HEAL_VERSION}"
 
 # Step 1. Install dependencies only when needed
 FROM base AS deps

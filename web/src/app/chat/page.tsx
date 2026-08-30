@@ -15,7 +15,6 @@ import {
 import { unstable_noStore as noStore } from "next/cache";
 import { Persona } from "../admin/personas/interfaces";
 import { InstantSSRAutoRefresh } from "@/components/SSRAutoRefresh";
-import { WelcomeModal } from "@/components/WelcomeModal";
 import { ApiKeyModal } from "@/components/openai/ApiKeyModal";
 import { cookies } from "next/headers";
 import { DOCUMENT_SIDEBAR_WIDTH_COOKIE_NAME } from "@/components/resizable/contants";
@@ -141,7 +140,6 @@ export default async function Page({
       <InstantSSRAutoRefresh />
       <ApiKeyModal />
 
-      {connectors.length === 0 && <WelcomeModal />}
 
       <ChatLayout
         user={user}

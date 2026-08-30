@@ -1,62 +1,74 @@
-version: '3'
+# Heal production stack -- Phase 1.
+#
+# Four services carry a health worker's question end to end:
+#
+#   nginx          TLS termination and routing
+#   web_server     Next.js chat UI
+#   api_server     FastAPI + MedicalGuidanceAgent
+#   relational_db  PostgreSQL, the system of record
+#
+# Two optional profiles, neither on by default:
+#
+#   --profile letsencrypt   adds certbot for automatic certificate renewal.
+#                           Omit it when TLS is terminated upstream; this
+#                           replaces the old docker-compose.prod-no-letsencrypt.yml.
+#   --profile knowledge     adds Qdrant for Phase 2 retrieval. The API ignores
+#                           it entirely while KNOWLEDGE_ENABLED=false, so
+#                           Phase 2 is a flag flip, not a stack rewrite.
+#
+# Gone from the Danswer-era stack: `index` (Vespa 8.277.17), `background`
+# (the supervisord fleet -- indexing loop, Celery, Beat, Dask, Slack listener)
+# and `model_server`. The originals are frozen in deployment/deprecated/.
+#
+#   docker compose -f docker-compose.prod.yml -p heal-stack up -d
+#   docker compose -f docker-compose.prod.yml --profile letsencrypt -p heal-stack up -d
+
 services:
   api_server:
-    image: danswer/danswer-backend:latest
+    image: khalifan1126/heal-backend:latest
     build:
       context: ../../backend
       dockerfile: Dockerfile
+    # `alembic upgrade head` is a no-op once production is stamped at
+    # 0001_heal_baseline. NEVER let it run the rebaseline against production --
+    # see docs/architecture-decisions.md, "Database migrations".
     command: >
-      /bin/sh -c "alembic upgrade head && echo \"Starting Danswer Api Server\" && uvicorn danswer.main:app --host 0.0.0.0 --port 8080"
+      /bin/sh -c "alembic upgrade head &&
+        echo 'Starting Heal API server' &&
+        uvicorn heal_app.main:app --host 0.0.0.0 --port 8080"
     depends_on:
-      - relational_db
-      - index
+      relational_db:
+        condition: service_healthy
     restart: always
     env_file:
       - .env
     environment:
       - AUTH_TYPE=${AUTH_TYPE:-google_oauth}
       - POSTGRES_HOST=relational_db
-      - VESPA_HOST=index
+      # Retrieval is off until Phase 2 lands. `false` must reproduce Phase 1
+      # behaviour exactly, so Day 8 can be cut without a rollback.
+      - KNOWLEDGE_ENABLED=${KNOWLEDGE_ENABLED:-false}
+      - QDRANT_URL=${QDRANT_URL:-}
+      - QDRANT_API_KEY=${QDRANT_API_KEY:-}
+    # Python, not curl: curl does not survive the image's CVE cleanup.
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request as u; u.urlopen('http://localhost:8080/health', timeout=5)"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 90s
     volumes:
+      # Dynamic config store (see danswer/dynamic_configs). The connector temp
+      # storage and the nltk/torch model caches went with the background fleet.
       - local_dynamic_storage:/home/storage
-      - file_connector_tmp_storage:/home/file_connector_storage
-      - model_cache_torch:/root/.cache/torch/
-      - model_cache_nltk:/root/nltk_data/
-      - model_cache_huggingface:/root/.cache/huggingface/
     logging:
       driver: json-file
       options:
         max-size: "50m"
         max-file: "6"
-  background:
-    image: danswer/danswer-backend:latest
-    build:
-      context: ../../backend
-      dockerfile: Dockerfile
-    command: /usr/bin/supervisord
-    depends_on:
-      - relational_db
-      - index
-    restart: always
-    env_file:
-      - .env
-    environment:
-      - AUTH_TYPE=${AUTH_TYPE:-google_oauth}
-      - POSTGRES_HOST=relational_db
-      - VESPA_HOST=index
-    volumes:
-      - local_dynamic_storage:/home/storage
-      - file_connector_tmp_storage:/home/file_connector_storage
-      - model_cache_torch:/root/.cache/torch/
-      - model_cache_nltk:/root/nltk_data/
-      - model_cache_huggingface:/root/.cache/huggingface/
-    logging:
-      driver: json-file
-      options:
-        max-size: "50m"
-        max-file: "6"
+
   web_server:
-    image: danswer/danswer-web-server:latest
+    image: khalifan1126/heal-web:latest
     build:
       context: ../../web
       dockerfile: Dockerfile
@@ -74,12 +86,20 @@ services:
       options:
         max-size: "50m"
         max-file: "6"
+
   relational_db:
     image: postgres:15.2-alpine
     restart: always
-    # POSTGRES_USER and POSTGRES_PASSWORD should be set in .env file
+    # POSTGRES_USER and POSTGRES_PASSWORD are set in .env
     env_file:
       - .env
+    # Not published to the host: the database is reachable only on the compose
+    # network. Use `docker compose exec relational_db psql` for admin access.
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-postgres}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     volumes:
       - db_volume:/var/lib/postgresql/data
     logging:
@@ -87,25 +107,12 @@ services:
       options:
         max-size: "50m"
         max-file: "6"
-  # This container name cannot have an underscore in it due to Vespa expectations of the URL
-  index:
-    image: vespaengine/vespa:8.277.17
-    restart: always
-    ports:
-      - "19071:19071"
-      - "8081:8081"
-    volumes:
-      - vespa_volume:/opt/vespa/var
-    logging:
-      driver: json-file
-      options:
-        max-size: "50m"
-        max-file: "6"
+
   nginx:
     image: nginx:1.23.4-alpine
     restart: always
-    # nginx will immediately crash with `nginx: [emerg] host not found in upstream`
-    # if api_server / web_server are not up 
+    # nginx exits immediately with `host not found in upstream` if the
+    # api_server / web_server names do not resolve yet.
     depends_on:
       - api_server
       - web_server
@@ -116,23 +123,37 @@ services:
       - ../data/nginx:/etc/nginx/conf.d
       - ../data/certbot/conf:/etc/letsencrypt
       - ../data/certbot/www:/var/www/certbot
-    # sleep a little bit to allow the web_server / api_server to start up. 
-    # Without this we've seen issues where nginx shows no error logs but 
-    # does not recieve any traffic
     logging:
       driver: json-file
       options:
         max-size: "50m"
         max-file: "6"
+    # NGINX_CONF_TEMPLATE selects the config: `app.conf.template` for the
+    # certbot flow, `app.conf.template.no-letsencrypt` when TLS is terminated
+    # upstream. One compose file, both deployment shapes.
+    environment:
+      - NGINX_CONF_TEMPLATE=${NGINX_CONF_TEMPLATE:-app.conf.template}
+    # Order matters -- see the note in docker-compose.local.yml. Backgrounding
+    # the whole chain starts nginx before envsubst has written app.conf, so it
+    # reads whatever stale config is on the volume and crash-loops.
+    #
+    # The sleep gives web_server / api_server time to bind: nginx resolves
+    # upstream names once, at startup, and exits if one does not resolve.
     command: >
       /bin/sh -c "sleep 10 &&
-        envsubst '$$\{DOMAIN\}' < /etc/nginx/conf.d/app.conf.template > /etc/nginx/conf.d/app.conf &&
-        while :; do sleep 6h & wait $${!}; nginx -s reload; done & nginx -g \"daemon off;\""
+        envsubst '$$\{DOMAIN\}' < /etc/nginx/conf.d/$${NGINX_CONF_TEMPLATE} > /etc/nginx/conf.d/app.conf &&
+        { while :; do sleep 6h & wait $${!}; nginx -s reload; done & } &&
+        nginx -g \"daemon off;\""
     env_file:
       - .env.nginx
-  # follows https://pentacent.medium.com/nginx-and-lets-encrypt-with-docker-in-less-than-5-minutes-b4b8a60d3a71
+
+  # Only with --profile letsencrypt. Omit the profile when a load balancer or
+  # an upstream proxy already terminates TLS.
+  # Follows https://pentacent.medium.com/nginx-and-lets-encrypt-with-docker-in-less-than-5-minutes-b4b8a60d3a71
   certbot:
     image: certbot/certbot
+    profiles:
+      - "letsencrypt"
     restart: always
     volumes:
       - ../data/certbot/conf:/etc/letsencrypt
@@ -143,35 +164,34 @@ services:
         max-size: "50m"
         max-file: "6"
     entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew; sleep 12h & wait $${!}; done;'"
-  # Run with --profile model-server to bring up the danswer-model-server container
-  model_server:
-    image: danswer/danswer-model-server:latest
-    build:
-      context: ../../backend
-      dockerfile: Dockerfile.model_server
+
+  # Phase 2 retrieval. Only with --profile knowledge.
+  #
+  # Qdrant's default setup has NO authentication, so QDRANT_API_KEY must be set
+  # in .env before this profile is used; heal/config.py refuses to start the
+  # knowledge path without it. No port is published to the host either -- the
+  # service is reachable only from api_server on the compose network.
+  # Use named vectors from the first ingest so dense + sparse hybrid search is
+  # designed in rather than retrofitted (ranking risk #1: drug codes, dosages).
+  qdrant:
+    # v1.19.0 publishes linux/amd64 and linux/arm64 -- the Day 8 ARM64 check.
+    image: qdrant/qdrant:v1.19.0
     profiles:
-      - "model-server"
-    command: uvicorn model_server.main:app --host 0.0.0.0 --port 9000
+      - "knowledge"
     restart: always
     environment:
-      - DOCUMENT_ENCODER_MODEL=${DOCUMENT_ENCODER_MODEL:-}
-      - NORMALIZE_EMBEDDINGS=${NORMALIZE_EMBEDDINGS:-}
-      - MIN_THREADS_ML_MODELS=${MIN_THREADS_ML_MODELS:-}
-      # Set to debug to get more fine-grained logs
-      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - QDRANT__SERVICE__API_KEY=${QDRANT_API_KEY:-}
+      - QDRANT__TELEMETRY_DISABLED=true
     volumes:
-      - model_cache_torch:/root/.cache/torch/
-      - model_cache_huggingface:/root/.cache/huggingface/
+      - qdrant_volume:/qdrant/storage
     logging:
       driver: json-file
       options:
         max-size: "50m"
         max-file: "6"
+
 volumes:
   local_dynamic_storage:
-  file_connector_tmp_storage: # used to store files uploaded by the user temporarily while we are indexing them
   db_volume:
-  vespa_volume:
-  model_cache_torch:
-  model_cache_nltk:
-  model_cache_huggingface:
+  # Created only when the knowledge profile runs.
+  qdrant_volume:

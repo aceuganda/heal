@@ -1,12 +1,22 @@
+# FROZEN REFERENCE -- the Danswer-era stack, not a deployment target.
+#
+# Kept so the seven-service original can be read side by side with what
+# replaced it. Heal deploys docker-compose.local.yml (local) and
+# docker-compose.prod.yml (production); both are four services.
+#
+# This file is no longer buildable as written: the `model_server` service
+# points at Dockerfile.model_server, which now lives in backend/deprecated/.
+# That is deliberate. Do not repair it -- read it, and use the other two.
+
 version: '3'
 services:
   api_server:
-    image: danswer/danswer-backend:latest
+    image: khalifan1126/heal-backend:latest
     build:
       context: ../../backend
       dockerfile: Dockerfile
     command: >
-      /bin/sh -c "alembic upgrade head && echo \"Starting Danswer Api Server\" && uvicorn danswer.main:app --host 0.0.0.0 --port 8080"
+      /bin/sh -c "alembic upgrade head && echo \"Starting Danswer Api Server\" && uvicorn heal_app.main:app --host 0.0.0.0 --port 8080"
     depends_on:
       - relational_db
       - index
@@ -87,7 +97,7 @@ services:
         max-size: "50m"
         max-file: "6"
   background:
-    image: danswer/danswer-backend:latest
+    image: khalifan1126/heal-backend:latest
     build:
       context: ../../backend
       dockerfile: Dockerfile
@@ -168,7 +178,7 @@ services:
         max-size: "50m"
         max-file: "6"
   web_server:
-    image: danswer/danswer-web-server:latest
+    image: khalifan1126/heal-web:latest
     build:
       context: ../../web
       dockerfile: Dockerfile
@@ -235,7 +245,7 @@ services:
   # Be sure to change MODEL_SERVER_HOST (see above) as well
   # ie. MODEL_SERVER_HOST="model_server" docker-compose -f docker-compose.dev.yml -p danswer-stack --profile model-server up -d --build
   model_server:
-    image: danswer/danswer-model-server:latest
+    image: khalifan1126/heal-model-server:latest
     build:
       context: ../../backend
       dockerfile: Dockerfile.model_server

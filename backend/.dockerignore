@@ -18,3 +18,13 @@ htmlcov/
 
 
 ./venv
+
+# Retired code must never reach the image.
+deprecated/
+tests/
+
+# The Vespa app bundle (schema + services.xml) is data, read only by
+# VespaIndex.ensure_indices_exist(), which nothing calls any more. The Python
+# package itself still ships because db/document.py imports DocumentMetadata
+# from document_index/interfaces.py -- see docs/deprecated/MOVED.md.
+heal_app/document_index/vespa/app_config/

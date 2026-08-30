@@ -1,32 +1,33 @@
-version: '3'
-
 # Local Phase 1 stack.
 #
-# The same services as docker-compose.dev.yml minus the two that no health
-# worker's question ever touches:
+# Four services: api_server, web_server, relational_db, nginx.
 #
+# Not here, and why:
+#   index         Vespa. Nothing on the boot path or the chat path reaches it.
+#                 Retrieval returns in Phase 2 on Qdrant.
 #   background    the supervisord fleet (indexing loop, Celery, Beat, Dask,
 #                 Slack listener). Heal configures no connectors, so every one
-#                 of its poll cycles finds nothing.
-#   model_server  not used unless MODEL_SERVER_HOST is set.
+#                 of its poll cycles found nothing.
+#   model_server  no embedding or reranking model runs in Phase 1.
 #
-# `index` (Vespa) is still here only because danswer.main:startup_event calls
-# ensure_indices_exist() on boot. It comes out when the chat-only flow lands
-# and retrieval moves to the KnowledgeStore.
+# Qdrant is defined behind `--profile knowledge` so Phase 2 is a flag flip
+# rather than a stack rewrite. `make up` does not start it.
 #
 # Run it with `make up` from the repo root.
 
 services:
   api_server:
-    image: danswer/danswer-backend:latest
+    image: khalifan1126/heal-backend:latest
     build:
       context: ../../backend
       dockerfile: Dockerfile
     command: >
-      /bin/sh -c "alembic upgrade head && echo \"Starting Danswer Api Server\" && uvicorn danswer.main:app --host 0.0.0.0 --port 8080"
+      /bin/sh -c "alembic upgrade head &&
+        echo 'Starting Heal API server' &&
+        uvicorn heal_app.main:app --host 0.0.0.0 --port 8080"
     depends_on:
-      - relational_db
-      - index
+      relational_db:
+        condition: service_healthy
     restart: always
     ports:
       - "8080:8080"
@@ -43,7 +44,6 @@ services:
       - SMTP_USER=${SMTP_USER:-}
       - SMTP_PASS=${SMTP_PASS:-}
       - EMAIL_FROM=${EMAIL_FROM:-}
-      # Gen AI Settings
       # Translation services (Design A). No defaults: a missing URL fails
       # loudly rather than pointing at someone else's server.
       - TRANSLATION_PROVIDER=${TRANSLATION_PROVIDER:-heal_mt}
@@ -53,58 +53,53 @@ services:
       - TRANSLATION_CONNECT_TIMEOUT=${TRANSLATION_CONNECT_TIMEOUT:-5}
       - TRANSLATION_READ_TIMEOUT=${TRANSLATION_READ_TIMEOUT:-60}
       - TRANSLATION_MAX_RETRIES=${TRANSLATION_MAX_RETRIES:-2}
+      # Chat model selection. Ids come from the catalogue in heal/llm/registry.py.
+      - HEAL_CHAT_MODEL=${HEAL_CHAT_MODEL:-}
+      - HEAL_CLASSIFIER_MODEL=${HEAL_CLASSIFIER_MODEL:-}
+      - HEAL_ENABLED_CHAT_MODELS=${HEAL_ENABLED_CHAT_MODELS:-}
+      - HEAL_LLM_TIMEOUT=${HEAL_LLM_TIMEOUT:-}
+      - HEAL_EMERGENCY_CONTACT=${HEAL_EMERGENCY_CONTACT:-}
+      # Gen AI Settings
       - GEN_AI_MODEL_PROVIDER=${GEN_AI_MODEL_PROVIDER:-openai}
-      - GEN_AI_MODEL_VERSION=${GEN_AI_MODEL_VERSION:-gpt-3.5-turbo}
-      - FAST_GEN_AI_MODEL_VERSION=${FAST_GEN_AI_MODEL_VERSION:-gpt-3.5-turbo}
+      - GEN_AI_MODEL_VERSION=${GEN_AI_MODEL_VERSION:-gpt-4o-mini}
+      - FAST_GEN_AI_MODEL_VERSION=${FAST_GEN_AI_MODEL_VERSION:-gpt-4o-mini}
       - GEN_AI_API_KEY=${GEN_AI_API_KEY:-}
       - GEN_AI_API_ENDPOINT=${GEN_AI_API_ENDPOINT:-}
       - GEN_AI_API_VERSION=${GEN_AI_API_VERSION:-}
       - GEN_AI_LLM_PROVIDER_TYPE=${GEN_AI_LLM_PROVIDER_TYPE:-}
       - QA_TIMEOUT=${QA_TIMEOUT:-}
-      - NUM_DOCUMENT_TOKENS_FED_TO_GENERATIVE_MODEL=${NUM_DOCUMENT_TOKENS_FED_TO_GENERATIVE_MODEL:-}
-      - DISABLE_LLM_FILTER_EXTRACTION=${DISABLE_LLM_FILTER_EXTRACTION:-}
-      - DISABLE_LLM_CHUNK_FILTER=${DISABLE_LLM_CHUNK_FILTER:-}
-      - DISABLE_LLM_CHOOSE_SEARCH=${DISABLE_LLM_CHOOSE_SEARCH:-}
       - DISABLE_GENERATIVE_AI=${DISABLE_GENERATIVE_AI:-}
-      # Query Options
-      - DOC_TIME_DECAY=${DOC_TIME_DECAY:-} # Recency Bias for search results, decay at 1 / (1 + DOC_TIME_DECAY * x years)
-      - HYBRID_ALPHA=${HYBRID_ALPHA:-} # Hybrid Search Alpha (0 for entirely keyword, 1 for entirely vector)
-      - EDIT_KEYWORD_QUERY=${EDIT_KEYWORD_QUERY:-}
-      - MULTILINGUAL_QUERY_EXPANSION=${MULTILINGUAL_QUERY_EXPANSION:-}
-      - QA_PROMPT_OVERRIDE=${QA_PROMPT_OVERRIDE:-}
+      # Knowledge / retrieval. Phase 1 ships with this off; `false` must
+      # reproduce Phase 1 behaviour exactly so Day 8 can be cut.
+      - KNOWLEDGE_ENABLED=${KNOWLEDGE_ENABLED:-false}
+      - QDRANT_URL=${QDRANT_URL:-}
+      - QDRANT_API_KEY=${QDRANT_API_KEY:-}
       # Other services
       - POSTGRES_HOST=relational_db
-      - VESPA_HOST=index
       - WEB_DOMAIN=${WEB_DOMAIN:-} # For frontend redirect auth purpose
-      # Don't change the NLP model configs unless you know what you're doing
-      - DOCUMENT_ENCODER_MODEL=${DOCUMENT_ENCODER_MODEL:-}
-      - NORMALIZE_EMBEDDINGS=${NORMALIZE_EMBEDDINGS:-}
-      - ASYM_QUERY_PREFIX=${ASYM_QUERY_PREFIX:-}
-      - ENABLE_RERANKING_REAL_TIME_FLOW=${ENABLE_RERANKING_REAL_TIME_FLOW:-}
-      - ENABLE_RERANKING_ASYNC_FLOW=${ENABLE_RERANKING_ASYNC_FLOW:-}
-      - MODEL_SERVER_HOST=${MODEL_SERVER_HOST:-}
-      - MODEL_SERVER_PORT=${MODEL_SERVER_PORT:-}
-      # Leave this on pretty please? Nothing sensitive is collected!
-      # https://docs.danswer.dev/more/telemetry
-      - DISABLE_TELEMETRY=${DISABLE_TELEMETRY:-}
+      - DISABLE_TELEMETRY=${DISABLE_TELEMETRY:-true}
       - LOG_LEVEL=${LOG_LEVEL:-info} # Set to debug to get more fine-grained logs
-      - LOG_ALL_MODEL_INTERACTIONS=${LOG_ALL_MODEL_INTERACTIONS:-} # Log all of the prompts to the LLM
-      # If set to `true` will enable additional logs about Vespa query performance
-      # (time spent on finding the right docs + time spent fetching summaries from disk)
-      - LOG_VESPA_TIMING_INFORMATION=${LOG_VESPA_TIMING_INFORMATION:-}
+      - LOG_ALL_MODEL_INTERACTIONS=${LOG_ALL_MODEL_INTERACTIONS:-} # Logs prompts; never enable against real users
+    # Python, not curl: curl does not survive the image's CVE cleanup.
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request as u; u.urlopen('http://localhost:8080/health', timeout=5)"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 90s
     volumes:
+      # Dynamic config store. The connector temp storage and the torch / nltk /
+      # huggingface model caches went with the background and model_server
+      # containers -- Phase 1 loads no local model.
       - local_dynamic_storage:/home/storage
-      - file_connector_tmp_storage:/home/file_connector_storage
-      - model_cache_torch:/root/.cache/torch/
-      - model_cache_nltk:/root/nltk_data/
-      - model_cache_huggingface:/root/.cache/huggingface/
     logging:
       driver: json-file
       options:
         max-size: "50m"
         max-file: "6"
+
   web_server:
-    image: danswer/danswer-web-server:latest
+    image: khalifan1126/heal-web:latest
     build:
       context: ../../web
       dockerfile: Dockerfile
@@ -116,6 +111,7 @@ services:
     environment:
       - INTERNAL_URL=http://api_server:8080
       - WEB_DOMAIN=${WEB_DOMAIN:-}
+
   relational_db:
     image: postgres:15.2-alpine
     restart: always
@@ -124,27 +120,19 @@ services:
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-password}
     ports:
       - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-postgres}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     volumes:
       - db_volume:/var/lib/postgresql/data
-  # This container name cannot have an underscore in it due to Vespa expectations of the URL
-  index:
-    image: vespaengine/vespa:8.277.17
-    restart: always
-    ports:
-      - "19071:19071"
-      - "8081:8081"
-    volumes:
-      - vespa_volume:/opt/vespa/var
-    logging:
-      driver: json-file
-      options:
-        max-size: "50m"
-        max-file: "6"
+
   nginx:
     image: nginx:1.23.4-alpine
     restart: always
     # nginx will immediately crash with `nginx: [emerg] host not found in upstream`
-    # if api_server / web_server are not up 
+    # if api_server / web_server are not up
     depends_on:
       - api_server
       - web_server
@@ -160,18 +148,43 @@ services:
       options:
         max-size: "50m"
         max-file: "6"
-    # sleep a little bit to allow the web_server / api_server to start up. 
-    # Without this we've seen issues where nginx shows no error logs but 
-    # does not recieve any traffic
+    # Order matters. The inherited form ended `... done & nginx -g "daemon off;"`,
+    # where `&` backgrounds the WHOLE sleep/envsubst/reload chain and starts
+    # nginx immediately -- so nginx read a stale app.conf and crash-looped
+    # before envsubst could ever rewrite it. Only the reload loop is
+    # backgrounded here; the config is generated before nginx starts.
+    #
+    # The sleep gives api_server / web_server time to bind: nginx resolves
+    # upstream names once, at startup, and exits if one does not resolve.
     command: >
       /bin/sh -c "sleep 10 &&
         envsubst '$$\{DOMAIN\}' < /etc/nginx/conf.d/app.conf.template.dev > /etc/nginx/conf.d/app.conf &&
-        while :; do sleep 6h & wait $${!}; nginx -s reload; done & nginx -g \"daemon off;\""
+        { while :; do sleep 6h & wait $${!}; nginx -s reload; done & } &&
+        nginx -g \"daemon off;\""
+
+  # Phase 2 retrieval, started only by `make up-knowledge`.
+  #
+  # Qdrant ships with no authentication by default. Locally the port is bound
+  # to 127.0.0.1 so it is not reachable from the network; in production it gets
+  # an API key and no published port at all (docker-compose.prod.yml).
+  # Use named vectors from the first ingest so dense + sparse hybrid search is
+  # designed in rather than retrofitted.
+  qdrant:
+    # v1.19.0 publishes linux/amd64 and linux/arm64 -- the Day 8 ARM64 check.
+    image: qdrant/qdrant:v1.19.0
+    profiles:
+      - "knowledge"
+    restart: always
+    environment:
+      - QDRANT__SERVICE__API_KEY=${QDRANT_API_KEY:-}
+      - QDRANT__TELEMETRY_DISABLED=true
+    ports:
+      - "127.0.0.1:6333:6333"
+    volumes:
+      - qdrant_volume:/qdrant/storage
+
 volumes:
   local_dynamic_storage:
-  file_connector_tmp_storage:
   db_volume:
-  vespa_volume:
-  model_cache_torch:
-  model_cache_nltk:
-  model_cache_huggingface:
+  # Created only when the knowledge profile runs.
+  qdrant_volume:

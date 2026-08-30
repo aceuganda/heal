@@ -162,7 +162,7 @@ export const ChatSidebar = ({
                 </Link>
                 {(!user || user.role === "admin") && (
                   <Link
-                    href="/admin/indexing/status"
+                    href="/admin/users"
                     className="flex py-3 px-4 cursor-pointer border-t border-border hover:bg-hover"
                   >
                     <FiTool className="my-auto mr-2" />

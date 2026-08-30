@@ -13,7 +13,7 @@ import pytest
 BACKEND = Path(__file__).resolve().parents[3]
 
 # Live source only. `deprecated/` is frozen text that nothing imports.
-LIVE_TREES = ["heal", "danswer"]
+LIVE_TREES = ["heal", "heal_app"]
 
 _IP_URL = re.compile(r"https?://\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}")
 

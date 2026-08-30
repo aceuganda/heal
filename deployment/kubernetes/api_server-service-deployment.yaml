@@ -28,31 +28,47 @@ spec:
     spec:
       containers:
       - name: api-server
-        image: heal-backend:latest
-        imagePullPolicy: Never
+        image: khalifan1126/heal-backend:latest
+        # IfNotPresent, not Never: uses a node-built image when one is
+        # there, and otherwise pulls the image CI published. `Never` meant
+        # the cluster could never see a CI build at all.
+        imagePullPolicy: IfNotPresent
+        # `alembic upgrade head` is a no-op once production is stamped at
+        # 0001_heal_baseline. NEVER let it run the rebaseline against
+        # production -- see docs/architecture-decisions.md.
         command:
           - "/bin/sh"
           - "-c"
           - |
             alembic upgrade head &&
-            echo "Starting Danswer Api Server" &&
-            uvicorn danswer.main:app --host 0.0.0.0 --port 8080
+            echo "Starting Heal API server" &&
+            uvicorn heal_app.main:app --host 0.0.0.0 --port 8080
         ports:
         - containerPort: 8080
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 20
+          periodSeconds: 10
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 90
+          periodSeconds: 30
         # There are some extra values since this is shared between services
         # There are no conflicts though, extra env variables are simply ignored
         envFrom:
         - configMapRef:
             name: env-configmap
         volumeMounts:
+        # The file-connector volume went with the connectors. Its PVC is left
+        # declared in persistent-volumes.yaml rather than deleted, because
+        # removing a PVC destroys data -- see the deprecation policy (D5).
         - name: dynamic-storage
           mountPath: /home/storage
-        - name: file-connector-storage
-          mountPath: /home/file_connector_storage
       volumes:
       - name: dynamic-storage
         persistentVolumeClaim:
           claimName: dynamic-pvc
-      - name: file-connector-storage
-        persistentVolumeClaim:
-          claimName: file-connector-pvc

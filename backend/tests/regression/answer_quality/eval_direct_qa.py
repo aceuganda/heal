@@ -8,18 +8,18 @@ from typing import TextIO
 import yaml
 from sqlalchemy.orm import Session
 
-from danswer.chat.models import LLMMetricsContainer
-from danswer.configs.constants import MessageType
-from danswer.db.engine import get_sqlalchemy_engine
-from danswer.one_shot_answer.answer_question import get_search_answer
-from danswer.one_shot_answer.models import DirectQARequest
-from danswer.one_shot_answer.models import ThreadMessage
-from danswer.search.models import IndexFilters
-from danswer.search.models import OptionalSearchSetting
-from danswer.search.models import RerankMetricsContainer
-from danswer.search.models import RetrievalDetails
-from danswer.search.models import RetrievalMetricsContainer
-from danswer.utils.callbacks import MetricsHander
+from heal_app.chat.models import LLMMetricsContainer
+from heal_app.configs.constants import MessageType
+from heal_app.db.engine import get_sqlalchemy_engine
+from heal_app.one_shot_answer.answer_question import get_search_answer
+from heal_app.one_shot_answer.models import DirectQARequest
+from heal_app.one_shot_answer.models import ThreadMessage
+from heal_app.search.models import IndexFilters
+from heal_app.search.models import OptionalSearchSetting
+from heal_app.search.models import RerankMetricsContainer
+from heal_app.search.models import RetrievalDetails
+from heal_app.search.models import RetrievalMetricsContainer
+from heal_app.utils.callbacks import MetricsHander
 
 
 engine = get_sqlalchemy_engine()

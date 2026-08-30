@@ -27,8 +27,11 @@ spec:
     spec:
       containers:
       - name: web-server
-        image: heal-frontend:latest
-        imagePullPolicy: Never
+        image: khalifan1126/heal-web:latest
+        # See the note in api_server-service-deployment.yaml. The repo is
+        # heal-web, matching what CI publishes -- it was heal-frontend
+        # here and heal-web everywhere else.
+        imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 3000
         # There are some extra values since this is shared between services

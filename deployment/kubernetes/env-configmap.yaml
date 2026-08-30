@@ -3,72 +3,51 @@ kind: ConfigMap
 metadata:
   name: env-configmap
 data:
-  # Auth Setting, also check the secrets file
-  AUTH_TYPE: "basic"  # Change this for production uses unless Danswer is only accessible behind VPN
-  SESSION_EXPIRE_TIME_SECONDS: "86400"  # 1 Day Default
-  VALID_EMAIL_DOMAINS: ""  # Can be something like danswer.ai, as an extra double-check
-  SMTP_SERVER: "" # For sending verification emails, if unspecified then defaults to 'smtp.gmail.com'
-  SMTP_PORT: "" # For sending verification emails, if unspecified then defaults to '587'
-  SMTP_USER: ""  # 'your-email@company.com'
-  SMTP_PASS: ""  # 'your-gmail-password'
-  EMAIL_FROM: ""  # 'your-email@company.com' SMTP_USER missing used instead
-  # Gen AI Settings
+  # Auth settings -- secrets live in secrets.yaml, not here
+  AUTH_TYPE: "basic"  # Change this for production unless Heal is only reachable behind a VPN
+  SESSION_EXPIRE_TIME_SECONDS: "86400"  # 1 day
+  VALID_EMAIL_DOMAINS: ""  # Restrict sign-in to specific domains
+  SMTP_SERVER: ""  # Defaults to smtp.gmail.com when unset
+  SMTP_PORT: ""  # Defaults to 587 when unset
+  SMTP_USER: ""
+  SMTP_PASS: ""
+  EMAIL_FROM: ""  # Used when SMTP_USER is missing
+
+  # Chat model. Ids come from the catalogue in backend/heal/llm/registry.py.
   GEN_AI_MODEL_PROVIDER: "openai"
-  GEN_AI_MODEL_VERSION: "gpt-4-1106-preview"  # Use GPT-4 if you have it
-  FAST_GEN_AI_MODEL_VERSION: "gpt-4-1106-preview"
   GEN_AI_API_KEY: ""
   GEN_AI_API_ENDPOINT: ""
   GEN_AI_API_VERSION: ""
-  GEN_AI_LLM_PROVIDER_TYPE: ""
-  QA_TIMEOUT: "60"
-  NUM_DOCUMENT_TOKENS_FED_TO_GENERATIVE_MODEL: ""
-  DISABLE_LLM_FILTER_EXTRACTION: ""
-  DISABLE_LLM_CHUNK_FILTER: ""
-  DISABLE_LLM_CHOOSE_SEARCH: ""
-  # Query Options
-  DOC_TIME_DECAY: ""
-  HYBRID_ALPHA: ""
-  EDIT_KEYWORD_QUERY: ""
-  MULTILINGUAL_QUERY_EXPANSION: ""
-  QA_PROMPT_OVERRIDE: ""
-  # Other Services
+  HEAL_CHAT_MODEL: ""
+  HEAL_CLASSIFIER_MODEL: ""
+  HEAL_ENABLED_CHAT_MODELS: ""
+  HEAL_LLM_TIMEOUT: ""
+
+  # Translation (Design A). Required for Luganda chat; English is unaffected.
+  # No default is baked into the image -- a missing URL fails with a config
+  # error naming the variable rather than reaching someone else's server.
+  TRANSLATION_PROVIDER: "heal_mt"
+  TRANSLATION_EN_URL: ""
+  TRANSLATION_LUG_URL: ""
+
+  # Safety. Set the escalation number that is correct for this deployment's
+  # country before the pilot.
+  HEAL_EMERGENCY_CONTACT: "912"
+
+  # Knowledge / retrieval. Phase 1 ships with this off; `false` reproduces
+  # Phase 1 behaviour exactly, so Phase 2 can be cut without a rollback.
+  # Qdrant runs unauthenticated by default, so the key is required when on.
+  KNOWLEDGE_ENABLED: "false"
+  QDRANT_URL: ""
+  QDRANT_API_KEY: ""
+
+  # Other services
   POSTGRES_HOST: "relational-db-service"
-  VESPA_HOST: "document-index-service"
-  # Don't change the NLP models unless you know what you're doing
-  DOCUMENT_ENCODER_MODEL: ""
-  NORMALIZE_EMBEDDINGS: ""
-  ASYM_QUERY_PREFIX: ""
-  ASYM_PASSAGE_PREFIX: ""
-  ENABLE_RERANKING_REAL_TIME_FLOW: ""
-  ENABLE_RERANKING_ASYNC_FLOW: ""
-  MODEL_SERVER_HOST: ""
-  MODEL_SERVER_PORT: ""
-  INDEXING_MODEL_SERVER_HOST: ""
-  MIN_THREADS_ML_MODELS: ""
-  # Indexing Configs
-  NUM_INDEXING_WORKERS: ""
-  DASK_JOB_CLIENT_ENABLED: ""
-  CONTINUE_ON_CONNECTOR_FAILURE: ""
-  EXPERIMENTAL_CHECKPOINTING_ENABLED: ""
-  CONFLUENCE_CONNECTOR_LABELS_TO_SKIP: ""
-  GONG_CONNECTOR_START_TIME: ""
-  NOTION_CONNECTOR_ENABLE_RECURSIVE_PAGE_LOOKUP: ""
-  # DanswerBot SlackBot Configs
-  DANSWER_BOT_SLACK_APP_TOKEN: ""
-  DANSWER_BOT_SLACK_BOT_TOKEN: ""
-  DANSWER_BOT_DISABLE_DOCS_ONLY_ANSWER: ""
-  DANSWER_BOT_DISPLAY_ERROR_MSGS: ""
-  DANSWER_BOT_RESPOND_EVERY_CHANNEL: ""
-  DANSWER_BOT_DISABLE_COT: ""  # Currently unused
-  NOTIFY_SLACKBOT_NO_ANSWER: ""
-  # Logging
-  # Optional Telemetry, please keep it on (nothing sensitive is collected)? <3
-  # https://docs.danswer.dev/more/telemetry
-  DISABLE_TELEMETRY: ""
-  LOG_LEVEL: ""
-  LOG_ALL_MODEL_INTERACTIONS: ""
-  LOG_VESPA_TIMING_INFORMATION: ""
-  # Shared or Non-backend Related
   INTERNAL_URL: "http://api-server-service:80"  # for web server
   WEB_DOMAIN: "https://heal.aceuganda.org"  # for web server and api server
   DOMAIN: "heal.aceuganda.org"  # for nginx
+
+  # Logging
+  DISABLE_TELEMETRY: "true"
+  LOG_LEVEL: "info"
+  LOG_ALL_MODEL_INTERACTIONS: ""  # Logs every prompt; never enable against real users

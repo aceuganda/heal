@@ -1,2 +1,6 @@
 node_modules
 .next
+
+# Retired routes and components. tsconfig.json excludes src/deprecated from the
+# typecheck; this keeps it out of the build context entirely.
+src/deprecated

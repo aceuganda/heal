@@ -5,16 +5,16 @@ from contextlib import contextmanager
 from typing import Any
 from typing import TextIO
 
-from danswer.chat.chat_utils import get_chunks_for_qa
-from danswer.db.engine import get_sqlalchemy_engine
-from danswer.document_index.factory import get_default_document_index
-from danswer.indexing.models import InferenceChunk
-from danswer.search.models import IndexFilters
-from danswer.search.models import RerankMetricsContainer
-from danswer.search.models import RetrievalMetricsContainer
-from danswer.search.models import SearchQuery
-from danswer.search.search_runner import full_chunk_search
-from danswer.utils.callbacks import MetricsHander
+from heal_app.chat.chat_utils import get_chunks_for_qa
+from heal_app.db.engine import get_sqlalchemy_engine
+from heal_app.document_index.factory import get_default_document_index
+from heal_app.indexing.models import InferenceChunk
+from heal_app.search.models import IndexFilters
+from heal_app.search.models import RerankMetricsContainer
+from heal_app.search.models import RetrievalMetricsContainer
+from heal_app.search.models import SearchQuery
+from heal_app.search.search_runner import full_chunk_search
+from heal_app.utils.callbacks import MetricsHander
 
 
 engine = get_sqlalchemy_engine()

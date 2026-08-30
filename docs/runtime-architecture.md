@@ -1,7 +1,7 @@
 # Heal runtime architecture: what actually runs
 
-**Revised:** 2026-08-28
-**Companion to:** `docs/keep-and-simplify-plan.md`
+**Revised:** 2026-08-29 (Vespa out of every deployed stack; retrieval built)
+**Companion to:** `docs/architecture-decisions.md`
 
 The plan describes the **destination**. This document describes **what is
 running on any given day between here and there**, service by service, with the
@@ -21,10 +21,31 @@ produces a service that will not boot.
 
 | Stage | When | Services | Compose file |
 | --- | --- | --- | --- |
-| **0 — inherited** | today, unchanged from the fork | 7 | `docker-compose.dev.yml` |
-| **1 — local** | today, what you develop against | 5 | `docker-compose.local.yml` |
-| **2 — Phase 1 target** | Day 6 of the plan | 3 | `docker-compose.local.yml`, reduced |
-| **3 — Phase 2 target** | Day 8, if not cut | 5 | + qdrant, + embedding worker |
+| **0 — inherited** | the fork as it was | 7 | `docker-compose.dev.yml` |
+| **1 — transitional** | superseded | 5 | — |
+| **2 — Phase 1** | **reached 2026-08-28** | 4 | `docker-compose.local.yml`, `docker-compose.prod.yml` |
+| **3 — Phase 2 target** | Day 8, if not cut | 6 | the same two, `--profile knowledge` |
+
+**Current state: Stage 2.** Both the local and the production compose files run
+`api_server`, `web_server`, `relational_db` and `nginx` — nothing else. Vespa,
+the background fleet and the model server are gone from every deployed stack;
+the Danswer-era production files are frozen in `deployment/deprecated/`.
+`make up` starts it.
+
+**Stage 3 is built.** `heal/knowledge/` implements chunking, dense + sparse
+embedding, the Qdrant store and the ingest path, and the agent calls it.
+`qdrant` is declared in both compose files behind the opt-in `knowledge`
+profile, so moving between stages is a flag flip:
+
+    make up            four services, KNOWLEDGE_ENABLED=false  -> Stage 2
+    make kb-up         five services, KNOWLEDGE_ENABLED=true   -> Stage 3
+
+`KNOWLEDGE_ENABLED=false` still reproduces Stage 2 behaviour exactly, which is
+what makes retrieval safe to switch off if it misbehaves in the pilot.
+
+Two shortcuts remain in what shipped: ingest accepts plain text only, and
+PostgreSQL is not yet the system of record for sources. Both are written up in
+`docs/next-tasks.md`.
 
 ---
 
@@ -206,7 +227,7 @@ Phase 2 can be cut on Day 8 without a rollback.
 
 | Service | Image | Why |
 | --- | --- | --- |
-| `qdrant` | `qdrant/qdrant` | dense + **sparse** vectors in one collection — hybrid lexical/semantic without a second service, which is what covers drug codes and dosages |
+| `qdrant` | `qdrant/qdrant:v1.19.0` | dense + **sparse** vectors in one collection — hybrid lexical/semantic without a second service, which is what covers drug codes and dosages. **Licence: Apache-2.0** (verified against the upstream repository, 2026-08-28) — permissive like MIT with an added patent grant, so it carries no obligation to open-source Heal |
 | `embedding_worker` | inside the backend image | 384-dim English embeddings, on-demand only |
 
 Rules that keep Stage 3 from growing back into Stage 0:
@@ -218,7 +239,13 @@ Rules that keep Stage 3 from growing back into Stage 0:
 4. **Reconciliation, not sync.** An admin-triggered compare that reports drift;
    it does not auto-repair.
 5. Qdrant's default setup has **no authentication**. Its container must be
-   private and authenticated in any real deployment.
+   private and authenticated in any real deployment. This is already wired:
+   the production compose publishes no port for it, and `require_knowledge_config()`
+   in `heal/config.py` refuses to start the retrieval path without
+   `QDRANT_API_KEY`, so an open vector store cannot be reached by accident.
+6. **ARM64 is confirmed.** `qdrant/qdrant:v1.19.0` publishes `linux/amd64` and
+   `linux/arm64` (checked 2026-08-29), which settles that half of the Day 8
+   go/no-go. Backup and restore still have to be verified on the day.
 
 ---
 
@@ -226,14 +253,14 @@ Rules that keep Stage 3 from growing back into Stage 0:
 
 | Service | Stage 0 | Stage 1 | Stage 2 | Stage 3 | Ports | Volume |
 | --- | :-: | :-: | :-: | :-: | --- | --- |
-| `api_server` | ● | ● | ● | ● | 8080 | storage, model cache |
+| `api_server` | ● | ● | ● | ● | 8080 | `local_dynamic_storage` |
 | `web_server` | ● | ● | ● | ● | — | — |
 | `relational_db` | ● | ● | ● | ● | 5432 | `db_volume` |
 | `nginx` | ● | ● | ● | ● | 80, 3000 | `../data/nginx` |
 | `index` (Vespa) | ● | ● | — | — | 19071, 8081 | `vespa_volume` |
 | `background` | ● | — | — | — | — | — |
 | `model_server` | ○ | — | — | — | — | model cache |
-| `qdrant` | — | — | — | ● | 6333 | qdrant volume |
+| `qdrant` | — | — | ○ | ● | 6333 (local only) | `qdrant_volume` |
 | `embedding_worker` | — | — | — | ● | in-process | model cache |
 
 ● runs  ○ opt-in profile  — not present
@@ -251,7 +278,10 @@ Rules that keep Stage 3 from growing back into Stage 0:
 ## Running it
 
 ```sh
-make up          # start Stage 1
+make up          # start Stage 2, the four Phase 1 services
+make up-knowledge  # the same, plus qdrant (Stage 3 groundwork)
+make config      # validate the compose files without starting anything
+make smoke       # check a running stack answers on /health
 make ps          # what is up
 make logs        # tail everything
 make api-logs    # tail the API server only

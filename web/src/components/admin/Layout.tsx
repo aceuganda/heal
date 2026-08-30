@@ -1,15 +1,10 @@
 import { Header } from "@/components/Header";
 import { AdminSidebar } from "@/components/admin/connectors/AdminSidebar";
 import {
-  NotebookIcon,
   KeyIcon,
   UsersIcon,
-  ThumbsUpIcon,
-  BookmarkIcon,
-  CPUIcon,
-  ZoomInIcon,
-  RobotIcon,
   ConnectorIcon,
+  BookmarkIcon,
 } from "@/components/icons/icons";
 import { User } from "@/lib/types";
 import {
@@ -58,81 +53,20 @@ export async function Layout({ children }: { children: React.ReactNode }) {
         <div className="w-80 pt-12 pb-8 h-full border-r border-border">
           <AdminSidebar
             collections={[
+              // Connectors, Document Management and Custom Assistants are
+              // retired: no connector fleet, no document sets, one fixed agent.
+              // Knowledge replaces them: one approved library, not many sets.
               {
-                name: "Connectors",
-                items: [
-                  {
-                    name: (
-                      <div className="flex">
-                        <NotebookIcon size={18} />
-                        <div className="ml-1">Existing Connectors</div>
-                      </div>
-                    ),
-                    link: "/admin/indexing/status",
-                  },
-                  {
-                    name: (
-                      <div className="flex">
-                        <ConnectorIcon size={18} />
-                        <div className="ml-1.5">Add Connector</div>
-                      </div>
-                    ),
-                    link: "/admin/add-connector",
-                  },
-                ],
-              },
-              {
-                name: "Document Management",
+                name: "Knowledge",
                 items: [
                   {
                     name: (
                       <div className="flex">
                         <BookmarkIcon size={18} />
-                        <div className="ml-1">Document Sets</div>
+                        <div className="ml-1">Approved sources</div>
                       </div>
                     ),
-                    link: "/admin/documents/sets",
-                  },
-                  {
-                    name: (
-                      <div className="flex">
-                        <ZoomInIcon size={18} />
-                        <div className="ml-1">Explorer</div>
-                      </div>
-                    ),
-                    link: "/admin/documents/explorer",
-                  },
-                  {
-                    name: (
-                      <div className="flex">
-                        <ThumbsUpIcon size={18} />
-                        <div className="ml-1">Feedback</div>
-                      </div>
-                    ),
-                    link: "/admin/documents/feedback",
-                  },
-                ],
-              },
-              {
-                name: "Custom Assistants",
-                items: [
-                  {
-                    name: (
-                      <div className="flex">
-                        <RobotIcon size={18} />
-                        <div className="ml-1">Personas</div>
-                      </div>
-                    ),
-                    link: "/admin/personas",
-                  },
-                  {
-                    name: (
-                      <div className="flex">
-                        <CPUIcon size={18} />
-                        <div className="ml-1">Slack Bots</div>
-                      </div>
-                    ),
-                    link: "/admin/bot",
+                    link: "/admin/sources",
                   },
                 ],
               },

@@ -27,7 +27,6 @@ import {
 } from "./lib";
 import { ThreeDots } from "react-loader-spinner";
 import { FeedbackModal } from "./modal/FeedbackModal";
-import { DocumentSidebar } from "./documentSidebar/DocumentSidebar";
 import { Persona } from "../admin/personas/interfaces";
 import { ChatPersonaSelector } from "./ChatPersonaSelector";
 import { useFilters } from "@/lib/hooks";
@@ -36,7 +35,6 @@ import { ChatFilters } from "./modifiers/ChatFilters";
 import { buildFilters } from "@/lib/search/utils";
 import { SelectedDocuments } from "./modifiers/SelectedDocuments";
 import { usePopup } from "@/components/admin/connectors/Popup";
-import { ResizableSection } from "@/components/resizable/ResizableSection";
 import { DanswerInitializingLoader } from "@/components/DanswerInitializingLoader";
 import { ChatIntro } from "./ChatIntro";
 import { HEADER_PADDING } from "@/lib/constants";
@@ -798,20 +796,9 @@ export const Chat = ({
               </div>
             </div>
           </div>
-          <div className='max-sm:hidden' >
-            <ResizableSection
-              intialWidth={documentSidebarInitialWidth}
-              minWidth={300}
-              maxWidth={maxDocumentSidebarWidth || undefined}
-            >
-              <DocumentSidebar
-                selectedMessage={aiMessage}
-                selectedDocuments={selectedDocuments}
-                setSelectedDocuments={setSelectedDocuments}
-                isLoading={isFetchingChatMessages}
-              />
-            </ResizableSection>
-          </div>
+          {/* The document-selection sidebar is retired: Phase 1 answers are
+              not grounded in a document library, so there is nothing to pick
+              from. It returns with the approved-source browser in Phase 2. */}
         </>
       ) : (
         <div className="mx-auto h-full flex flex-col">

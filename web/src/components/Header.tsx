@@ -100,7 +100,7 @@ export const Header: React.FC<HeaderProps> = ({ user }) => {
                 >
                   {/* Show connector option if (1) auth is disabled or (2) user is an admin */}
                   {(!user || user.role === "admin") && (
-                    <Link href="/admin/indexing/status">
+                    <Link href="/admin/users">
                       <DefaultDropdownElement name="Admin Panel" />
                     </Link>
                   )}
