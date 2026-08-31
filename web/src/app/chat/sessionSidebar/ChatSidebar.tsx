@@ -11,7 +11,7 @@ import {
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { User } from "@/lib/types";
+import { isAdminRole, User } from "@/lib/types";
 import { logout } from "@/lib/user";
 import { BasicClickable, BasicSelectable } from "@/components/BasicClickable";
 import Image from "next/image";
@@ -160,9 +160,9 @@ export const ChatSidebar = ({
                   <FiMessageSquare className="my-auto mr-2" />
                   Heal Chat
                 </Link>
-                {(!user || user.role === "admin") && (
+                {(!user || isAdminRole(user.role)) && (
                   <Link
-                    href="/admin/users"
+                    href="/admin/sources"
                     className="flex py-3 px-4 cursor-pointer border-t border-border hover:bg-hover"
                   >
                     <FiTool className="my-auto mr-2" />

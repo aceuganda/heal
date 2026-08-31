@@ -107,10 +107,9 @@ jobs:
       run: |
         cd deployment/docker_compose
         docker compose -f docker-compose.local.yml config -q
-        docker compose -f docker-compose.local.yml --profile knowledge config -q
         touch .env .env.nginx
         docker compose -f docker-compose.prod.yml config -q
-        docker compose -f docker-compose.prod.yml --profile letsencrypt --profile knowledge config -q
+        docker compose -f docker-compose.prod.yml --profile letsencrypt config -q
         rm -f .env .env.nginx
 
     - name: Build the backend image

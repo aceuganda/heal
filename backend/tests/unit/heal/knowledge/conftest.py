@@ -46,13 +46,28 @@ class FakeQdrant:
         is_sparse = not isinstance(vector, tuple)
         return self.sparse_results if is_sparse else self.dense_results
 
-    def upsert(self, **kwargs: Any) -> None:
+    def upsert(self, *, collection_name: str, points: Any, **kwargs: Any) -> None:
         if self.raises:
             raise self.raises
-        self.upserts.append(kwargs)
+        self.upserts.append({"collection_name": collection_name, "points": points})
 
-    def set_payload(self, **kwargs: Any) -> None:
-        self.payload_sets.append(kwargs)
+    def set_payload(
+        self,
+        *,
+        collection_name: str,
+        payload: dict[str, Any],
+        points: Any,
+        **kwargs: Any
+    ) -> None:
+        """Mirrors the real signature deliberately.
+
+        `set_payload` takes `points`; `delete` takes `points_selector`. A fake
+        that swallowed **kwargs accepted the wrong name happily and every
+        approval in the admin UI 500'd against a real Qdrant.
+        """
+        self.payload_sets.append(
+            {"collection_name": collection_name, "payload": payload, "points": points}
+        )
 
     def collection_exists(self, name: str) -> bool:
         return name in self.collections

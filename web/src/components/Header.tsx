@@ -1,6 +1,6 @@
 "use client";
 
-import { User } from "@/lib/types";
+import { isAdminRole, User } from "@/lib/types";
 import { logout } from "@/lib/user";
 import Image from "next/image";
 import Link from "next/link";
@@ -98,9 +98,11 @@ export const Header: React.FC<HeaderProps> = ({ user }) => {
                     "w-48 overflow-hidden shadow-xl z-10 text-sm"
                   }
                 >
-                  {/* Show connector option if (1) auth is disabled or (2) user is an admin */}
-                  {(!user || user.role === "admin") && (
-                    <Link href="/admin/users">
+                  {/* Admin panel if (1) auth is disabled or (2) user is an admin.
+                      Lands on the source library: managing what the assistant
+                      may cite is the job an admin opens this for. */}
+                  {(!user || isAdminRole(user.role)) && (
+                    <Link href="/admin/sources">
                       <DefaultDropdownElement name="Admin Panel" />
                     </Link>
                   )}

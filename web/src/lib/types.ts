@@ -1,12 +1,37 @@
 import { Persona } from "@/app/admin/personas/interfaces";
 
+/**
+ * "basic" is the name "member" had before the three-tier split. It still
+ * arrives from any account the role migration has not converted yet, so it is
+ * kept here and treated as a member everywhere in the UI.
+ */
+export type UserRole = "super_admin" | "admin" | "member" | "basic";
+
+/** Roles a person may actually be given. "basic" is legacy and never offered. */
+export const ASSIGNABLE_ROLES: { value: UserRole; label: string }[] = [
+  { value: "member", label: "Member" },
+  { value: "admin", label: "Admin" },
+  { value: "super_admin", label: "Super admin" },
+];
+
+export const ROLE_LABELS: Record<UserRole, string> = {
+  super_admin: "Super admin",
+  admin: "Admin",
+  member: "Member",
+  basic: "Member",
+};
+
+export function isAdminRole(role: UserRole | undefined): boolean {
+  return role === "admin" || role === "super_admin";
+}
+
 export interface User {
   id: string;
   email: string;
   is_active: string;
   is_superuser: string;
   is_verified: string;
-  role: "basic" | "admin";
+  role: UserRole;
 }
 
 export type ValidSources =

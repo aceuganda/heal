@@ -31,11 +31,15 @@ async def get_user_count() -> int:
 # Need to override this because FastAPI Users doesn't give flexibility for backend field creation logic in OAuth flow
 class SQLAlchemyUserAdminDB(SQLAlchemyUserDatabase):
     async def create(self, create_dict: Dict[str, Any]) -> UP:
+        # Mirrors UserManager.create: the first account bootstraps the
+        # deployment as SUPER_ADMIN, everyone after starts at MEMBER. This
+        # layer is what the OAuth flow goes through, so the rule has to hold
+        # in both places or the two sign-up paths disagree.
         user_count = await get_user_count()
         if user_count == 0:
-            create_dict["role"] = UserRole.ADMIN
+            create_dict["role"] = UserRole.SUPER_ADMIN
         else:
-            create_dict["role"] = UserRole.BASIC
+            create_dict["role"] = UserRole.MEMBER
         return await super().create(create_dict)
 
 

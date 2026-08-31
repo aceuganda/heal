@@ -27,6 +27,8 @@ from fastapi_users.db import SQLAlchemyUserDatabase
 from fastapi_users.openapi import OpenAPIResponseType
 from sqlalchemy.orm import Session
 
+from heal_app.auth.schemas import PRIVILEGED_ROLE
+from heal_app.auth.schemas import role_at_least
 from heal_app.auth.schemas import UserCreate
 from heal_app.auth.schemas import UserRole
 from heal_app.configs.app_configs import AUTH_TYPE
@@ -145,11 +147,18 @@ class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
         verify_email_in_whitelist(user_create.email)
         verify_email_domain(user_create.email)
         if hasattr(user_create, "role"):
+            # Self-registration never chooses its own authority. The first
+            # account bootstraps the deployment and gets SUPER_ADMIN -- someone
+            # has to be able to set the provider key and appoint admins;
+            # everyone after starts at MEMBER and is promoted deliberately.
+            #
+            # An admin creating a user with a chosen role therefore sets it
+            # after this call -- see heal/server/users_api.py.
             user_count = await get_user_count()
             if user_count == 0:
-                user_create.role = UserRole.ADMIN
+                user_create.role = UserRole.SUPER_ADMIN
             else:
-                user_create.role = UserRole.BASIC
+                user_create.role = UserRole.MEMBER
         return await super().create(user_create, safe=safe, request=request)  # type: ignore
 
     async def oauth_callback(
@@ -312,12 +321,43 @@ async def current_user(
 
 
 async def current_admin_user(user: User | None = Depends(current_user)) -> User | None:
+    """Admin surface: the source library, chat sessions, viewing users.
+
+    A super admin outranks an admin, so the check is "at least ADMIN" rather
+    than "is ADMIN" -- an equality test here would lock super admins out of
+    every screen they are meant to own.
+    """
     if DISABLE_AUTH:
         return None
 
-    if not user or not hasattr(user, "role") or user.role != UserRole.ADMIN:
+    if not user or not role_at_least(getattr(user, "role", None), UserRole.ADMIN):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Access denied. User is not an admin.",
+        )
+    return user
+
+
+async def current_super_admin_user(
+    user: User | None = Depends(current_user),
+) -> User | None:
+    """Provider API keys, creating users and changing roles.
+
+    Separated from `current_admin_user` because these three are the actions
+    that can hand away control of the deployment or spend money on it. What the
+    gate currently demands is `PRIVILEGED_ROLE`, which today admits an ADMIN as
+    well -- the separation exists in the data now so that tightening it later
+    is a one-line change rather than a re-audit of every route.
+    """
+    if DISABLE_AUTH:
+        return None
+
+    if not user or not role_at_least(getattr(user, "role", None), PRIVILEGED_ROLE):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=(
+                "Access denied. This action requires at least the "
+                f"{PRIVILEGED_ROLE.value} role."
+            ),
         )
     return user

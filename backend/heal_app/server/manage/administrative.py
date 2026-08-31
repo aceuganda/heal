@@ -8,6 +8,7 @@ from fastapi import Depends
 from fastapi import HTTPException
 
 from heal_app.auth.users import current_admin_user
+from heal_app.auth.users import current_super_admin_user
 from heal_app.configs.app_configs import GENERATIVE_MODEL_ACCESS_CHECK_FREQ
 from heal_app.configs.constants import GEN_AI_API_KEY_STORAGE_KEY
 from heal_app.db.models import User
@@ -71,7 +72,7 @@ def validate_existing_genai_api_key(
 
 @router.get("/admin/genai-api-key", response_model=ApiKey)
 def get_gen_ai_api_key_from_dynamic_config_store(
-    _: User = Depends(current_admin_user),
+    _: User = Depends(current_super_admin_user),
 ) -> ApiKey:
     """
     NOTE: Only gets value from dynamic config store as to not expose env variables.
@@ -90,7 +91,7 @@ def get_gen_ai_api_key_from_dynamic_config_store(
 @router.put("/admin/genai-api-key")
 def store_genai_api_key(
     request: ApiKey,
-    _: User = Depends(current_admin_user),
+    _: User = Depends(current_super_admin_user),
 ) -> None:
     try:
         if not request.api_key:
@@ -112,6 +113,6 @@ def store_genai_api_key(
 
 @router.delete("/admin/genai-api-key")
 def delete_genai_api_key(
-    _: User = Depends(current_admin_user),
+    _: User = Depends(current_super_admin_user),
 ) -> None:
     get_dynamic_config_store().delete(GEN_AI_API_KEY_STORAGE_KEY)

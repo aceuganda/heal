@@ -1,19 +1,16 @@
-# Local Phase 1 stack.
+# Local stack. `make up` starts all of it -- there is no second command and no
+# opt-in profile.
 #
-# Four services: api_server, web_server, relational_db, nginx.
+# Five services: api_server, web_server, relational_db, qdrant, nginx.
 #
 # Not here, and why:
-#   index         Vespa. Nothing on the boot path or the chat path reaches it.
-#                 Retrieval returns in Phase 2 on Qdrant.
+#   index         Vespa. Nothing on the boot path or the chat path reaches it;
+#                 Qdrant replaced it.
 #   background    the supervisord fleet (indexing loop, Celery, Beat, Dask,
 #                 Slack listener). Heal configures no connectors, so every one
-#                 of its poll cycles found nothing.
-#   model_server  no embedding or reranking model runs in Phase 1.
-#
-# Qdrant is defined behind `--profile knowledge` so Phase 2 is a flag flip
-# rather than a stack rewrite. `make up` does not start it.
-#
-# Run it with `make up` from the repo root.
+#                 of its poll cycles found nothing. Ingest is admin-triggered.
+#   model_server  the embedding model is small enough to load in-process; a
+#                 second container for it bought nothing.
 
 services:
   api_server:
@@ -28,12 +25,26 @@ services:
     depends_on:
       relational_db:
         condition: service_healthy
+      qdrant:
+        condition: service_started
     restart: always
     ports:
       - "8080:8080"
     environment:
       # Auth Settings
-      - AUTH_TYPE=${AUTH_TYPE:-disabled}
+      #
+      # `basic`, not `disabled`: with auth off there are no accounts at all and
+      # every admin screen is wide open, so roles cannot be exercised or tested.
+      - AUTH_TYPE=${AUTH_TYPE:-basic}
+      # Seeds the first account into an EMPTY database, and does nothing
+      # otherwise -- it can neither overwrite an account nor reset a password.
+      # The first account becomes SUPER_ADMIN, which is what makes it possible
+      # to log in and create everyone else.
+      #
+      # This password is deliberately trivial because it is a local default.
+      # Production leaves both unset: see env.prod.template.
+      - HEAL_BOOTSTRAP_ADMIN_EMAIL=${HEAL_BOOTSTRAP_ADMIN_EMAIL:-admin@heal.local}
+      - HEAL_BOOTSTRAP_ADMIN_PASSWORD=${HEAL_BOOTSTRAP_ADMIN_PASSWORD:-password}
       - SESSION_EXPIRE_TIME_SECONDS=${SESSION_EXPIRE_TIME_SECONDS:-86400}
       - VALID_EMAIL_DOMAINS=${VALID_EMAIL_DOMAINS:-}
       - GOOGLE_OAUTH_CLIENT_ID=${GOOGLE_OAUTH_CLIENT_ID:-}
@@ -69,11 +80,18 @@ services:
       - GEN_AI_LLM_PROVIDER_TYPE=${GEN_AI_LLM_PROVIDER_TYPE:-}
       - QA_TIMEOUT=${QA_TIMEOUT:-}
       - DISABLE_GENERATIVE_AI=${DISABLE_GENERATIVE_AI:-}
-      # Knowledge / retrieval. Phase 1 ships with this off; `false` must
-      # reproduce Phase 1 behaviour exactly so Day 8 can be cut.
-      - KNOWLEDGE_ENABLED=${KNOWLEDGE_ENABLED:-false}
-      - QDRANT_URL=${QDRANT_URL:-}
+      # Knowledge / retrieval. On by default: the admin cannot upload or index
+      # a document without it, and a stack that boots unable to do that reads
+      # as broken rather than as configured.
+      - KNOWLEDGE_ENABLED=${KNOWLEDGE_ENABLED:-true}
+      # Compose service name, resolved on the internal network.
+      - QDRANT_URL=${QDRANT_URL:-http://qdrant:6333}
       - QDRANT_API_KEY=${QDRANT_API_KEY:-}
+      - QDRANT_COLLECTION=${QDRANT_COLLECTION:-}
+      - HEAL_EMBEDDING_MODEL=${HEAL_EMBEDDING_MODEL:-}
+      - HEAL_MIN_RETRIEVAL_SCORE=${HEAL_MIN_RETRIEVAL_SCORE:-}
+      # The embedding model is baked into the image at /opt/models (see
+      # backend/Dockerfile); nothing is downloaded at boot or on first upload.
       # Other services
       - POSTGRES_HOST=relational_db
       - WEB_DOMAIN=${WEB_DOMAIN:-} # For frontend redirect auth purpose
@@ -88,9 +106,8 @@ services:
       retries: 5
       start_period: 90s
     volumes:
-      # Dynamic config store. The connector temp storage and the torch / nltk /
-      # huggingface model caches went with the background and model_server
-      # containers -- Phase 1 loads no local model.
+      # Dynamic config store. The connector temp storage went with the
+      # background container; the model cache is baked into the image.
       - local_dynamic_storage:/home/storage
     logging:
       driver: json-file
@@ -162,18 +179,17 @@ services:
         { while :; do sleep 6h & wait $${!}; nginx -s reload; done & } &&
         nginx -g \"daemon off;\""
 
-  # Phase 2 retrieval, started only by `make up-knowledge`.
+  # Vector store. Part of the default stack: retrieval is the product, not an
+  # add-on, so it starts with everything else.
   #
   # Qdrant ships with no authentication by default. Locally the port is bound
   # to 127.0.0.1 so it is not reachable from the network; in production it gets
   # an API key and no published port at all (docker-compose.prod.yml).
-  # Use named vectors from the first ingest so dense + sparse hybrid search is
+  # Named vectors are created on first ingest so dense + sparse hybrid search is
   # designed in rather than retrofitted.
   qdrant:
-    # v1.19.0 publishes linux/amd64 and linux/arm64 -- the Day 8 ARM64 check.
+    # v1.19.0 publishes linux/amd64 and linux/arm64.
     image: qdrant/qdrant:v1.19.0
-    profiles:
-      - "knowledge"
     restart: always
     environment:
       - QDRANT__SERVICE__API_KEY=${QDRANT_API_KEY:-}
@@ -186,5 +202,4 @@ services:
 volumes:
   local_dynamic_storage:
   db_volume:
-  # Created only when the knowledge profile runs.
   qdrant_volume:

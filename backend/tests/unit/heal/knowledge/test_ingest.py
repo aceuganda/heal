@@ -122,3 +122,50 @@ class TestSupersede:
         call = fake_client.payload_sets[0]
         assert call["payload"] == {"is_current": False}
         assert not hasattr(fake_client, "deleted")
+
+
+class TestSelectorArgument:
+    """`set_payload` takes `points`; `delete` takes `points_selector`.
+
+    Getting this wrong is a TypeError raised only against a real client, so
+    every Approve, Withdraw and Make-current click in the admin UI returned a
+    500 while the unit tests stayed green.
+    """
+
+    def test_approval_passes_the_selector_as_points(self, fake_client) -> None:
+        set_approval("src-1", approved=True, client=fake_client)
+        assert fake_client.payload_sets[0]["points"] is not None
+
+    def test_supersede_passes_the_selector_as_points(self, fake_client) -> None:
+        supersede("src-1", keep_version="2024", client=fake_client)
+        assert fake_client.payload_sets[0]["points"] is not None
+
+
+class TestFirstUpload:
+    """The very first upload into a freshly started stack must just work.
+
+    Before this, the collection was created by a separate setup command; skip
+    it and the first upload failed on a missing collection, which reads as
+    "indexing is broken" rather than "a step was missed".
+    """
+
+    def test_a_missing_collection_is_created_by_the_upload(
+        self, fake_client, fake_embedder
+    ) -> None:
+        assert fake_client.collections == set()
+
+        result = ingest(fake_client, fake_embedder)
+
+        assert result.status == "completed"
+        assert "test_collection" in fake_client.collections
+        assert fake_client.upserts
+
+    def test_an_existing_collection_is_left_alone(
+        self, fake_client, fake_embedder
+    ) -> None:
+        """Re-shaping a collection means re-embedding everything; never implicit."""
+        fake_client.collections.add("test_collection")
+
+        ingest(fake_client, fake_embedder)
+
+        assert not hasattr(fake_client, "created")

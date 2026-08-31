@@ -84,87 +84,93 @@ check: format-check lint typecheck test deprecated-gate ## Everything CI runs
 # ---------------------------------------------------------------------------
 # Local stack
 #
-# Four services: api_server, web_server, relational_db, nginx. Vespa, the
-# `background` supervisord fleet and the model server are all gone from the
-# runtime -- see docker-compose.local.yml for what each one used to do.
+# `make up` starts everything: api_server, web_server, relational_db, qdrant
+# and nginx. There is no second command and no opt-in profile -- a stack you
+# have to remember to start twice is a stack that boots half broken.
 #
-# Qdrant sits behind the `knowledge` profile: `make up` does not start it,
-# `make up-knowledge` does. Phase 1 runs with KNOWLEDGE_ENABLED=false.
+# Vespa, the `background` supervisord fleet and the model server are gone from
+# the runtime -- see docker-compose.local.yml for what each one used to do.
 # ---------------------------------------------------------------------------
 
+# Build attempts before giving up. Each one keeps whatever it downloaded:
+# pip and npm caches are BuildKit cache mounts, so a network timeout costs the
+# time already spent, not the bytes already fetched. Override with RETRIES=n.
+RETRIES ?= 5
+
+# Retry a compose build, resuming from the cache each time.
+# $(1) is any extra compose arguments (profiles, service names).
+define build_with_retry
+@set -e; \
+for i in $$(seq 1 $(RETRIES)); do \
+	echo ""; \
+	echo "==> build attempt $$i of $(RETRIES)"; \
+	if $(COMPOSE) $(1) build; then \
+		echo "==> build succeeded"; \
+		exit 0; \
+	fi; \
+	echo "==> attempt $$i failed. Downloaded packages are cached; retrying."; \
+	sleep 5; \
+done; \
+echo ""; \
+echo "Build failed after $(RETRIES) attempts."; \
+echo "The cache is kept, so 'make up' will resume rather than restart."; \
+exit 1
+endef
+
 .PHONY: build
-build: ## Build both images without starting anything
-	$(COMPOSE) build
+build: ## Build both images, retrying on network failure (cache is kept)
+	$(call build_with_retry,)
+
+.PHONY: build-web
+build-web: ## Build only the web image, with retries
+	$(call build_with_retry,web_server)
+
+.PHONY: build-api
+build-api: ## Build only the API image, with retries
+	$(call build_with_retry,api_server)
+
+.PHONY: rebuild
+rebuild: ## Full rebuild ignoring the layer cache (slow; downloads are still cached)
+	$(COMPOSE) build --no-cache
 
 .PHONY: up
-up: ## Build and start the local stack (web on :3000)
-	$(COMPOSE) up -d --build
-	@echo "Web http://localhost:3000   API http://localhost:8080"
+up: ## Build (with retries) and start the whole stack (web on :3000)
+	$(call build_with_retry,)
+	$(COMPOSE) up -d
+	@echo ""
+	@echo "Web    http://localhost:3000"
+	@echo "API    http://localhost:8080"
+	@echo "Admin  http://localhost:3000/admin/sources  (upload and index here)"
 
-.PHONY: up-knowledge
-up-knowledge: ## Start the stack with Qdrant as well (Phase 2)
-	$(COMPOSE) --profile knowledge up -d --build
-	@echo "Qdrant on 127.0.0.1:6333 -- set KNOWLEDGE_ENABLED=true to use it"
+.PHONY: cache-size
+cache-size: ## Show how much build cache is being kept
+	@docker system df -v 2>/dev/null | awk '/Build Cache/,0' | head -5
+
+.PHONY: cache-clear
+cache-clear: ## Delete the build cache, including downloaded packages
+	@echo "This discards every cached wheel and npm package; the next build re-downloads them."
+	docker builder prune -af
 
 # ---------------------------------------------------------------------------
 # Knowledge base (RAG)
 #
-# Retrieval only answers from APPROVED sources. Ingesting a document and
-# approving it are deliberately two separate acts.
+# There are no make targets for uploading, approving or searching. All of it
+# lives in the admin UI at /admin/sources, which is where an admin who is not
+# holding a terminal has to be able to do it. `heal.knowledge.cli` still exists
+# for scripted bulk loads.
 # ---------------------------------------------------------------------------
 
-.PHONY: kb-up
-kb-up: ## Start the stack with Qdrant and retrieval switched ON
-	KNOWLEDGE_ENABLED=true $(COMPOSE) --profile knowledge up -d --build
-	@echo "Qdrant on 127.0.0.1:6333 -- next: make kb-init"
-
-.PHONY: kb-init
-kb-init: ## Create the Qdrant collection (dense + sparse named vectors)
-	$(COMPOSE) exec api_server python -m heal.knowledge.cli init
-
-.PHONY: kb-ingest
-kb-ingest: ## Ingest a document. FILE=... TITLE=... ACTOR=... [VERSION=1] [APPROVE=1]
-	@test -n "$(FILE)"  || (echo "FILE=path/to/document.txt is required"  && exit 1)
-	@test -n "$(TITLE)" || (echo "TITLE=\"Document title\" is required"   && exit 1)
-	@test -n "$(ACTOR)" || (echo "ACTOR=who.is.doing.this is required"    && exit 1)
-	$(COMPOSE) cp "$(FILE)" api_server:/tmp/ingest_input
-	$(COMPOSE) exec api_server python -m heal.knowledge.cli ingest \
-		--file /tmp/ingest_input --title "$(TITLE)" --actor "$(ACTOR)" \
-		--version "$(or $(VERSION),1)" $(if $(APPROVE),--approve,)
-
-.PHONY: kb-approve
-kb-approve: ## Approve a source so answers may cite it. SOURCE=<source-id>
-	@test -n "$(SOURCE)" || (echo "SOURCE=<source-id> is required" && exit 1)
-	$(COMPOSE) exec api_server python -m heal.knowledge.cli approve --source-id "$(SOURCE)"
-
-.PHONY: kb-search
-kb-search: ## Run a query exactly as the agent would. Q="500mg BD"
-	@test -n "$(Q)" || (echo "Q=\"your query\" is required" && exit 1)
-	$(COMPOSE) exec api_server python -m heal.knowledge.cli search "$(Q)"
-
-.PHONY: kb-admin
-kb-admin: ## Open the approved-sources admin screen
-	@echo "http://localhost:3000/admin/sources"
-	@command -v open >/dev/null && open http://localhost:3000/admin/sources || true
-
-.PHONY: kb-status
-kb-status: ## Show Qdrant collection info
-	$(COMPOSE) exec api_server python -c "from heal.knowledge.store import build_client; from heal import config; c=build_client(); print(c.get_collection(config.QDRANT_COLLECTION))"
-
-.PHONY: test-knowledge
-test-knowledge: venv ## Run only the retrieval tests
-	cd $(BACKEND) && PYTHONPATH=. ../$(PY) -m pytest tests/unit/heal/knowledge -q
-
 .PHONY: config
-config: ## Validate the compose files without starting anything
+config: ## Validate the compose file without starting anything
 	$(COMPOSE) config -q
-	$(COMPOSE) --profile knowledge config -q
-	@echo "compose files are valid"
+	@echo "compose file is valid"
 
 .PHONY: smoke
-smoke: ## Check the running stack answers on /health
+smoke: ## Check every service in the running stack answers
 	@curl -fsS http://localhost:8080/health && echo "  <- api_server ok"
 	@curl -fsSo /dev/null http://localhost:3000 && echo "web_server ok"
+	@curl -fsS http://localhost:8080/manage/knowledge/status \
+		&& echo "  <- knowledge ok"
 
 .PHONY: down
 down: ## Stop the local stack, keeping volumes

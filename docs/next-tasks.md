@@ -51,8 +51,9 @@ Default `0.35`, chosen by nobody. This is the number that decides when Heal
 refuses to give a dose. It is a clinical-safety parameter, not a tuning knob.
 
 Set it from measured results: build a query set from real health-worker
-questions, run `make kb-search`, and read the printed scores for hits that
-should and should not have been returned. Record the chosen value **and the
+questions, run them through **Test retrieval** on `/admin/sources`, and read
+the scores — that panel deliberately shows hits below the floor — for results
+that should and should not have been returned. Record the chosen value **and the
 evidence** in this repo. Deliberately include drug-code and abbreviation cases
 (`TDF/3TC/DTG`, `500mg BD`, ICD codes) — that is what the sparse half exists
 for and it should be proven, not assumed.
@@ -167,8 +168,9 @@ Rename the Secret to `heal-secrets` while doing it.
   would make the image tag, the secret/config split and the replica count
   values rather than edits — which is most of task 5 and the image-naming
   problem solved structurally.
-- **No Qdrant manifest.** Compose has the `knowledge` profile; Kubernetes has
-  only the env keys. Retrieval cannot run on the cluster at all today.
+- **No Qdrant manifest.** Compose starts Qdrant as part of the stack;
+  Kubernetes has only the env keys. Retrieval cannot run on the cluster at all
+  today.
 
 ---
 

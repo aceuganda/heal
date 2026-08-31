@@ -11,9 +11,13 @@
  * Panel 3 exists because MIN_RETRIEVAL_SCORE decides when Heal refuses to give
  * a dose. It cannot be chosen sensibly without seeing what a query nearly
  * matched, so this view deliberately shows hits the agent itself would drop.
+ *
+ * The panels always render. Retrieval is part of the stack `make up` starts,
+ * so a screen that hid its own controls behind a setup instruction was telling
+ * the admin to fix something that is not broken.
  */
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import useSWR, { mutate } from "swr";
 import {
   Button,
@@ -51,6 +55,7 @@ interface KnowledgeStatus {
   unavailable?: boolean;
   error?: string;
   collection?: string;
+  collection_exists?: boolean;
   points?: number;
   embedding_model?: string;
   embedding_dim?: number;
@@ -82,18 +87,44 @@ interface SearchResponse {
 
 const SOURCES_URL = "/api/manage/knowledge/sources";
 const STATUS_URL = "/api/manage/knowledge/status";
+const SEARCH_URL = "/api/manage/knowledge/search";
+
+const ACCEPTED = ".txt,.md,.markdown,.text,.pdf,.docx";
+
+/**
+ * FastAPI puts the message in `detail`, which is a string for a raised
+ * HTTPException and a list of objects for a validation error. Rendering the
+ * latter straight into a popup produced "[object Object]", which is how a
+ * legible 422 became an unexplained failure.
+ */
+async function errorMessage(res: Response, fallback: string): Promise<string> {
+  let body: any = null;
+  try {
+    body = await res.json();
+  } catch {
+    return `${fallback} (HTTP ${res.status})`;
+  }
+  const detail = body?.detail ?? body?.message;
+  if (typeof detail === "string") return detail;
+  if (Array.isArray(detail)) {
+    const first = detail[0];
+    if (first?.msg) return `${first.msg} (${(first.loc ?? []).join(".")})`;
+  }
+  return `${fallback} (HTTP ${res.status})`;
+}
 
 function StatusPanel({ status }: { status: KnowledgeStatus | undefined }) {
   if (!status) return null;
 
+  // Reached only if a deployment sets KNOWLEDGE_ENABLED=false on purpose.
   if (!status.enabled) {
     return (
-      <Card className="mb-6">
-        <Title>Retrieval is switched off</Title>
+      <Card className="mb-6 border-error">
+        <Title className="text-error">Retrieval is switched off</Title>
         <Text className="mt-2">
-          The chat assistant is answering from general knowledge only and cannot
-          cite any source. Start the stack with{" "}
-          <code className="text-sm">make kb-up</code> to enable it.
+          This deployment runs with <code>KNOWLEDGE_ENABLED=false</code>, so the
+          assistant answers from general knowledge only and cannot cite a
+          source. Nothing below will save until it is turned back on.
         </Text>
       </Card>
     );
@@ -103,7 +134,10 @@ function StatusPanel({ status }: { status: KnowledgeStatus | undefined }) {
     return (
       <Card className="mb-6 border-error">
         <Title className="text-error">Vector store unreachable</Title>
-        <Text className="mt-2">{status.error}</Text>
+        <Text className="mt-2">
+          {status.error} — if the stack has just started, it is still coming up;
+          this panel refreshes when you reload.
+        </Text>
       </Card>
     );
   }
@@ -144,6 +178,16 @@ function StatusPanel({ status }: { status: KnowledgeStatus | undefined }) {
   );
 }
 
+/** "uganda-clinical-guidelines-2023.pdf" -> "Uganda Clinical Guidelines 2023" */
+function titleFromFilename(name: string): string {
+  const stem = name.replace(/\.[^.]+$/, "").replace(/[_-]+/g, " ");
+  return stem
+    .split(" ")
+    .filter(Boolean)
+    .map((word) => (word.length > 3 ? word[0].toUpperCase() + word.slice(1) : word))
+    .join(" ");
+}
+
 function UploadPanel({ setPopup }: { setPopup: (p: any) => void }) {
   const [file, setFile] = useState<File | null>(null);
   const [title, setTitle] = useState("");
@@ -151,40 +195,61 @@ function UploadPanel({ setPopup }: { setPopup: (p: any) => void }) {
   const [publisher, setPublisher] = useState("");
   const [approve, setApprove] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [dragging, setDragging] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const chooseFile = (chosen: File | null) => {
+    setFile(chosen);
+    // Filling the title from the filename is the difference between two fields
+    // and four; it stays editable, and an existing title is never overwritten.
+    if (chosen && !title.trim()) setTitle(titleFromFilename(chosen.name));
+  };
+
+  const clearForm = () => {
+    setFile(null);
+    setTitle("");
+    setPublisher("");
+    // The native input keeps its own filename, so clearing state alone left
+    // the old name on screen next to an empty form.
+    if (inputRef.current) inputRef.current.value = "";
+  };
 
   const submit = async () => {
-    if (!file || !title.trim()) {
-      setPopup({ message: "A file and a title are required", type: "error" });
+    if (!file) {
+      setPopup({ message: "Choose a file to upload", type: "error" });
+      return;
+    }
+    if (!title.trim()) {
+      setPopup({ message: "A title is required", type: "error" });
       return;
     }
     setBusy(true);
     const body = new FormData();
     body.append("file", file);
-    body.append("title", title);
-    body.append("version", version || "1");
-    body.append("publisher", publisher);
+    body.append("title", title.trim());
+    body.append("version", version.trim() || "1");
+    body.append("publisher", publisher.trim());
     body.append("approve", String(approve));
 
     try {
       const res = await fetch(SOURCES_URL, { method: "POST", body });
-      const payload = await res.json();
       if (!res.ok) {
         setPopup({
-          message: payload.detail ?? "Upload failed",
+          message: await errorMessage(res, "Upload failed"),
           type: "error",
         });
-      } else {
-        setPopup({
-          message: `Indexed ${payload.chunks_written} chunks${
-            payload.approved ? "" : " — not citable until approved"
-          }`,
-          type: "success",
-        });
-        setFile(null);
-        setTitle("");
-        mutate(SOURCES_URL);
-        mutate(STATUS_URL);
+        return;
       }
+      const payload = await res.json();
+      setPopup({
+        message: `Indexed ${payload.chunks_written} chunks from ${payload.title}${
+          payload.approved ? "" : " — approve it below before answers can cite it"
+        }`,
+        type: "success",
+      });
+      clearForm();
+      mutate(SOURCES_URL);
+      mutate(STATUS_URL);
     } catch (e) {
       setPopup({ message: `Upload failed: ${e}`, type: "error" });
     } finally {
@@ -196,17 +261,50 @@ function UploadPanel({ setPopup }: { setPopup: (p: any) => void }) {
     <Card className="mb-6">
       <Title>Add a source</Title>
       <Text className="mt-1 mb-4">
-        Text, Markdown, PDF or Word. A scanned PDF with no text layer is
-        rejected rather than indexed empty.
+        Text, Markdown, PDF or Word, up to 25MB. A scanned PDF with no text
+        layer is rejected rather than indexed empty.
       </Text>
 
       <div className="flex flex-col gap-3 max-w-2xl">
-        <input
-          type="file"
-          accept=".txt,.md,.markdown,.text,.pdf,.docx"
-          onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-          className="text-sm"
-        />
+        <div
+          onDragOver={(e) => {
+            e.preventDefault();
+            setDragging(true);
+          }}
+          onDragLeave={() => setDragging(false)}
+          onDrop={(e) => {
+            e.preventDefault();
+            setDragging(false);
+            chooseFile(e.dataTransfer.files?.[0] ?? null);
+          }}
+          onClick={() => inputRef.current?.click()}
+          className={
+            "border border-dashed rounded p-4 text-center cursor-pointer " +
+            (dragging ? "border-accent bg-hover-light" : "border-border")
+          }
+        >
+          <input
+            ref={inputRef}
+            type="file"
+            accept={ACCEPTED}
+            className="hidden"
+            onChange={(e) => chooseFile(e.target.files?.[0] ?? null)}
+          />
+          {file ? (
+            <div className="text-sm">
+              <span className="font-medium">{file.name}</span>
+              <span className="text-subtle">
+                {" "}
+                — {(file.size / 1024).toFixed(0)} KB. Click to choose another.
+              </span>
+            </div>
+          ) : (
+            <div className="text-sm text-subtle">
+              Drop a file here, or click to choose one
+            </div>
+          )}
+        </div>
+
         <TextInput
           placeholder="Title, e.g. Uganda Clinical Guidelines"
           value={title}
@@ -232,10 +330,16 @@ function UploadPanel({ setPopup }: { setPopup: (p: any) => void }) {
           />
           Approve immediately — answers may cite it as soon as it is indexed
         </label>
-        <div>
-          <Button onClick={submit} disabled={busy}>
+        <div className="flex items-center gap-3">
+          <Button onClick={submit} disabled={busy} loading={busy}>
             {busy ? "Indexing…" : "Upload and index"}
           </Button>
+          {busy && (
+            <Text className="text-xs">
+              Reading, chunking and embedding the document. A large PDF takes a
+              minute; leave this page open.
+            </Text>
+          )}
         </div>
       </div>
     </Card>
@@ -243,10 +347,10 @@ function UploadPanel({ setPopup }: { setPopup: (p: any) => void }) {
 }
 
 function SourcesTable({ setPopup }: { setPopup: (p: any) => void }) {
-  const { data: sources, isLoading } = useSWR<SourceSummary[]>(
-    SOURCES_URL,
-    fetcher
-  );
+  const { data, isLoading } = useSWR<SourceSummary[]>(SOURCES_URL, fetcher);
+  // A 409 or a 500 returns an object, not an array; `.map` on it blanked the
+  // whole screen with no message.
+  const sources = Array.isArray(data) ? data : [];
 
   const call = async (url: string, init: RequestInit, ok: string) => {
     const res = await fetch(url, init);
@@ -255,13 +359,15 @@ function SourcesTable({ setPopup }: { setPopup: (p: any) => void }) {
       mutate(SOURCES_URL);
       mutate(STATUS_URL);
     } else {
-      const body = await res.json().catch(() => ({}));
-      setPopup({ message: body.detail ?? "Action failed", type: "error" });
+      setPopup({
+        message: await errorMessage(res, "Action failed"),
+        type: "error",
+      });
     }
   };
 
   if (isLoading) return <LoadingAnimation text="Loading sources" />;
-  if (!sources?.length) {
+  if (!sources.length) {
     return (
       <Card>
         <Text>
@@ -322,6 +428,25 @@ function SourcesTable({ setPopup }: { setPopup: (p: any) => void }) {
                   >
                     {s.approved ? "Withdraw" : "Approve"}
                   </Button>
+                  {!s.is_current && (
+                    <Button
+                      size="xs"
+                      variant="light"
+                      onClick={() =>
+                        call(
+                          `${SOURCES_URL}/${s.source_id}/supersede`,
+                          {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ keep_version: s.version }),
+                          },
+                          `v${s.version} is now the current edition`
+                        )
+                      }
+                    >
+                      Make current
+                    </Button>
+                  )}
                   <Button
                     size="xs"
                     variant="light"
@@ -355,7 +480,7 @@ function SourcesTable({ setPopup }: { setPopup: (p: any) => void }) {
   );
 }
 
-function SearchPanel() {
+function SearchPanel({ setPopup }: { setPopup: (p: any) => void }) {
   const [query, setQuery] = useState("");
   const [result, setResult] = useState<SearchResponse | null>(null);
   const [busy, setBusy] = useState(false);
@@ -363,14 +488,22 @@ function SearchPanel() {
   const run = async () => {
     if (!query.trim()) return;
     setBusy(true);
-    const body = new FormData();
-    body.append("query", query);
-    const res = await fetch("/api/manage/knowledge/search", {
-      method: "POST",
-      body,
-    });
-    setResult(await res.json());
-    setBusy(false);
+    try {
+      const body = new FormData();
+      body.append("query", query);
+      const res = await fetch(SEARCH_URL, { method: "POST", body });
+      if (!res.ok) {
+        setPopup({
+          message: await errorMessage(res, "Search failed"),
+          type: "error",
+        });
+        setResult(null);
+        return;
+      }
+      setResult(await res.json());
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
@@ -389,7 +522,7 @@ function SearchPanel() {
           onValueChange={setQuery}
           onKeyDown={(e) => e.key === "Enter" && run()}
         />
-        <Button onClick={run} disabled={busy}>
+        <Button onClick={run} disabled={busy} loading={busy}>
           {busy ? "Searching…" : "Search"}
         </Button>
       </div>
@@ -400,7 +533,10 @@ function SearchPanel() {
             <Text className="text-error">Store unreachable: {result.error}</Text>
           )}
           {!result.unavailable && result.hits.length === 0 && (
-            <Text>Nothing matched at all.</Text>
+            <Text>
+              Nothing matched at all. Only approved, current sources are
+              searched.
+            </Text>
           )}
           {result.below_floor && (
             <Text className="text-error mb-3">
@@ -438,7 +574,9 @@ function SearchPanel() {
 
 export default function Page() {
   const { popup, setPopup } = usePopup();
-  const { data: status } = useSWR<KnowledgeStatus>(STATUS_URL, fetcher);
+  const { data: status } = useSWR<KnowledgeStatus>(STATUS_URL, fetcher, {
+    refreshInterval: 30_000,
+  });
 
   return (
     <div className="mx-auto container">
@@ -448,13 +586,9 @@ export default function Page() {
         title="Approved sources"
       />
       <StatusPanel status={status} />
-      {status?.enabled && (
-        <>
-          <UploadPanel setPopup={setPopup} />
-          <SourcesTable setPopup={setPopup} />
-          <SearchPanel />
-        </>
-      )}
+      <UploadPanel setPopup={setPopup} />
+      <SourcesTable setPopup={setPopup} />
+      <SearchPanel setPopup={setPopup} />
     </div>
   );
 }

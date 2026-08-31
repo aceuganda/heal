@@ -7,9 +7,13 @@ from tests.unit.heal.knowledge.conftest import make_point
 class FakeScrollClient:
     """Adds scroll/get_collection/delete to the shared fake."""
 
-    def __init__(self, pages) -> None:
+    def __init__(self, pages, exists: bool = True) -> None:
         self.pages = pages
         self.deletes = []
+        self.exists = exists
+
+    def collection_exists(self, name) -> bool:
+        return self.exists
 
     def scroll(self, **kwargs):
         offset = kwargs.get("offset") or 0
@@ -73,11 +77,30 @@ class TestListSources:
     def test_an_empty_collection_lists_nothing(self) -> None:
         assert list_sources(client=FakeScrollClient([]), collection="c") == []
 
+    def test_a_collection_that_does_not_exist_yet_lists_nothing(self) -> None:
+        """A stack whose first document has not been uploaded is not an error.
+
+        Scrolling a collection Qdrant has never been asked to create raises,
+        and that 500 reached the admin screen as a blank page.
+        """
+        client = FakeScrollClient([], exists=False)
+        assert list_sources(client=client, collection="c") == []
+
 
 class TestStats:
     def test_stats_expose_the_tuning_constants_the_admin_screen_shows(self) -> None:
         stats = collection_stats(client=FakeScrollClient([]), collection="c")
         assert stats["points"] == 42
+        assert stats["collection_exists"] is True
+
+    def test_stats_report_zero_before_the_collection_exists(self) -> None:
+        """The status panel must render on a stack that has indexed nothing."""
+        client = FakeScrollClient([], exists=False)
+        stats = collection_stats(client=client, collection="c")
+
+        assert stats["collection_exists"] is False
+        assert stats["points"] == 0
+        assert stats["embedding_dim"]  # tuning constants still reported
         for key in (
             "min_retrieval_score",
             "context_top_k",

@@ -1,20 +1,18 @@
-# Heal production stack -- Phase 1.
+# Heal production stack.
 #
-# Four services carry a health worker's question end to end:
+# Five services carry a health worker's question end to end:
 #
 #   nginx          TLS termination and routing
 #   web_server     Next.js chat UI
 #   api_server     FastAPI + MedicalGuidanceAgent
 #   relational_db  PostgreSQL, the system of record
+#   qdrant         the approved-source library answers are drawn from
 #
-# Two optional profiles, neither on by default:
+# One optional profile, not on by default:
 #
 #   --profile letsencrypt   adds certbot for automatic certificate renewal.
 #                           Omit it when TLS is terminated upstream; this
 #                           replaces the old docker-compose.prod-no-letsencrypt.yml.
-#   --profile knowledge     adds Qdrant for Phase 2 retrieval. The API ignores
-#                           it entirely while KNOWLEDGE_ENABLED=false, so
-#                           Phase 2 is a flag flip, not a stack rewrite.
 #
 # Gone from the Danswer-era stack: `index` (Vespa 8.277.17), `background`
 # (the supervisord fleet -- indexing loop, Celery, Beat, Dask, Slack listener)
@@ -39,16 +37,19 @@ services:
     depends_on:
       relational_db:
         condition: service_healthy
+      qdrant:
+        condition: service_started
     restart: always
     env_file:
       - .env
     environment:
       - AUTH_TYPE=${AUTH_TYPE:-google_oauth}
       - POSTGRES_HOST=relational_db
-      # Retrieval is off until Phase 2 lands. `false` must reproduce Phase 1
-      # behaviour exactly, so Day 8 can be cut without a rollback.
-      - KNOWLEDGE_ENABLED=${KNOWLEDGE_ENABLED:-false}
-      - QDRANT_URL=${QDRANT_URL:-}
+      # Retrieval is the product; `false` still reproduces the pre-retrieval
+      # behaviour exactly for a deployment that has to run without a store.
+      - KNOWLEDGE_ENABLED=${KNOWLEDGE_ENABLED:-true}
+      # Compose service name, resolved on the internal network.
+      - QDRANT_URL=${QDRANT_URL:-http://qdrant:6333}
       - QDRANT_API_KEY=${QDRANT_API_KEY:-}
     # Python, not curl: curl does not survive the image's CVE cleanup.
     healthcheck:
@@ -165,19 +166,17 @@ services:
         max-file: "6"
     entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew; sleep 12h & wait $${!}; done;'"
 
-  # Phase 2 retrieval. Only with --profile knowledge.
+  # The vector store, part of the default stack.
   #
   # Qdrant's default setup has NO authentication, so QDRANT_API_KEY must be set
-  # in .env before this profile is used; heal/config.py refuses to start the
-  # knowledge path without it. No port is published to the host either -- the
-  # service is reachable only from api_server on the compose network.
-  # Use named vectors from the first ingest so dense + sparse hybrid search is
-  # designed in rather than retrofitted (ranking risk #1: drug codes, dosages).
+  # in .env; heal/config.py refuses a store reachable off the compose network
+  # without one. No port is published to the host either -- the service is
+  # reachable only from api_server on the compose network.
+  # Named vectors are created on first ingest so dense + sparse hybrid search
+  # is designed in rather than retrofitted (drug codes, dosages).
   qdrant:
-    # v1.19.0 publishes linux/amd64 and linux/arm64 -- the Day 8 ARM64 check.
+    # v1.19.0 publishes linux/amd64 and linux/arm64.
     image: qdrant/qdrant:v1.19.0
-    profiles:
-      - "knowledge"
     restart: always
     environment:
       - QDRANT__SERVICE__API_KEY=${QDRANT_API_KEY:-}
@@ -193,5 +192,4 @@ services:
 volumes:
   local_dynamic_storage:
   db_volume:
-  # Created only when the knowledge profile runs.
   qdrant_volume:

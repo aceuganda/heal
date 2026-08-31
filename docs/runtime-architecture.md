@@ -24,28 +24,26 @@ produces a service that will not boot.
 | **0 — inherited** | the fork as it was | 7 | `docker-compose.dev.yml` |
 | **1 — transitional** | superseded | 5 | — |
 | **2 — Phase 1** | **reached 2026-08-28** | 4 | `docker-compose.local.yml`, `docker-compose.prod.yml` |
-| **3 — Phase 2 target** | Day 8, if not cut | 6 | the same two, `--profile knowledge` |
+| **3 — retrieval** | **reached 2026-08-30** | 5 | the same two, no profile |
 
-**Current state: Stage 2.** Both the local and the production compose files run
-`api_server`, `web_server`, `relational_db` and `nginx` — nothing else. Vespa,
-the background fleet and the model server are gone from every deployed stack;
-the Danswer-era production files are frozen in `deployment/deprecated/`.
-`make up` starts it.
+**Current state: Stage 3.** Both the local and the production compose files run
+`api_server`, `web_server`, `relational_db`, `qdrant` and `nginx` — nothing
+else. Vespa, the background fleet and the model server are gone from every
+deployed stack; the Danswer-era production files are frozen in
+`deployment/deprecated/`.
 
-**Stage 3 is built.** `heal/knowledge/` implements chunking, dense + sparse
-embedding, the Qdrant store and the ingest path, and the agent calls it.
-`qdrant` is declared in both compose files behind the opt-in `knowledge`
-profile, so moving between stages is a flag flip:
+`make up` starts all five. There is no knowledge profile and no second command:
+retrieval is what the product does, so a stack that starts without its vector
+store is a broken stack, not a configured one. The API creates the Qdrant
+collection and loads the 384-dim embedding model on a background thread at
+boot, so the first upload at `/admin/sources` is as fast as the second.
 
-    make up            four services, KNOWLEDGE_ENABLED=false  -> Stage 2
-    make kb-up         five services, KNOWLEDGE_ENABLED=true   -> Stage 3
+`KNOWLEDGE_ENABLED=false` still reproduces Stage 2 behaviour exactly — the
+whole retrieval path drops out — which is what makes retrieval safe to switch
+off if it misbehaves in the pilot.
 
-`KNOWLEDGE_ENABLED=false` still reproduces Stage 2 behaviour exactly, which is
-what makes retrieval safe to switch off if it misbehaves in the pilot.
-
-Two shortcuts remain in what shipped: ingest accepts plain text only, and
-PostgreSQL is not yet the system of record for sources. Both are written up in
-`docs/next-tasks.md`.
+One shortcut remains in what shipped: PostgreSQL is not yet the system of
+record for sources, Qdrant is. It is written up in `docs/next-tasks.md`.
 
 ---
 
@@ -213,7 +211,7 @@ embedding worker needs them.
 
 ---
 
-## Stage 3 — Phase 2 target (Day 8, if not cut)
+## Stage 3 — retrieval
 
 Adds retrieval back as one auditable module. Gated by `KNOWLEDGE_ENABLED`, so
 Phase 2 can be cut on Day 8 without a rollback.
@@ -260,10 +258,10 @@ Rules that keep Stage 3 from growing back into Stage 0:
 | `index` (Vespa) | ● | ● | — | — | 19071, 8081 | `vespa_volume` |
 | `background` | ● | — | — | — | — | — |
 | `model_server` | ○ | — | — | — | — | model cache |
-| `qdrant` | — | — | ○ | ● | 6333 (local only) | `qdrant_volume` |
+| `qdrant` | — | — | — | ● | 6333 (local only) | `qdrant_volume` |
 | `embedding_worker` | — | — | — | ● | in-process | model cache |
 
-● runs  ○ opt-in profile  — not present
+● runs  ○ opt-in profile  — not present. Nothing is opt-in at Stage 3.
 
 ### External dependencies (never compose services)
 
@@ -278,10 +276,9 @@ Rules that keep Stage 3 from growing back into Stage 0:
 ## Running it
 
 ```sh
-make up          # start Stage 2, the four Phase 1 services
-make up-knowledge  # the same, plus qdrant (Stage 3 groundwork)
-make config      # validate the compose files without starting anything
-make smoke       # check a running stack answers on /health
+make up          # start the whole stack: all five services
+make config      # validate the compose file without starting anything
+make smoke       # check a running stack answers, retrieval included
 make ps          # what is up
 make logs        # tail everything
 make api-logs    # tail the API server only

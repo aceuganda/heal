@@ -34,6 +34,13 @@ server {
         proxy_http_version 1.1;
         proxy_buffering off;
 
+        # Indexing a document embeds every chunk, which takes minutes for a
+        # large PDF. nginx's 60s default cut the connection mid-ingest and
+        # returned 504 while the work carried on server-side, so the admin saw
+        # a failure for a document that had in fact been indexed.
+        proxy_read_timeout 600s;
+        proxy_send_timeout 600s;
+
         # we don't want nginx trying to do something clever with
         # redirects, we set the Host: header above already.
         proxy_redirect off;

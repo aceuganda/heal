@@ -21,6 +21,7 @@ from fastapi import Form
 from fastapi import HTTPException
 from fastapi import UploadFile
 from pydantic import BaseModel
+from starlette.concurrency import run_in_threadpool
 
 from heal import config
 from heal.knowledge import extract as extraction
@@ -96,13 +97,17 @@ class SupersedeRequest(BaseModel):
 
 
 def _enabled() -> None:
-    """Every route needs the store; say plainly when it is switched off."""
+    """Every route needs the store; say plainly when it is switched off.
+
+    `make up` starts the vector store and leaves this on, so reaching here
+    means the deployment set KNOWLEDGE_ENABLED=false deliberately.
+    """
     if not config.KNOWLEDGE_ENABLED:
         raise HTTPException(
             status_code=409,
             detail=(
-                "Knowledge retrieval is disabled. Start the stack with "
-                "`make kb-up` (KNOWLEDGE_ENABLED=true) to manage sources."
+                "Knowledge retrieval is switched off for this deployment "
+                "(KNOWLEDGE_ENABLED=false), so sources cannot be managed."
             ),
         )
 
@@ -149,6 +154,11 @@ async def upload_source(
 
     Unapproved unless `approve` is set: retrieval filters on approval, so a
     document uploaded here cannot be cited until someone endorses it.
+
+    Extraction and ingest are pushed to a worker thread. Both are blocking and
+    CPU-bound -- embedding especially -- and this handler is `async`, so
+    running them inline executed them ON the event loop. One upload then froze
+    the whole API: `/health` itself timed out until indexing finished.
     """
     _enabled()
 
@@ -160,7 +170,9 @@ async def upload_source(
         )
 
     try:
-        extracted = extraction.extract(data, file.filename or "upload")
+        extracted = await run_in_threadpool(
+            extraction.extract, data, file.filename or "upload"
+        )
     except extraction.ExtractionError as exc:
         # 422, not 500: the file is the problem and the message says how.
         raise HTTPException(status_code=422, detail=str(exc)) from exc
@@ -170,7 +182,8 @@ async def upload_source(
     # than silently blank.
     actor = getattr(user, "email", None) or "local-admin"
 
-    result = reference_ingest(
+    result = await run_in_threadpool(
+        reference_ingest,
         text=extracted.text,
         title=title,
         actor=actor,

@@ -1,7 +1,11 @@
 """Command-line entry points for the knowledge store.
 
-Run through the API container, which already has the model cache and the
-Qdrant credentials:
+The admin screen at `/admin/sources` is the normal way to do all of this. This
+exists for scripted bulk loads, where clicking through a browser once per
+document is the wrong tool.
+
+Run through the API container, which already has the model and the Qdrant
+credentials:
 
     docker compose exec api_server python -m heal.knowledge.cli init
     docker compose exec api_server python -m heal.knowledge.cli ingest \\

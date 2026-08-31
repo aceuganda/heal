@@ -88,15 +88,16 @@ LLM_TIMEOUT = _env_int("HEAL_LLM_TIMEOUT", 60)
 #####
 # Knowledge / retrieval
 #
-# Phase 1 ships with retrieval OFF. The flag exists so that Phase 2 can be cut
-# on Day 8 without a rollback: KNOWLEDGE_ENABLED=false must produce exactly the
-# Phase 1 behaviour.
+# On by default. Retrieval is the product: a stack that boots unable to index
+# or cite a document is broken, not configured. The flag remains so a
+# deployment without a vector store can still answer from the model alone --
+# `false` reproduces the pre-retrieval behaviour exactly.
 #####
 
-KNOWLEDGE_ENABLED = _env_str("KNOWLEDGE_ENABLED", "false").lower() == "true"
+KNOWLEDGE_ENABLED = _env_str("KNOWLEDGE_ENABLED", "true").lower() == "true"
 
-# Qdrant connection. Empty in Phase 1 -- the compose files declare the service
-# behind an opt-in profile, so these are only read once retrieval is on.
+# Qdrant connection. Read only on the retrieval path; the compose files set it
+# to the internal service name.
 QDRANT_URL = _env_str("QDRANT_URL").rstrip("/")
 
 # Qdrant's default setup has no authentication at all. Heal requires a key
@@ -156,28 +157,61 @@ class KnowledgeNotConfigured(RuntimeError):
     """Retrieval was requested but the vector store is not configured."""
 
 
-def require_knowledge_config() -> tuple[str, str]:
-    """Return (url, api_key), or explain exactly which variable is missing.
+# Hosts that are only reachable from inside the deployment: the compose service
+# name and the loopback addresses. Qdrant ships with no authentication, and on
+# one of these an unauthenticated store is not exposed to anything. Anywhere
+# else it is, so a key is mandatory there.
+_PRIVATE_HOSTS = frozenset({"qdrant", "localhost", "127.0.0.1", "::1", "[::1]"})
 
-    Called at the entry to the retrieval path rather than at import, so that a
-    Phase 1 deployment with KNOWLEDGE_ENABLED=false never touches this.
+
+def _hostname(url: str) -> str:
+    from urllib.parse import urlparse
+
+    try:
+        return (urlparse(url).hostname or "").lower()
+    except ValueError:
+        return ""
+
+
+def require_knowledge_config() -> tuple[str, str]:
+    """Return (url, api_key), or explain exactly what is missing.
+
+    Called at the entry to the retrieval path rather than at import, so a
+    deployment with KNOWLEDGE_ENABLED=false never touches this.
+
+    The API key is required for any host that is not on the private list. On a
+    local stack Qdrant is only reachable across the compose network, so a
+    missing key is a warning rather than a refusal -- keeping local setup a
+    single command without letting an open store be reached over a network.
     """
-    missing = [
-        name
-        for name, value in (
-            ("QDRANT_URL", QDRANT_URL),
-            ("QDRANT_API_KEY", QDRANT_API_KEY),
-        )
-        if not value
-    ]
-    if missing:
+    if not QDRANT_URL:
         raise KnowledgeNotConfigured(
-            "Retrieval is enabled but "
-            + " and ".join(missing)
-            + " is not set. Start the stack with the `knowledge` profile and set "
-            "these in the environment, or set KNOWLEDGE_ENABLED=false."
+            "Retrieval is enabled but QDRANT_URL is not set. `make up` sets "
+            "it to the vector store on the compose network; set it explicitly "
+            "when running outside compose, or set KNOWLEDGE_ENABLED=false."
+        )
+
+    host = _hostname(QDRANT_URL)
+    if not QDRANT_API_KEY:
+        if host not in _PRIVATE_HOSTS:
+            raise KnowledgeNotConfigured(
+                f"QDRANT_API_KEY is required for a Qdrant at '{host}'. Qdrant "
+                "has no authentication by default, so a store reachable over a "
+                "network must have a key set."
+            )
+        _logger().warning(
+            "Qdrant at %s has no API key and is unauthenticated. Acceptable on "
+            "a private compose network; never in a deployment.",
+            host,
         )
     return QDRANT_URL, QDRANT_API_KEY
+
+
+def _logger():  # type: ignore[no-untyped-def]
+    """Imported lazily: heal.logger imports this module."""
+    from heal.logger import get_logger
+
+    return get_logger(__name__)
 
 
 #####
@@ -191,3 +225,26 @@ SAFETY_PROMPT_VERSION = _env_str("HEAL_SAFETY_PROMPT_VERSION", "2026-08-28.1")
 
 # Emergency escalation number shown ahead of any emergency answer.
 EMERGENCY_CONTACT = _env_str("HEAL_EMERGENCY_CONTACT", "912")
+
+
+#####
+# Bootstrap administrator
+#
+# With authentication on, a brand-new database has nobody who can log in --
+# and no way to create the first account, because creating accounts requires
+# being logged in as an admin. This seeds exactly one account to break that
+# circle.
+#
+# It runs ONLY when the user table is empty, so it can never overwrite a real
+# account or resurrect a deleted one. Both values come from the environment:
+# a password does not belong in source, and leaving them unset (the production
+# default) disables seeding entirely.
+#####
+
+BOOTSTRAP_ADMIN_EMAIL = _env_str("HEAL_BOOTSTRAP_ADMIN_EMAIL")
+BOOTSTRAP_ADMIN_PASSWORD = _env_str("HEAL_BOOTSTRAP_ADMIN_PASSWORD")
+
+# Passwords that exist to get a local stack running and must never reach a
+# deployment. Seeding still proceeds, loudly -- refusing would just leave a
+# developer locked out with no explanation.
+WEAK_BOOTSTRAP_PASSWORDS = frozenset({"password", "admin", "changeme", "heal"})

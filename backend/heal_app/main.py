@@ -11,8 +11,11 @@ from fastapi.responses import JSONResponse
 from httpx_oauth.clients.google import GoogleOAuth2
 
 from heal import config as heal_config
+from heal.bootstrap import ensure_bootstrap_admin
 from heal.server.api_key import get_danswer_api_key
+from heal.knowledge.startup import prepare_knowledge_store_in_background
 from heal.server.knowledge_api import router as knowledge_router
+from heal.server.users_api import router as users_admin_router
 from heal_app import __version__
 from heal_app.auth.schemas import UserCreate
 from heal_app.auth.schemas import UserRead
@@ -110,8 +113,12 @@ def get_application() -> FastAPI:
     include_router_with_global_prefix_prepended(application, admin_persona_router)
     include_router_with_global_prefix_prepended(application, prompt_router)
     include_router_with_global_prefix_prepended(application, state_router)
-    # Approved-source library. Its routes 409 while KNOWLEDGE_ENABLED=false.
+    # Approved-source library. Its routes 409 only if a deployment sets
+    # KNOWLEDGE_ENABLED=false; `make up` leaves it on.
     include_router_with_global_prefix_prepended(application, knowledge_router)
+    # Creating accounts and changing roles. Mounted after `user_router`, which
+    # keeps the inherited read-only user routes.
+    include_router_with_global_prefix_prepended(application, users_admin_router)
 
     if AUTH_TYPE == AuthType.DISABLED:
         # Server logs this during auth setup verification step
@@ -180,7 +187,7 @@ def get_application() -> FastAPI:
     application.add_exception_handler(ValueError, value_error_handler)
 
     @application.on_event("startup")
-    def startup_event() -> None:
+    async def startup_event() -> None:
         verify_auth = fetch_versioned_implementation(
             "heal_app.auth.users", "verify_auth_setting"
         )
@@ -228,13 +235,21 @@ def get_application() -> FastAPI:
         #   nltk.download(...)        on every single boot
         #   create_initial_*          seeded connector rows Heal never uses
         #   ensure_indices_exist()    the Vespa hard dependency
-        # Retrieval returns in Phase 2 behind KNOWLEDGE_ENABLED, and brings its
-        # own on-demand embedding worker rather than a warm-up on the API path.
+        # Retrieval is back, but as one in-process module: the collection and
+        # the 384-dim embedding model are prepared on a background thread
+        # below, not by a second container.
 
         logger.info("Loading default Prompts and Personas")
         load_chat_yamls()
 
+        # Only acts on an empty user table. With auth on, this is the one way
+        # a fresh deployment gets an account that can log in and create others.
+        await ensure_bootstrap_admin()
+
         logger.info(f"Knowledge retrieval enabled: {heal_config.KNOWLEDGE_ENABLED}")
+        # Collection creation and the embedding model load, off the boot path,
+        # so the first admin upload does not pay for both.
+        prepare_knowledge_store_in_background()
         logger.info(f"Safety prompt version: {heal_config.SAFETY_PROMPT_VERSION}")
         if not heal_config.TRANSLATION_EN_URL or not heal_config.TRANSLATION_LUG_URL:
             logger.warning(

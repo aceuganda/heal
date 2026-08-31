@@ -105,6 +105,11 @@ def reference_ingest(
         embedder = embedder or get_embedder()
         vectors = embedder.embed_passages(chunks)
         client = client or _client()
+        # The first upload into a fresh stack would otherwise fail on a missing
+        # collection, which reads as "indexing is broken" rather than "nobody
+        # ran the setup step". Creating it here is idempotent and never
+        # destructive -- see ensure_collection.
+        _ensure_collection(client)
         points = _build_points(
             chunks=chunks,
             vectors=vectors,
@@ -196,10 +201,13 @@ def supersede(
     from qdrant_client import models as qm
 
     client = client or _client()
+    # `points`, not `points_selector`: set_payload and delete take differently
+    # named selector arguments, and the wrong one is a TypeError at runtime
+    # rather than an import-time or type-check failure.
     client.set_payload(
         collection_name=collection or config.QDRANT_COLLECTION,
         payload={"is_current": False},
-        points_selector=qm.Filter(
+        points=qm.Filter(
             must=[
                 qm.FieldCondition(key="source_id", match=qm.MatchValue(value=source_id))
             ],
@@ -230,7 +238,7 @@ def set_approval(
     client.set_payload(
         collection_name=collection or config.QDRANT_COLLECTION,
         payload={"approved": approved},
-        points_selector=qm.Filter(
+        points=qm.Filter(
             must=[
                 qm.FieldCondition(key="source_id", match=qm.MatchValue(value=source_id))
             ]
@@ -247,6 +255,12 @@ def _client() -> Any:
     from heal.knowledge.store import build_client
 
     return build_client()
+
+
+def _ensure_collection(client: Any) -> None:
+    from heal.knowledge.store import ensure_collection
+
+    ensure_collection(client)
 
 
 def _now() -> str:

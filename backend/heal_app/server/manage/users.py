@@ -1,7 +1,9 @@
 from fastapi import APIRouter
 from fastapi import Depends
 from fastapi import HTTPException
+from fastapi import Query
 from fastapi import status
+from pydantic import BaseModel
 from fastapi_users.db import SQLAlchemyUserDatabase
 from fastapi_users_db_sqlalchemy import UUID_ID
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -15,7 +17,8 @@ from heal_app.auth.users import optional_valid_user
 from heal_app.db.engine import get_session
 from heal_app.db.engine import get_sqlalchemy_async_engine
 from heal_app.db.models import User
-from heal_app.db.users import list_users
+from heal_app.db.users import count_users_matching
+from heal_app.db.users import list_users_page
 from heal_app.server.manage.models import UserByEmail
 from heal_app.server.manage.models import UserInfo
 from heal_app.server.manage.models import UserRoleResponse
@@ -40,13 +43,52 @@ async def promote_admin(
     return
 
 
+class PaginatedUsers(BaseModel):
+    """One page of accounts plus what the pager needs to render itself."""
+
+    items: list[UserRead]
+    total: int
+    page: int
+    page_size: int
+    pages: int
+
+
+# Kept small enough that one page is one screen, and capped so a caller cannot
+# ask for the whole table and undo the point of paging.
+DEFAULT_PAGE_SIZE = 25
+MAX_PAGE_SIZE = 100
+
+
 @router.get("/users")
 def list_all_users(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(DEFAULT_PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE),
+    email: str = Query("", description="Case-insensitive substring of the email"),
     _: User | None = Depends(current_admin_user),
     db_session: Session = Depends(get_session),
-) -> list[UserRead]:
-    users = list_users(db_session)
-    return [UserRead.from_orm(user) for user in users]
+) -> PaginatedUsers:
+    """One page of accounts.
+
+    The filter is applied to both the page and the count, so the total never
+    describes a different set than the rows on screen.
+    """
+    email_filter = email.strip()
+    total = count_users_matching(db_session, email_filter)
+    users = list_users_page(
+        db_session,
+        limit=page_size,
+        offset=(page - 1) * page_size,
+        email_filter=email_filter,
+    )
+    return PaginatedUsers(
+        items=[UserRead.from_orm(user) for user in users],
+        total=total,
+        page=page,
+        page_size=page_size,
+        # At least one page, so an empty list still renders as "page 1 of 1"
+        # rather than "page 1 of 0".
+        pages=max(1, (total + page_size - 1) // page_size),
+    )
 
 
 @router.get("/get-user-role", response_model=UserRoleResponse)

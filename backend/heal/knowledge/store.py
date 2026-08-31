@@ -218,6 +218,11 @@ def list_sources(
     client = client or build_client()
     name = collection or config.QDRANT_COLLECTION
 
+    # An empty library and an uncreated collection look the same to an admin,
+    # and neither is an error worth a 500 on a freshly started stack.
+    if not client.collection_exists(name):
+        return []
+
     sources: dict[str, dict[str, Any]] = {}
     offset = None
     while True:
@@ -287,10 +292,12 @@ def collection_stats(
     """Point counts and the tuning constants, for the admin status panel."""
     client = client or build_client()
     name = collection or config.QDRANT_COLLECTION
-    info = client.get_collection(name)
+    exists = client.collection_exists(name)
+    info = client.get_collection(name) if exists else None
     return {
         "collection": name,
-        "points": getattr(info, "points_count", 0) or 0,
+        "collection_exists": exists,
+        "points": (getattr(info, "points_count", 0) or 0) if info else 0,
         "embedding_model": config.EMBEDDING_MODEL,
         "embedding_dim": config.EMBEDDING_DIM,
         "hybrid_search": config.HYBRID_SEARCH,

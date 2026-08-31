@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1
 FROM node:20-alpine AS base
 
 # Image version, normally overridden by the release workflow with the git tag.
@@ -12,9 +13,17 @@ RUN apk add --no-cache libc6-compat
 WORKDIR /app
 
 # Install dependencies based on the preferred package manager
+#
+# The package manager cache is a BuildKit cache mount, so it persists between
+# builds and survives a failed one without adding to the image. Same reason as
+# the backend's pip cache: on a slow link a network timeout used to discard
+# every package already fetched, and the retry started from zero.
 COPY package.json yarn.lock* package-lock.json* pnpm-lock.yaml* ./
-RUN \
-  if [ -f yarn.lock ]; then yarn --frozen-lockfile; \
+RUN --mount=type=cache,target=/root/.npm,sharing=locked \
+    --mount=type=cache,target=/usr/local/share/.cache/yarn,sharing=locked \
+  npm config set fetch-retries 10 && \
+  npm config set fetch-retry-maxtimeout 120000 && \
+  if [ -f yarn.lock ]; then yarn --frozen-lockfile --network-timeout 600000; \
   elif [ -f package-lock.json ]; then npm ci; \
   elif [ -f pnpm-lock.yaml ]; then yarn global add pnpm && pnpm i --frozen-lockfile; \
   else echo "Lockfile not found." && exit 1; \

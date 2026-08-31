@@ -1,12 +1,14 @@
 # Deploying Heal
 
-Heal Phase 1 is four services:
+Heal is five services:
 
 ```
   nginx  ->  web_server (Next.js)  ->  api_server (FastAPI)  ->  relational_db (PostgreSQL)
+                                              |
+                                              +-------------->  qdrant (approved sources)
 ```
 
-Phase 2 adds one more, `qdrant`, behind an opt-in compose profile. Nothing else
+All five start together. Nothing else
 runs: there is no scheduler, no queue, no worker pool and no supervisor. See
 `docs/runtime-architecture.md` for which services run at each stage, and
 `docs/architecture-decisions.md` for why.
@@ -20,15 +22,15 @@ The Danswer-era stack — Vespa (`index`), the `background` supervisord fleet an
 From the repository root:
 
 ```bash
-make up          # build and start the four services; web on :3000
+make up          # build and start all five services; web on :3000
 make api-logs    # tail the API server
-make smoke       # check /health answers
+make smoke       # check every service answers
 make down        # stop, keeping volumes
 ```
 
-`make up-knowledge` additionally starts Qdrant for Phase 2 work. Retrieval
-stays off until `KNOWLEDGE_ENABLED=true` is set as well — `false` reproduces
-Phase 1 behaviour exactly, which is what lets Phase 2 be cut without a rollback.
+There is no second command for the vector store and no knowledge profile:
+`make up` starts it, the API creates the collection on boot, and documents are
+uploaded and indexed at <http://localhost:3000/admin/sources>.
 
 ## Docker Compose, production
 

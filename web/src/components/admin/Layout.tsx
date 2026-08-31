@@ -5,8 +5,9 @@ import {
   UsersIcon,
   ConnectorIcon,
   BookmarkIcon,
+  NotebookIcon,
 } from "@/components/icons/icons";
-import { User } from "@/lib/types";
+import { isAdminRole, User } from "@/lib/types";
 import {
   AuthTypeMetadata,
   getAuthTypeMetadataSS,
@@ -36,7 +37,9 @@ export async function Layout({ children }: { children: React.ReactNode }) {
     if (!user) {
       return redirect("/auth/login");
     }
-    if (user.role !== "admin") {
+    // Not an equality check: a super admin outranks an admin, and testing for
+    // "admin" exactly would bounce them off every screen they own.
+    if (!isAdminRole(user.role)) {
       return redirect("/");
     }
     if (!user.is_verified && requiresVerification) {
@@ -109,6 +112,22 @@ export async function Layout({ children }: { children: React.ReactNode }) {
                       </div>
                     ),
                     link: "/admin/sessions",
+                  },
+                ],
+              },
+              {
+                // The page existed but nothing linked to it, so the only way
+                // to read the running versions was to type the URL.
+                name: "System",
+                items: [
+                  {
+                    name: (
+                      <div className="flex">
+                        <NotebookIcon size={18} />
+                        <div className="ml-1">Version</div>
+                      </div>
+                    ),
+                    link: "/admin/systeminfo",
                   },
                 ],
               },
