@@ -12,7 +12,7 @@ from heal.knowledge.models import SearchOutcome
 from heal.knowledge.models import SourceRef
 from heal.medical_guidance.agent import AgentRequest
 from heal.medical_guidance.agent import MedicalGuidanceAgent
-from heal.medical_guidance.intent import IntentResult
+from heal.medical_guidance.understanding import Understanding
 from heal.medical_guidance.routes import MedicalIntent
 
 
@@ -52,10 +52,13 @@ def classified(monkeypatch):
 
     def _set(intent: MedicalIntent):
         monkeypatch.setattr(
-            "heal.medical_guidance.agent.classify",
-            lambda *a, **k: IntentResult(
+            "heal.medical_guidance.agent.understand",
+            lambda message, *a, **k: Understanding(
                 intent=intent,
+                query=message,
+                original=message,
                 classified=True,
+                rewritten=True,
                 model_id="fake",
                 safety_version="test",
             ),

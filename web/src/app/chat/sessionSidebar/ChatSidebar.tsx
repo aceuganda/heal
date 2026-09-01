@@ -2,14 +2,12 @@
 
 import {
   FiLogOut,
-  FiMenu,
   FiMessageSquare,
   FiMoreHorizontal,
   FiPlusSquare,
   FiSearch,
   FiTool,
   FiUser,
-  FiX,
 } from "react-icons/fi";
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
@@ -68,6 +66,13 @@ export const ChatSidebar = ({
     };
   }, []);
 
+  useEffect(() => {
+    const toggleSidebar = () => setIsSidebarOpen((isOpen) => !isOpen);
+    window.addEventListener("toggle-chat-sidebar", toggleSidebar);
+
+    return () => window.removeEventListener("toggle-chat-sidebar", toggleSidebar);
+  }, []);
+
   return (
     <div className="relative">
       {isSidebarOpen && (
@@ -78,20 +83,10 @@ export const ChatSidebar = ({
           aria-label="Close chat history"
         />
       )}
-      <button
-        type="button"
-        onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-        className={`fixed top-3 z-50 flex h-9 w-9 items-center justify-center rounded-lg border border-border bg-background text-emphasis shadow-sm transition-all hover:bg-hover ${
-          isSidebarOpen ? "left-[17rem]" : "left-28"
-        }`}
-        aria-label={isSidebarOpen ? "Close chat history" : "Open chat history"}
-      >
-        {isSidebarOpen ? <FiX size={18} /> : <FiMenu size={18} />}
-      </button>
       <aside
         className={`
-          fixed inset-y-0 left-0 z-40 w-72 flex-col border-r border-border bg-background pt-[76px] shadow-xl transition-transform
-          sm:relative sm:z-auto sm:h-screen sm:pt-[84px] sm:shadow-none
+          fixed bottom-0 left-0 top-16 z-40 w-72 flex-col border-r border-border bg-background pt-3 shadow-xl transition-transform
+          sm:relative sm:top-auto sm:bottom-auto sm:z-auto sm:h-screen sm:pt-[84px] sm:shadow-none
           ${isSidebarOpen ? "flex" : "hidden"}
         `}
         id="chat-sidebar"

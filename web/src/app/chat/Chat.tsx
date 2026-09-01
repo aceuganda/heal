@@ -697,7 +697,9 @@ export const Chat = ({
                 {/* Some padding at the bottom so the search bar has space at the bottom to not cover the last message*/}
                 <div
                   className={`w-full ${
-                    recentReferences.length > 0 ? "min-h-[138px]" : "min-h-[104px]"
+                    recentReferences.length > 0
+                      ? "min-h-[174px] sm:min-h-[138px]"
+                      : "min-h-[140px] sm:min-h-[104px]"
                   }`}
                 />
 
@@ -707,8 +709,8 @@ export const Chat = ({
 
             <div className="absolute bottom-0 max-sm:left-0 sm:z-10 w-full border-t border-border bg-background/95 backdrop-blur">
               <div className="w-full pb-4 pt-2">
-                <div className="mx-auto flex w-full max-w-3xl items-end gap-2 px-4 py-2 sm:px-6">
-                  <div className="shrink-0">
+                <div className="mx-auto flex w-full max-w-3xl flex-col items-stretch gap-1 px-4 py-2 sm:flex-row sm:items-end sm:gap-2 sm:px-6">
+                  <div className="self-start shrink-0">
                     <SearchLanguageSelector
                       language={language}
                       setLanguage={(language: string) => {

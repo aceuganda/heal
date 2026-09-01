@@ -7,7 +7,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import React, { useEffect, useRef, useState } from "react";
 import { CustomDropdown, DefaultDropdownElement } from "./Dropdown";
-import { FiMessageSquare, FiSearch, FiUser } from "react-icons/fi";
+import { FiMenu, FiMessageSquare, FiSearch, FiUser } from "react-icons/fi";
 import { usePathname } from "next/navigation";
 
 interface HeaderProps {
@@ -66,6 +66,18 @@ export const Header: React.FC<HeaderProps> = ({ user }) => {
             </h1>
           </div>
         </Link>
+
+        {pathname.startsWith("/chat") && (
+          <button
+            type="button"
+            onClick={() => window.dispatchEvent(new Event("toggle-chat-sidebar"))}
+            className="ml-3 flex h-full items-center gap-2 px-3 text-sm font-medium text-emphasis hover:bg-hover"
+            aria-label="Open or close chat history"
+          >
+            <FiMenu size={18} aria-hidden="true" />
+            <span className="hidden sm:inline">History</span>
+          </button>
+        )}
 
         {/* <Link
           href="/search"

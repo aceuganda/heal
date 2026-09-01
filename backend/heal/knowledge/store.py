@@ -39,7 +39,12 @@ SPARSE_VECTOR = "lexical"
 class KnowledgeStore(Protocol):
     """The seam. Swapping Qdrant for pgvector is an implementation of this."""
 
-    def search(self, query: str, limit: int | None = None) -> SearchOutcome:
+    def search(
+        self,
+        query: str,
+        limit: int | None = None,
+        lexical_query: str | None = None,
+    ) -> SearchOutcome:
         ...
 
 
@@ -73,8 +78,17 @@ class QdrantKnowledgeStore:
             self._embedder = get_embedder()
         return self._embedder
 
-    def search(self, query: str, limit: int | None = None) -> SearchOutcome:
+    def search(
+        self,
+        query: str,
+        limit: int | None = None,
+        lexical_query: str | None = None,
+    ) -> SearchOutcome:
         """Retrieve approved chunks for an English query.
+
+        `query` is embedded; `lexical_query`, when given, is what the sparse
+        half matches on. They differ when the question has been rewritten for
+        retrieval and the user's literal wording still has to match.
 
         Never raises at the caller: an unreachable store degrades to an empty
         outcome flagged `unavailable`, because a chat answer that says "I could
@@ -85,7 +99,7 @@ class QdrantKnowledgeStore:
             return SearchOutcome()
 
         try:
-            candidates = self._candidates(query)
+            candidates = self._candidates(query, lexical_query)
         except Exception as exc:  # noqa: BLE001 -- degrade, never fail the chat
             logger.error("Knowledge store unavailable: %s", type(exc).__name__)
             return SearchOutcome(unavailable=True, error=type(exc).__name__)
@@ -110,8 +124,15 @@ class QdrantKnowledgeStore:
             best_score_before_floor=best,
         )
 
-    def _candidates(self, query: str) -> list[RetrievedChunk]:
-        """Fetch and fuse. Dense and sparse are searched separately, then merged."""
+    def _candidates(
+        self, query: str, lexical_query: str | None = None
+    ) -> list[RetrievedChunk]:
+        """Fetch and fuse. Dense and sparse are searched separately, then merged.
+
+        `lexical_query` feeds only the sparse half. It exists so the caller can
+        embed a cleaned-up question while still matching literally on what the
+        health worker actually typed -- see `Understanding.lexical_query`.
+        """
         from qdrant_client import models as qm
 
         top_k = config.RETRIEVAL_TOP_K
@@ -133,7 +154,7 @@ class QdrantKnowledgeStore:
         results = {p.id: (_to_chunk(p), float(p.score), 0.0) for p in dense}
 
         if config.HYBRID_SEARCH:
-            sparse = sparse_vector(query)
+            sparse = sparse_vector(lexical_query or query)
             if len(sparse):
                 lexical = self.client.search(
                     collection_name=self.collection,

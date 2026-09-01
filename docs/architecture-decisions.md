@@ -1,56 +1,71 @@
-# Heal: architecture decisions
+# Heal: architecture
 
-**Revised:** 2026-08-29
-**Read this document for:** the locked decisions (D1–D7), the deprecation
-policy, the Alembic procedure, and the ranking rationale. Those are current.
-**Fork baseline:** Danswer snapshot merged 2024-01-25 (`8349ed5`); Heal-specific commits follow it.
-**Runtime companion:** `docs/runtime-architecture.md` — which services run at each
-stage between today and the target, and the code holding each one in place.
+**Revised:** 2026-09-01
+**Scope:** what the system is, how a question becomes an answer, why it is
+shaped this way, and what that shape costs.
+**Companion:** `docs/runtime-architecture.md` — the services and the code
+holding each one in place.
 
-> **Package rename, 2026-08-29.** The live application package moved from
-> `backend/danswer/` to `backend/heal_app/`. Paths written `backend/danswer/...`
-> below describe the tree as it was when each entry was written and are left
-> unchanged so the record stays accurate; read them as `backend/heal_app/...`
-> for anything still on the live tree.
+Heal answers clinical questions for health workers, in English and Luganda,
+grounded in an approved library of medical references. An answer either cites
+an approved source or says plainly that it has none.
 
-## Goal
+The system began as a fork of Danswer, an enterprise document-search product.
+Most of this document explains the difference between what that product was
+built to do and what Heal needs to do. That difference is not a judgement about
+the original — it was a good fit for its own problem — but the two problems are
+not the same one, and the architecture had to change to match.
 
-Keep the part of Heal that is valuable to health workers: a fast, mobile-friendly
-English/Luganda chat experience, safe answers, answer feedback, and downloadable
-conversation history. Replace the two private translation services with the
-OpenAI API, retire Vespa and the enterprise-search machinery built around it, and
-reintroduce retrieval as one small, auditable Qdrant-backed module.
-
-The first release is **chat-first**. It must not claim answers are grounded in
-private documents until the curated knowledge path is deliberately added and
-measured.
+> **Package naming.** The live application package is `backend/heal_app/`
+> (formerly `backend/danswer/`). Some inherited modules under `deprecated/` and
+> some file paths in the git history still use the old name.
 
 ---
 
-## Locked decisions
+## Contents
 
-These are settled. Anything in this document that contradicts them is a bug in
-this document.
+- [What runs](#what-runs)
+- [How a question becomes an answer](#how-a-question-becomes-an-answer)
+- [The decisions that shape everything else](#the-decisions-that-shape-everything-else)
+- [Understanding the question](#understanding-the-question)
+- [Retrieval and ranking: before and after](#retrieval-and-ranking-before-and-after)
+- [Language](#language)
+- [Safety model](#safety-model)
+- [Answer review and revision](#answer-review-and-revision)
+- [Citations and grounding](#citations-and-grounding)
+- [Feedback](#feedback)
+- [Ingest](#ingest)
+- [Schema and migrations](#schema-and-migrations)
+- [What used to run in the background](#what-used-to-run-in-the-background)
+- [Advantages](#advantages)
+- [Limitations and risks](#limitations-and-risks)
+- [Capacity](#capacity)
+- [Reference material](#reference-material)
 
-| # | Decision | Consequence |
+---
+
+## What runs
+
+Five services. `make up` starts all of them; there is no second command and no
+opt-in profile.
+
+| Service | Image | Role |
 | --- | --- | --- |
-| D1 | **Qdrant** is the vector store. PostgreSQL is the system of record. | pgvector is a documented fallback only, with a written trigger (see *Fallback trigger*). Never run both for the same collection. |
-| D2 | **Design A: translate-then-retrieve.** Luganda in → English → retrieve in English → answer in English → Luganda out. | The retrieval corpus and the embedding model are **English-only**. Luganda quality becomes a translation-quality problem, which is testable and fixable. |
-| D3 | **One agent module:** `MedicalGuidanceAgent`. Retrieval only. No tools, no planner, no autonomy. | No agent selector, no tool loop, no multi-agent handoff, no background agent. |
-| D4 | **Intent classification is kept — with a medical label set.** | The Danswer keyword/semantic/QA TensorFlow classifier is deprecated. Intent becomes a safety-routing control, not a search-mode switch. |
-| D5 | **Nothing is deleted in this cycle.** Retired code moves to `deprecated/`. | Reviewable, revertable, and safe under a two-week deadline. Deletion is a separate, later change. |
-| D6 | **384-dimension embeddings**, one local embedding worker, no reranker at launch. | Dimension is frozen before first ingest. Changing it later means a new collection and a full re-embed. |
-| D7 | **New Alembic baseline.** The inherited 49-migration chain is squashed into `0001_heal_baseline`; the old chain moves to `deprecated/alembic_danswer/`. | Production is **stamped**, never upgraded. The prod-vs-fresh schema diff is the acceptance gate. |
+| `api_server` | `heal-backend` | FastAPI. Chat, retrieval, admin, auth. Streams answers over SSE. |
+| `web_server` | `heal-web` | Next.js 14. Chat UI, admin UI, PWA/Capacitor shell. |
+| `relational_db` | `postgres:15.2-alpine` | System of record: users, chats, messages, sources, chunks, feedback. |
+| `qdrant` | `qdrant/qdrant:v1.19.0` | Vector index. Derived data — rebuildable from PostgreSQL. |
+| `nginx` | `nginx:1.23.4-alpine` | Single front door; long read timeout for indexing requests. |
 
-### Fallback trigger (D1)
-
-Switch to pgvector only if, before first ingest, the deployment target refuses a
-third stateful service *or* Qdrant fails the ARM64 / backup / restore check in
-Day 8. The `KnowledgeStore` interface exists so this is a one-file change.
+The embedding model (`thenlper/gte-small`, 384 dimensions, ~64 MB) is baked
+into the backend image at `/opt/models` and loaded in-process. There is no GPU,
+no model server, no inference fleet, and no background worker of any kind.
 
 ---
 
-## Current architecture — as it runs today
+## How a question becomes an answer
+
+### The inherited path
 
 ```text
                      Browser / PWA / Capacitor shell
@@ -61,65 +76,58 @@ Day 8. The `KnowledgeStore` interface exists so this is a one-file change.
                                   |  POST /chat/send-message  (SSE)
                                   v
     ==========================  FastAPI api_server  ==========================
-    backend/danswer/chat/process_message.py :: stream_chat_message   (543 lines)
+    danswer/chat/process_message.py :: stream_chat_message        (543 lines)
     |
     |-- 1. is_luganda?  --> translate_to_english(text)
-    |                        utils/translation.py -> luganda_url
+    |                        utils/translation.py
     |                        plain HTTP, hard-coded IP, no auth, no timeout
     |
     |-- 2. persist user message                    -> PostgreSQL
     |
-    |-- 3. run_search?
-    |        retrieval_options == AUTO
-    |          -> check_if_need_search()           -> LLM prompt
-    |             secondary_llm_flows/choose_search.py
+    |-- 3. run_search?  -> check_if_need_search()  -> LLM round trip #1
     |
-    |-- 4. history_based_query_rephrase()          -> LLM prompt
+    |-- 4. history_based_query_rephrase()          -> LLM round trip #2
     |
-    |-- 5. retrieval_preprocessing()               search/request_preprocessing.py
-    |        -> query_intent()                     search/danswer_helper.py
-    |             IntentModel -> TFDistilBert "danswer/intent-model"
+    |-- 5. retrieval_preprocessing()
+    |        -> query_intent()  TFDistilBert "danswer/intent-model"
     |             3 classes: keyword | semantic | QA
-    |             emits SearchType + QueryFlow
     |        -> filter extraction, ACL, time cutoff
     |
     |-- 6. full_chunk_search_generator()           -> VespaIndex
     |        embed query   -> gte-small (384d)     model_server / local torch
-    |        search        -> Vespa 8.277.17
+    |        search        -> Vespa 8.277.17       BM25 + vector, HYBRID_ALPHA
     |        rerank        -> 2x English MS MARCO cross-encoders
     |
-    |-- 7. LLM chunk filter                        -> LLM prompt
+    |-- 7. LLM chunk filter                        -> LLM round trip #3
     |
-    |-- 8. generate_ai_chat_response()             -> LiteLLM -> gpt-3.5-turbo
-    |        extract_citations_from_stream()
+    |-- 8. generate_ai_chat_response()             -> gpt-3.5-turbo
     |
-    |-- 9. is_luganda? --> translate_to_luganda()  -> luganda_url
+    |-- 9. is_luganda? --> translate_to_luganda()
     |
     '-- 10. persist assistant message + citations  -> PostgreSQL
     ==========================================================================
 
-    Supporting services (docker-compose.dev.yml):
+    Supporting services:
       api_server | background (Celery+Beat+Dask+Supervisor) | web_server
-      postgres:15.2 | vespa:8.277.17 | nginx:1.23.4
-      + optional model_server (Dockerfile.model_server)
+      postgres | vespa | nginx | optional model_server
 
-    Python weight: torch, tensorflow==2.14.0, transformers,
-      sentence-transformers==2.2.2, nltk, dask, celery, supervisor,
-      llama-index, langchain, playwright, + ~20 connector SDKs
+    Python weight: torch, tensorflow, transformers, sentence-transformers,
+      nltk, dask, celery, supervisor, llama-index, langchain, playwright,
+      + ~20 connector SDKs
 ```
 
-Three properties of this flow drive the whole plan:
+Three properties of that flow drove the redesign:
 
-1. **It is one function.** Steps 1–10 are inline branches in
-   `stream_chat_message`. Nothing can be tested without Vespa running.
-2. **Every branch assumes Vespa.** `SearchType`, `QueryFlow`, the intent model,
-   the rerankers and the chunk filter all exist to tune one hybrid search engine.
-3. **Luganda is already translated away at step 1.** The retrieval stack has
-   never seen a Luganda token. Design A formalises what the code already does.
+1. **It is one function.** Steps 1–10 are inline branches in a single 543-line
+   function. Nothing in it could be tested without Vespa running.
+2. **Every branch exists to tune one search engine.** `SearchType`, `QueryFlow`,
+   the intent model, the rerankers and the chunk filter are all controls for
+   Vespa. They are the right controls for a product whose job is *search across
+   many heterogeneous corpora*. Heal has one curated corpus.
+3. **Luganda was already translated away at step 1.** The retrieval stack never
+   saw a Luganda token. The current design formalises what the code already did.
 
----
-
-## Target architecture — health-worker-first
+### The current path
 
 ```text
                      Browser / PWA / Capacitor shell
@@ -127,344 +135,205 @@ Three properties of this flow drive the whole plan:
                                   v
                         Next.js 14  (web/src/app)
                           chat/  admin/  auth/
-                                  |  POST /chat/send-message  (SSE, unchanged contract)
+                                  |  POST /chat/send-message  (SSE)
                                   v
     ============================  FastAPI Heal API  ==========================
 
     heal/medical_guidance/  MedicalGuidanceAgent          <-- the only agent
     |
-    |-- 1. LanguageService.to_english(text, src=lug)
-    |        heal/language/ -> OpenAI Responses API
-    |        strict translation instruction, timeout, retry, no content logged
+    |-- 1. LanguageService.to_english(text)     if the session is Luganda
+    |        heal/language/providers/heal_mt.py
+    |        env-configured URLs, timeout, retry, optional bearer token
     |
-    |-- 2. persist user message (orig + english)          -> PostgreSQL
+    |-- 2. persist user message (original + English)      -> PostgreSQL
     |
-    |-- 3. MedicalIntent.classify(text_en, history)       -> one structured call
-    |        EMERGENCY | DOSAGE_OR_MEDICATION | CLINICAL_QUESTION
-    |        GENERAL_HEALTH_INFO | ADMIN_OR_SMALLTALK | OUT_OF_SCOPE
-    |        (replaces query_intent + check_if_need_search, both of them)
+    |-- 3. understand(text_en, history)         -> ONE structured LLM call
+    |        label      EMERGENCY | DOSAGE_OR_MEDICATION | CLINICAL_QUESTION
+    |                   GENERAL_HEALTH_INFO | ADMIN_OR_SMALLTALK | OUT_OF_SCOPE
+    |        query      the question rewritten for retrieval: grammar and
+    |                   spelling repaired, references resolved, abbreviations
+    |                   expanded, one specific clinical question
+    |        terms      clinical identifiers to preserve verbatim
+    |                   ("TDF/3TC/DTG", "500mg BD")
+    |        original   the user's own words, kept unchanged
     |
-    |-- 4. route on intent
-    |        EMERGENCY            -> escalation copy FIRST, then continue
+    |-- 4. route_for(label)                     -> fixed table, not model-chosen
+    |        EMERGENCY            -> escalation copy FIRST, then answer
     |        DOSAGE_OR_MEDICATION -> retrieval REQUIRED; refuse if no source
     |        CLINICAL_QUESTION    -> retrieve + cite
     |        GENERAL_HEALTH_INFO  -> retrieve if available
     |        ADMIN_OR_SMALLTALK   -> no retrieval, no citation
     |        OUT_OF_SCOPE         -> decline + redirect, stop
     |
-    |-- 5. KnowledgeStore.search(query_en, k)   [phase 2 only]
-    |        heal/knowledge/
-    |        embed query   -> embedding_worker (384d, English)
-    |        PRE-filter    -> approved == true AND current source_version
-    |                         (Qdrant payload filter, before ANN — not after)
-    |        rank          -> cosine similarity, descending      <- primary rank
-    |        score floor   -> below MIN_RETRIEVAL_SCORE, return nothing
-    |        diversity cap -> max N chunks per source document
-    |        hydrate       -> PostgreSQL (canonical text + source metadata)
-    |        (no reranker at launch — see "Ranking and reranking")
+    |-- 5. KnowledgeStore.search(query, original, k)      heal/knowledge/
+    |        embed the REWRITTEN query  -> gte-small, in-process (384d)
+    |        build the sparse vector from rewritten + ORIGINAL, so a code the
+    |          user typed still matches even if the rewrite dropped it
+    |        PRE-filter     -> approved AND current version  (Qdrant payload
+    |                          filter, applied BEFORE the ANN search)
+    |        hybrid rank    -> dense cosine + sparse lexical, fused
+    |        score floor    -> below MIN_RETRIEVAL_SCORE, return nothing
+    |        diversity cap  -> max N chunks per source document
     |
-    |-- 6. PromptBuilder.build()                          <-- borrowed from Onyx
+    |-- 6. PromptBuilder.build()
     |        versioned safety instruction + history + approved context
     |
-    |-- 7. OpenAI Responses API (stream)
-    |        StreamProcessor extracts citations            <-- borrowed from Onyx
+    |-- 7. LLM stream                                     heal/llm/
+    |        StreamProcessor accumulates the answer
     |
-    |-- 8. LanguageService.to_luganda(answer)  if src=lug
+    |-- 8. review(question, answer, passages)             heal/medical_guidance/
+    |        coverage  how much of the answer rests on a cited passage
+    |        addressed did it actually answer what was asked (0..1)
+    |        gaps      what is missing, in words
+    |        |
+    |        '-- if addressed < REVIEW_FLOOR (0.6): ONE revision pass that
+    |            EDITS THE GAPS. Not a regeneration -- the answer that exists
+    |            is kept and the holes in it are filled, so a good paragraph
+    |            is never thrown away to fix a missing one.
     |
-    '-- 9. persist assistant message + citations + audit event -> PostgreSQL
+    |-- 9. LanguageService.to_luganda(answer)   if the session is Luganda
+    |
+    '-- 10. persist message + cited passages + grounding + audit -> PostgreSQL
     ==========================================================================
 
-    Phase 1 services:  api_server | web_server | postgres
-    Phase 2 adds:      qdrant  +  embedding_worker (on-demand ingest only)
-
     Removed from the runtime path: Vespa, Celery, Beat, Dask, Supervisor,
-      Slack listener, connector polling, model_server fleet, tensorflow,
-      English rerankers, LLM chunk filter, query rephrase, search UI.
+      the Slack listener, connector polling, the model-server fleet,
+      TensorFlow, the English rerankers, the LLM chunk filter, the query
+      rephrase step, and the enterprise search UI.
 ```
 
-### Why this shape is the light one
+**Three LLM round trips became one.** The old flow spent three secondary calls
+(`check_if_need_search`, rephrase, chunk filter) deciding *how* to search before
+it answered anything. The current flow makes one classification call, then
+answers. That is lower latency and lower cost, but the reason it matters most is
+auditability: one recorded decision with a label and a route, rather than three
+opaque judgements.
 
-- **One LLM call decides routing** (step 3) where the old flow made three
-  separate secondary-LLM round trips (`check_if_need_search`, rephrase, chunk
-  filter). Fewer calls, lower latency, cheaper, and the decision is auditable.
-- **Retrieval is a direct call, not a tool.** The model never chooses whether to
-  search; the intent router does, deterministically, from a fixed table.
-- **Phase 1 has no background process at all.** A request comes in, an answer
-  streams out, rows are written. Nothing else runs.
+**Retrieval is a direct call, not a tool.** The model never decides whether to
+search. The route table decides, deterministically, before the model runs. This
+is the single most important structural difference, and everything in the safety
+model rests on it.
 
 ---
 
-## Deprecation policy (D5)
+## The decisions that shape everything else
 
-Under a two-week deadline, deletion is the risky operation and moving is the
-cheap one. Nothing gets deleted in this cycle.
+These are settled. Anything elsewhere that contradicts them is a bug in the
+document, not in the code.
 
-```text
-backend/deprecated/danswer/            # retired backend modules, import-frozen
-backend/deprecated/alembic_danswer/    # the inherited 49-migration chain
-web/src/deprecated/                    # retired frontend routes and components
-deployment/deprecated/                 # retired compose/k8s definitions
-docs/deprecated/                       # notes explaining each move
-```
-
-**Rules — these are the safety rails, follow them exactly:**
-
-1. Move with `git mv` only. No edits in the same commit as a move; a move commit
-   must show 100% rename similarity so review is trivial.
-2. Nothing under `deprecated/` may be imported by live code. The gate is a
-   single grep in CI: `grep -rn "deprecated" backend/heal web/src --include=* `
-   must return no import statements.
-3. Nothing under `deprecated/` is registered: no router included, no Celery task,
-   no compose service, no Alembic head.
-4. `deprecated/` is excluded from lint, type-check, and test collection. It is
-   frozen text, not maintained code.
-5. **Alembic is the one exception to "move only":** the inherited 49-migration
-   chain is squashed into a new Heal baseline and the old chain moves to
-   `deprecated/alembic_danswer/`. See *Database migrations* below — it has its
-   own procedure because it is the only step that can damage live data.
-   Dropping retired tables is still a separate forward migration, after the
-   pilot. Unused tables stay for now.
-6. Every move gets a one-line entry in `docs/deprecated/MOVED.md`:
-   original path, new path, date, reason, and what replaces it.
-7. Deletion is a separate change after the pilot runs clean for two weeks.
-
-### Deprecation map
-
-| Path | Action | Reason |
+| # | Decision | Consequence |
 | --- | --- | --- |
-| `backend/danswer/document_index/vespa/` | move | Vespa retired; `KnowledgeStore` replaces it |
-| `backend/danswer/indexing/` | move | connector-driven indexing replaced by on-demand ingest |
-| `backend/danswer/search/` | move | search-mode selection has no meaning with one collection |
-| `backend/danswer/search/danswer_helper.py` | move | `query_intent`, keyword/semantic/QA — superseded by `MedicalIntent` |
-| `backend/danswer/search/search_nlp_models.py` | **split** | keep the embedding path → `heal/knowledge/`; move `IntentModel` + cross-encoders |
-| `backend/danswer/secondary_llm_flows/` | move | `check_if_need_search`, rephrase, chunk filter → folded into intent |
-| `backend/danswer/connectors/` | move | ~20 external connectors, none serve the MVP |
-| `backend/danswer/background/` | move | Celery/Beat/Dask worker fleet |
-| `backend/danswer/danswerbot/` | move | Slack bot |
-| `backend/danswer/one_shot_answer/` | move | search-page answer path |
-| `backend/danswer/utils/translation.py` | move | hard-coded HTTP to `65.108.33.93` → `LanguageService` |
-| `backend/alembic/versions/*.py` (all 49) | **squash + move** | new `0001_heal_baseline`; old chain to `deprecated/alembic_danswer/` — see *Database migrations* |
-| `backend/model_server/` | move | replaced by a scoped `embedding_worker`; `custom_models.py` is the only `import tensorflow` |
-| `backend/Dockerfile.model_server`, `supervisord.conf` | move | no worker fleet in phase 1 |
-| `backend/danswer/access/` | move | source-level ACL; not needed with one approved library |
-| `web/src/app/search/`, `web/src/components/search/`, `web/src/lib/search/` | move | search page retired |
-| `web/src/app/chat/documentSidebar/` | move | document-selection UI |
-| `web/src/app/admin/{connectors,connector,add-connector,indexing}/` | move | connector + indexing admin |
-| `web/src/app/admin/documents/{explorer,sets}/` | move | replaced by `admin/sources` in phase 2 |
-| `web/src/app/admin/documents/feedback/` | **replace, not just move** | it writes `chunk.boost`, a live ranking input — see *Admin surface* |
-| `web/src/app/admin/bot/` | move | Slack bot retired |
-| `web/src/app/admin/personas/` | move | one fixed agent, no persona editor |
-| `backend/danswer/server/features/{persona,prompt,document_set}/` | move | backends for the above |
-| `backend/danswer/server/documents/{connector,credential,cc_pair}.py` | move | connector admin backend |
-| `backend/danswer/server/manage/slack_bot.py` | move | Slack bot admin backend |
-| `deployment/kubernetes/vespa-service-deployment.yaml` | move | |
-| `deployment/kubernetes/background-deployment.yaml` | move | the whole supervisord fleet — see *What used to run in the background* |
-| `deployment/docker_compose/docker-compose.prod*.yml` | move | one tested compose file first |
+| D1 | **Qdrant is the vector store. PostgreSQL is the system of record.** | The index is derived data and can be rebuilt. pgvector is a documented fallback only; never run both for one collection. |
+| D2 | **Translate, then retrieve.** Luganda in → English → retrieve in English → answer in English → Luganda out. | The corpus and the embedding model are English-only. Luganda quality becomes a translation problem — testable and fixable — rather than a retrieval problem. |
+| D3 | **One agent module,** `MedicalGuidanceAgent`. Retrieval only. | No tool loop, no planner, no agent selector, no multi-agent handoff, no autonomous background task. |
+| D4 | **Understanding the question is one step that serves two masters:** safety routing *and* retrieval quality. | Six medical labels drive a fixed route table, and the same call produces the cleaned, specific query that retrieval actually searches on. What is retired is the *search-mode switch* — keyword vs semantic vs QA — not the idea that knowing the question helps you find the answer. |
+| D5 | **Retired code moves to `deprecated/`, it is not deleted.** | Reviewable and revertable. Nothing under `deprecated/` may be imported, registered, or collected by lint, type-check or tests. A CI grep enforces it. |
+| D6 | **384-dimension embeddings, one in-process embedder, no reranker.** | The dimension is frozen. Changing it means a new collection and a full re-embed, so it is asserted against the model at startup rather than trusted. |
+| D7 | **No background workers.** | Nothing is time-triggered. Every ingest run has a human actor recorded against it. |
 
-**Kept and refactored, not moved:** `chat/`, `db/`, `llm/`, `auth/`,
-`server/query_and_chat/`, `configs/`, the whole chat frontend, feedback, CSV
-export, and the PWA/responsive work. (`alembic/` is rebaselined, not kept as-is.)
+### Where the swap points are
 
-**Dependency removals follow the moves, not the other way round.**
-`tensorflow==2.14.0` comes out of `requirements/default.txt` only after
-`model_server/custom_models.py` is moved and CI is green. Same for `dask`,
-`celery`, `supervisor`, `nltk`, `llama-index`, `playwright`, and the connector
-SDKs. `torch` and `sentence-transformers` **stay** — the embedding worker needs
-them.
+The architecture is deliberately narrow at four seams, so that the expensive
+decisions stay reversible:
+
+- `KnowledgeStore` — the retrieval interface. Replacing Qdrant with pgvector is
+  one file.
+- `heal/llm/registry.py` — a catalogue of chat models. `gpt-4o-mini` is the
+  default; `gpt-4o`, `gpt-3.5-turbo` and `claude-sonnet-4-5` are registered, and
+  a model is only offered if its provider has a key in the environment.
+  Changing model is configuration, not a code edit.
+- `heal/language/providers/` — the translation provider. `heal_mt` (the private
+  MT pair) is the current implementation; another can be registered without
+  touching a call site.
+- `heal/medical_guidance/routes.py` — the route table. Changing what an intent
+  does is a reviewed code change, never a runtime or model decision.
 
 ---
 
-## Database migrations: start a new Alembic baseline
+## Understanding the question
 
-**Decision (overrides the earlier "never touch migrations" rule):** squash the
-inherited history into one Heal baseline and move the old chain to
-`deprecated/`.
-
-### What is there now
-
-| Fact | Value |
-| --- | --- |
-| Migration files | **49**, one linear chain, no branches |
-| Root | `47433d30de82_create_indexattempt_table.py` (`down_revision = None`) — the history begins with a connector-indexing table |
-| Head | **`853cc4ff26b5`** — `enable_chat_translation`, Heal's own, 2024-02-05 |
-| Head adds | `chat_message.language` (NOT NULL), `chat_message.luganda_message` (nullable) |
-| `env.py:25` | `target_metadata = [Base.metadata, ResultModelBase.metadata]` |
-
-Design A still uses both columns from the head migration, so they must survive.
-
-### The one thing that makes this dangerous
-
-There is a **production database with real user accounts and chat history**. A
-new baseline changes what `alembic_version` holds. If the new baseline is run
-(rather than stamped) against that database, it will attempt `CREATE TABLE` on
-tables that already exist and fail — or worse, partially apply.
-
-The procedure below is safe because it never runs DDL against production.
-
-### Procedure: squash and stamp
+Retrieval can only find what the query describes. A health worker typing on a
+phone, in a hurry, in their second language, does not produce a well-formed
+search query — and the inherited system's answer to that was three separate LLM
+round trips before it answered anything. Heal does it in one call, and uses the
+result for two different jobs.
 
 ```text
- [0] BACKUP FIRST. pg_dump of production, full data, verified restorable.
-     This is the only rollback path. Do not start step 1 without it.
-
- [1] Capture the truth
-       pg_dump --schema-only production > baseline_prod.sql
-     This is the schema the baseline must reproduce exactly.
-
- [2] Write the baseline
-       backend/alembic/versions/0001_heal_baseline.py
-         revision = "0001_heal_baseline"
-         down_revision = None
-     Generate with autogenerate against an empty database, then hand-review
-     every line against baseline_prod.sql.
-
- [3] Move the old chain
-       git mv backend/alembic/versions/*.py
-              backend/deprecated/alembic_danswer/versions/
-     All 49 files. Move only; no edits.
-
- [4] Fix env.py
-       target_metadata imports must point at the live models module, not at
-       anything now sitting under deprecated/.
-
- [5] PRODUCTION: stamp, do not upgrade
-       alembic stamp 0001_heal_baseline
-     This writes the new revision id into alembic_version and executes NO DDL.
-     The database is untouched; Alembic simply agrees it is up to date.
-
- [6] FRESH DATABASE: upgrade
-       alembic upgrade head
-     Creates the whole schema from the baseline.
-
- [7] THE GATE — this is the acceptance check, not an optional nicety
-       pg_dump --schema-only fresh_migrated_db > baseline_fresh.sql
-       diff baseline_prod.sql baseline_fresh.sql
-     Must diff clean (modulo ordering). If it does not, the baseline is wrong.
-     Fix the baseline and repeat. Do not proceed on a dirty diff — a mismatch
-     here means production and new deployments silently diverge, and you will
-     not find out until something breaks in the pilot.
+  "wat z the dose of TDF/3TC/DTG for a 14yr old, she weighs 40kg"
+        |
+        v
+  understand(message, history)          heal/medical_guidance/
+        |                                ONE structured call to the configured
+        |                                model (see "Where the swap points are"
+        |                                — the provider is replaceable)
+        v
+  label     DOSAGE_OR_MEDICATION        -> the route table (safety)
+  query     "dolutegravir-based ART     -> what retrieval embeds
+             regimen dosing for an
+             adolescent weighing 40 kg"
+  terms     ["TDF/3TC/DTG", "40kg"]     -> preserved verbatim for lexical match
+  original  the user's own words        -> kept, and shown to the model
 ```
 
-### The mistake to avoid
+### Why one call and not two
 
-**The baseline must be a faithful snapshot of the schema as it exists today —
-including every table you are about to deprecate.** `index_attempt`,
-`connector`, `credential`, `connector_credential_pair`, `document_set`,
-`slack_bot_config`, `user_group`, the tag tables, and the rest all exist in
-production right now.
+The obvious design is a grammar-fixing stage followed by a classifier. It is
+worse. The two tasks need exactly the same input — the message plus enough
+history to resolve what "she" refers to — and reading that input twice doubles
+the latency a health worker waits through before anything happens, doubles the
+cost, and creates a class of bug where the two stages disagree about what was
+asked. One structured response carries both.
 
-It is tempting to write a "clean" baseline containing only the tables Heal keeps.
-Do not. If the baseline omits a table that exists in production, then step [5]
-stamps a lie: Alembic believes the database matches the baseline when it does
-not, step [7] fails, and every future autogenerate produces nonsense diffs.
+### What the rewrite is allowed to do
 
-**Dropping the retired tables is a separate forward migration** — `0002_drop_*`
-— written after the pilot is stable, on evidence that nothing reads them. Not in
-these two weeks. Empty tables cost nothing.
+- Repair spelling, grammar and phone-keyboard noise.
+- Resolve references from the history: "and for a child?" becomes a question
+  that means something on its own.
+- Expand abbreviations that are ambiguous out of context.
+- State the question specifically, in the vocabulary a clinical guideline would
+  use rather than the vocabulary the user happened to reach for.
 
-### Rules
+### What it must not do
 
-1. Backup and verify the restore **before** touching anything.
-2. `alembic stamp` runs against production exactly once, by one person, with the
-   backup confirmed. Write down the command that was run and when.
-3. The move of the 49 files is its own commit, moves only, 100% rename
-   similarity.
-4. Files under `deprecated/alembic_danswer/` are never executed. Remove that path
-   from `version_locations` so Alembic cannot discover them.
-5. The step [7] schema diff is a CI job, not a one-time manual check.
-6. Column-level note: the head migration adds `chat_message.language` as
-   NOT NULL with no server default (`853cc4ff26b5`). That only succeeds on an
-   empty table. Reproduce whatever production actually has — check whether the
-   live column carries a default before writing the baseline.
+- **It must not answer the question.** It produces a query, never content.
+- **It must not invent clinical detail.** A weight, an age or a drug that was
+  not in the message cannot appear in the rewrite. This is the failure that
+  would matter: a rewrite that adds "paediatric" to a question about an adult
+  retrieves the wrong guideline, and the answer is then correctly cited and
+  wrong.
+- **It must not discard the original.** The user's own words are kept and go
+  into the prompt alongside the rewrite, so the model answering can see what
+  was actually typed.
 
----
+### Why the original text still reaches retrieval
 
-## Language: translate-then-retrieve (D2)
+The dense half of the search embeds the rewritten query, because that is the
+version phrased like the guideline it needs to match. The **sparse half is built
+from the rewrite and the original together.** If a health worker types
+`TDF/3TC/DTG` and the rewrite generalises it to "dolutegravir-based regimen",
+the lexical vector still carries the exact code, so the chunk containing that
+code still matches. Losing an exact drug-code match to a tidier query would be a
+self-inflicted wound in precisely the place this product cannot afford one.
 
-```text
-   Luganda query
-        |
-        v
-   LanguageService.to_english()      OpenAI Responses API
-        |
-        v
-   English query  --------> English embedding --------> Qdrant (English chunks)
-        |                                                    |
-        v                                                    v
-   English answer  <---- OpenAI Responses (+ English context, citations)
-        |
-        v
-   LanguageService.to_luganda()
-        |
-        v
-   Luganda answer  +  citations rendered from PostgreSQL source metadata
-```
+### When it fails
 
-**Why A and not B.** `multilingual-e5-*` and `BAAI/bge-m3` are both built on
-XLM-RoBERTa, whose pretraining language list does not appear to include Luganda.
-Climbing that ladder buys coverage of languages Heal does not serve. Direct
-Luganda embedding (Design B) would mean AfroXLMR-family encoders fine-tuned for
-retrieval — a research project, not a two-week MVP. **Verify the XLM-R language
-list on the model cards before anyone re-opens this.**
+Like classification, it degrades rather than raising. If the call fails or
+returns something unusable, the label falls back to `CLINICAL_QUESTION` and the
+search query falls back to the user's original text. That is exactly the
+behaviour the system had before this stage existed, so a bad day for the model
+costs retrieval quality, not the answer.
 
-Consequences to hold onto:
-
-- The knowledge corpus is stored and embedded in **English**. If a source arrives
-  in Luganda, it is translated at ingest and both versions are kept in
-  PostgreSQL — the English one is what gets embedded.
-- Translation quality is now on the critical path for clinical safety. It needs
-  its own English↔Luganda medical-phrase test set covering drug names, dosage
-  units, negation, and uncertainty, run before rollout and in CI after.
-- Citations are rendered from PostgreSQL metadata, so a Luganda user sees
-  Luganda answer text with English source titles. Decide the display convention
-  before the pilot; do not machine-translate source titles.
+Every rewrite is recorded in the audit event alongside the label — the rewritten
+query only, never the patient-identifying free text of the original.
 
 ---
 
-## Embedding compute: run the lightest thing that is ready (D6)
+## Retrieval and ranking: before and after
 
-Because retrieval is English-only, the embedding model does not need to be
-multilingual at all. That removes the hardest constraint. Keep **384 dimensions**
-so the existing shape, config, and any earlier index work stay valid.
+This is the part of the inherited system with the most machinery and the least
+documentation, so it is set out explicitly.
 
-Candidates that are ready today — no training, no new infrastructure:
-
-| Model | Dim | Size | Status in this repo | Note |
-| --- | --- | --- | --- | --- |
-| `thenlper/gte-small` | 384 | ~33M | **already the default** (`model_configs.py:14`) | zero-work baseline; measure it first |
-| `BAAI/bge-small-en-v1.5` | 384 | ~33M | not wired | generally the stronger English retriever; needs `ASYM_QUERY_PREFIX` handling |
-| `intfloat/e5-small-v2` | 384 | ~33M | prefix vars already exist in `env.multilingual.template` | asymmetric `query:`/`passage:` prefixes already plumbed |
-| `intfloat/multilingual-e5-small` | 384 | ~118M | in `env.multilingual.template` | only if Design A is ever reversed; 3.5x the weight for no English gain |
-
-**Procedure:** start on `gte-small` because it costs nothing to keep. Build the
-clinician eval set. Swap to `bge-small-en-v1.5` or `e5-small-v2` only if
-Recall@5 fails, and only on measured evidence. All three are 384-dim, so a swap
-is a re-embed of the same collection, not a schema change.
-
-**Verify licences before shipping.** The repo's own rule is "MIT or Apache"
-(`model_configs.py:9`). Check each candidate's card. `jinaai/jina-embeddings-v3`
-is an obvious mid-size multilingual candidate and is **CC-BY-NC** — it fails this
-rule; do not use it.
-
-**No reranker at launch** — see *Ranking and reranking* below for the full
-argument and the trigger to add one. Note that Design A changes this question:
-because translation happens upstream, a reranker would receive an English query,
-so the existing English cross-encoders are no longer disqualified on language
-grounds. They are deferred on latency, cost, and lack of clinical validation.
-
-**Where it runs.** One `embedding_worker` module inside `heal/knowledge/`,
-invoked on-demand by the ingest job. Not a permanent server, not two servers, no
-warm-up daemon. Phase 1 does not run it at all.
-
----
-
-## Ranking and reranking — where it went
-
-This is the part of the old system with the most machinery and the least
-documentation, so it is spelled out here rather than left implicit in the
-diagram.
-
-### What ranks results today (six stages)
+### What ranked results before — six stages
 
 ```text
   query
@@ -478,538 +347,644 @@ diagram.
        dedupe by key, keep max score, re-sort
     |
  [3] semantic_reranking()                     search_runner.py:178
-       2x English MS MARCO cross-encoders     model_configs.py:45-47
+       2x English MS MARCO cross-encoders
        ensemble average -> min-shift
        x boosts  x recency_multiplier -> normalize -> sort
-    |     (if reranking is off, apply_boost_legacy() at :247 instead)
     |
  [4] chunk.boost                              document_index_utils.py:11
        admin/crowd document feedback -> integer
        sigmoid curve -> 0.5x .. 2.0x score multiplier
     |
- [5] filter_chunks()  LLM relevance filter    full_chunk_search_generator:540
+ [5] filter_chunks()  LLM relevance filter
        one more LLM round trip; yields list[bool]
     |
- [6] map_document_id_order()                  chat_utils
+ [6] map_document_id_order()
        fixes citation numbering from final order
     |
   chunks fed to the LLM
 ```
 
-### What ranks results in the new flow
+### What ranks results now — five stages
 
 ```text
   english query
     |
- [1] PRE-filter in Qdrant   (payload filter, applied before ANN search)
-       approved == true  AND  source_version is current
-       Must be a Qdrant filter, NOT a post-search drop. Post-filtering an
+ [1] PRE-filter in Qdrant   (payload filter, applied before the ANN search)
+       approved == true  AND  source version is current
+       It must be a Qdrant filter, not a post-search drop: post-filtering an
        HNSW result set silently returns fewer than k and hides the loss.
     |
- [2] vector similarity ordering            <-- THIS IS THE PRIMARY RANK
-       cosine score from Qdrant, descending. One model, one collection.
+ [2] HYBRID SCORE                          <-- the primary rank
+       dense cosine (gte-small, 384d)  fused with
+       sparse lexical (hashed term frequency, sublinear damping)
+       HYBRID_ALPHA = 0.6 weights the dense half
     |
  [3] SCORE FLOOR                           <-- new; the old system had none
-       below MIN_RETRIEVAL_SCORE -> return nothing
-       the agent then says "no approved source", it does not guess
+       below MIN_RETRIEVAL_SCORE -> return nothing, and the agent says it has
+       no approved source rather than citing weak text
     |
  [4] per-source diversity cap
-       max N chunks per source document, so one guideline cannot crowd out
-       a second corroborating source
+       max N chunks per source document, so one long guideline cannot crowd
+       out a corroborating second source
     |
- [5] clinician boost   [phase 2.5, optional]
-       admin-set, audited, per source_version. NOT crowd-voted.
-    |
- [6] context ordering + citation numbering
-       final order determines position in the prompt and citation numbers
+ [5] context ordering + citation numbering
+       final order sets prompt position and the [n] a reader clicks
     |
   chunks -> PromptBuilder
 ```
 
-### Stage-by-stage: kept, replaced, or dropped
+### Stage by stage
 
 | Old stage | Status | Reasoning |
 | --- | --- | --- |
-| Hybrid BM25 + vector (`HYBRID_ALPHA`) | **dropped — biggest real loss** | Went with Vespa. See *Ranking risk* below; this is the one to watch. |
-| Keyword / semantic mode switch | dropped | One collection, one model. Nothing to switch between. `SearchType` has no meaning. |
-| Recency decay (`time_decay_multiplier`) | **replaced, and improved** | A curated library of approved clinical guidance should not silently prefer newer text. Supersession is explicit: a `source_version` is approved or it is not. Explicit beats decay for clinical documents. |
-| Cross-encoder reranking | deferred, not forbidden | See *When to add a reranker*. |
-| Crowd/admin `boost` sigmoid (0.5x–2.0x) | replaced by clinician boost | An unaudited multiplier that silently reweights clinical sources is the wrong control. The replacement is admin-set, versioned, and logged. |
-| LLM relevance filter | dropped | One extra LLM round trip per query. The score floor does the cheap 80% of this job with no latency. |
-| Citation ordering | kept | Still needed, same job. |
-| — | **score floor is new** | The old pipeline always returned top-k regardless of quality. For `DOSAGE_OR_MEDICATION`, citing a weak match is worse than refusing. |
+| Hybrid BM25 + vector | **kept, reimplemented** | Lexical matching is not optional for this product — `TDF/3TC/DTG` and `500mg BD` must match exactly. Vespa's BM25 was replaced with Qdrant sparse vectors: same capability, no second service. |
+| Keyword / semantic mode switch | dropped | One collection, one model. There is nothing to switch between, and `SearchType` has no meaning. |
+| Recency decay | **replaced with explicit versioning** | A curated library of approved clinical guidance should not silently prefer newer text. Supersession is a fact, not a gradient: a source version is approved or it is not. |
+| Cross-encoder reranking | **deferred** | Not forbidden — see the trigger below. |
+| Crowd/admin `boost` sigmoid (0.5×–2.0×) | **removed, not replaced** | An unaudited multiplier that silently reweights clinical sources is a control Heal should not have. If reweighting is ever needed it will be admin-set, versioned and logged. |
+| LLM relevance filter | dropped | An extra LLM round trip per query. The score floor does most of that job with no latency. |
+| Citation ordering | kept | Same job, same need. |
+| — | **score floor is new** | The old pipeline always returned top-k regardless of quality. For a dosage question, citing a weak match is worse than refusing. |
 
-### Ranking risk #1: lexical matching
+**What was genuinely given up.** Vespa is a more capable search engine than
+Qdrant plus a hash-based sparse vector. It offers real BM25 with corpus
+statistics, richer query expressions, and tuning this system cannot express.
+For a few thousand chunks of curated clinical text the difference is unlikely to
+matter — but this has not been measured on Heal's own corpus, and "unlikely"
+is not "shown". See *Limitations*.
 
-Pure dense retrieval is weakest exactly where this product is most sensitive:
-drug codes, abbreviations and dosages — `TDF/3TC/DTG`, `500mg BD`, ICD codes.
-BM25 handled these in the old stack for free, and dropping Vespa drops it.
+### Constants, and which one matters
 
-**Mitigation, in order:** measure it on the eval set first (build cases
-deliberately around codes and abbreviations); if it fails, add **Qdrant sparse
-vectors** for hybrid dense+lexical search. That is a Qdrant feature, not a new
-service, and it is the cheap answer to BGE-M3 use case #4.
-
-Do not treat this as theoretical. Write the drug-code eval cases in Day 9.
-
-### When to add a reranker
-
-**Correction to an earlier version of this plan.** The objection that the
-existing cross-encoders are "English-only and unvalidated for Luganda" **no
-longer applies under Design A** — the query reaching a reranker is already
-English, because translation happens upstream. `cross-encoder/ms-marco-MiniLM-L-4-v2`
-is therefore a usable candidate, which it would not have been under Design B.
-
-The remaining objections are real but narrower:
-
-1. It scores query/chunk pairs one at a time — latency and CPU grow with `k`.
-2. It is trained on MS MARCO web text, not clinical guidance. Unvalidated here.
-3. At 100 documents and a few thousand chunks, the retrieval candidate set is
-   small enough that reranking has little room to help.
-
-**Trigger to add one:** the eval set shows the correct chunk is retrieved inside
-the top 20 but not inside the top 5. That is precisely the reranker-shaped
-failure. If the correct chunk is not in the top 20 at all, a reranker cannot fix
-it — that is a chunking, translation, or source-coverage problem, and reranking
-would only hide it.
-
-**Not at launch.** `ENABLE_RERANKING_REAL_TIME_FLOW` stays `false`.
-
-### Constants to pick before first ingest
-
-| Constant | Purpose | Note |
+| Constant | Default | Purpose |
 | --- | --- | --- |
-| `RETRIEVAL_TOP_K` | candidates fetched from Qdrant | start 20 |
-| `CONTEXT_TOP_K` | chunks passed to the prompt | start 5 |
-| `MIN_RETRIEVAL_SCORE` | score floor | **must be tuned on the eval set, not guessed** — it is a clinical-safety parameter |
-| `MAX_CHUNKS_PER_SOURCE` | diversity cap | start 2 |
+| `RETRIEVAL_TOP_K` | 20 | candidates fetched from Qdrant |
+| `CONTEXT_TOP_K` | 5 | chunks placed in the prompt |
+| `MAX_CHUNKS_PER_SOURCE` | 2 | diversity cap |
+| `HYBRID_ALPHA` | 0.6 | weight of the dense half of the score |
+| `CHUNK_SIZE` / `CHUNK_OVERLAP` | 1200 / 200 chars | chunk boundaries |
+| `MIN_RETRIEVAL_SCORE` | **0.35 — a placeholder** | the score floor |
 
-`MIN_RETRIEVAL_SCORE` is the one that matters. Too low and the agent cites
-irrelevant text with a citation that lends it false authority; too high and it
-refuses questions it could have answered. Set it from measured data on Day 9 and
-record the value and the evidence in this repo.
+`MIN_RETRIEVAL_SCORE` is a clinical-safety parameter, not a tuning knob. Too low
+and the agent cites irrelevant text under a marker that lends it false
+authority; too high and it refuses questions it could have answered. **The
+current value is a guess and is marked as one in the code.** It must be set from
+measured results on a clinician evaluation set, and the value and the evidence
+recorded here.
+
+### Reranking: what it is for, and why there isn't one
+
+**Why reranking matters.** Embedding search is a compromise made for speed. A
+query and a chunk are each crushed into 384 numbers *independently*, and the
+score is the angle between them. Nothing in that computation ever looks at the
+query and the chunk together. That is what makes it fast enough to search
+thousands of chunks in milliseconds, and it is also its ceiling: a passage that
+mentions the right drug, the right condition and the right age band scores well
+whether or not it actually answers the question, because "aboutness" is most of
+what a single vector can carry.
+
+A cross-encoder reranker removes that compromise for a handful of candidates. It
+reads the query and one chunk *together* and scores the pair directly, so it can
+tell "the paediatric dose is 5mg/kg" from "paediatric dosing is discussed in
+section 4". For a clinical product that distinction is the whole game: the two
+passages are nearly identical to an embedding and completely different to a
+health worker. Reranking is the standard fix for the standard failure — the
+right passage is retrieved, but ranked fourth, and only the top three reach the
+prompt.
+
+**Why there isn't one.** Three reasons, in order of weight:
+
+1. **It has nothing to improve yet.** A reranker reorders candidates. At the
+   target corpus — around a hundred documents, a few thousand chunks — a query
+   often has only a handful of genuinely relevant chunks in the whole library.
+   Reordering five candidates of which two are relevant is not where the quality
+   is won. The score floor and the approved-source filter are doing more work
+   than a reranker would.
+2. **The cost lands on every question.** A cross-encoder scores pairs one at a
+   time, so latency and CPU grow with the number of candidates. That is a
+   permanent tax on every health worker's wait, paid to fix a failure that has
+   not yet been shown to occur.
+3. **It is unvalidated here.** The available cross-encoders
+   (`ms-marco-MiniLM`-family) are trained on web search relevance, not clinical
+   guidance. "Relevant" in MS MARCO and "safe to cite for a dose" are not the
+   same judgement, and adopting one without measurement would add a confident
+   reordering step nobody has checked.
+
+Note what is *not* on that list: language. Because translation happens upstream,
+a reranker would receive an English query, so the inherited English
+cross-encoders are perfectly usable candidates. They are deferred on cost and
+evidence, not on capability.
+
+**The trigger to add one is specific,** and worth writing down now so it is not
+argued about later: the evaluation set shows the correct chunk retrieved inside
+the top 20 but not inside the top 5. That is the reranker-shaped failure, and it
+is the only one a reranker fixes. If the correct chunk is not in the top 20 at
+all, reranking cannot help — that is a chunking, translation, or source-coverage
+problem, and adding a reranker would only make the symptom harder to see.
+
+Until then, the cheaper interventions come first: better chunk boundaries, then
+the hybrid weight (`HYBRID_ALPHA`), then a stronger 384-dimension embedding
+model. All three are reversible; a reranker is a permanent latency cost.
 
 ---
 
-## Admin surface
+## Language
 
-The admin area is currently 12 route groups, most of which exist to operate the
-connector and indexing fleet. Noting it here because two of its screens are
-**ranking controls**, not just views — retiring them without a replacement
-silently changes retrieval behaviour.
+```text
+   Luganda query
+        |
+        v
+   LanguageService.to_english()        private MT service, env-configured
+        |
+        v
+   English query --------> English embedding --------> Qdrant (English chunks)
+        |                                                    |
+        v                                                    v
+   English answer <---- LLM (+ approved English context, citations)
+        |
+        v
+   LanguageService.to_luganda()
+        |
+        v
+   Luganda answer  +  citations rendered from PostgreSQL source metadata
+```
 
-### What is there now
+**Why translate rather than embed Luganda directly.** The multilingual
+retrieval models that would allow direct Luganda embedding — the
+`multilingual-e5` family, `BAAI/bge-m3` — are built on XLM-RoBERTa, whose
+pretraining language list does not appear to include Luganda. Adopting one buys
+coverage of languages Heal does not serve, at several times the model weight.
+Genuine Luganda retrieval would mean AfroXLMR-family encoders fine-tuned for the
+task: a research programme, not a component swap.
 
-| Route | Backend | Decision |
+Consequences to hold onto:
+
+- The corpus is stored and embedded in **English**. A source that arrives in
+  Luganda is translated at ingest, and both versions are kept in PostgreSQL —
+  the English one is what gets embedded.
+- **Translation quality is on the clinical critical path.** It needs its own
+  English↔Luganda medical-phrase test set covering drug names, dosage units,
+  negation and uncertainty.
+- A Luganda reader sees Luganda answer text with English source titles, because
+  citations render from stored metadata. Source titles are deliberately not
+  machine-translated.
+
+The translation services were the single worst thing in the inherited codebase:
+plain HTTP to hard-coded public IP addresses, no authentication, no timeout, no
+failure path. A hung MT service hung the entire chat request. They are now
+reached through a provider interface with URLs from the environment, connect and
+read timeouts, bounded retries on connection failures only, and an optional
+bearer token. Retries never replay a partially streamed response, because
+replaying one would duplicate text in a reader's answer.
+
+---
+
+## Safety model
+
+The safety properties are structural — they come from where decisions are made,
+not from asking the model to behave.
+
+1. **The model never chooses to search.** A fixed table maps intent to route.
+2. **A dosage question with no approved source is refused,** not answered from
+   the model's own knowledge. The refusal names its reason, because "the library
+   is unreachable" and "nothing approved covers this" call for different actions
+   from someone standing in front of a patient.
+3. **Emergency escalation is emitted before the model is called,** so it reaches
+   the reader even if generation is slow or fails outright.
+4. **The safety instruction is versioned** (`SAFETY_PROMPT_VERSION`) and written
+   into the audit event, so any answer can be traced to the rules that produced
+   it.
+5. **Audit events carry no patient text** — only ids, labels, model versions and
+   outcomes. That is what makes them safe to ship to ordinary log storage.
+6. **Retrieval failure degrades, it never 500s.** An unreachable store returns an
+   outcome flagged `unavailable`, and the agent explains itself.
+
+Access control is three roles — `SUPER_ADMIN`, `ADMIN`, `MEMBER` — checked by
+rank, never by equality. The first account created in an empty database becomes
+`SUPER_ADMIN`; everyone else, including all self-registration, becomes `MEMBER`.
+The last super admin cannot be demoted.
+
+---
+
+## Answer review and revision
+
+An answer that streams cleanly can still miss the question. The review step runs
+after generation and before the answer is finalised, and it asks two separate
+questions that are easy to confuse:
+
+| Question | What it measures | What it drives |
 | --- | --- | --- |
-| `admin/connectors/*` (~20 providers), `admin/connector/[ccPairId]`, `admin/add-connector` | `server/documents/connector.py`, `credential.py`, `cc_pair.py` | move — no connectors in the MVP |
-| `admin/indexing/status` | `server/documents/` | move — no background indexing |
-| `admin/documents/explorer` | `server/documents/document.py` | **replace** — becomes the approved-source browser |
-| `admin/documents/feedback` | `server/documents/document.py` → `chunk.boost` | **replace, do not just drop** — this is a live ranking control (see below) |
-| `admin/documents/sets` | `server/features/document_set/` | move — one approved library, no sets |
-| `admin/personas` (+ `new`, `[personaId]`) | `server/features/persona/`, `prompt/` | move — D3 fixes one agent |
-| `admin/bot` (+ `new`, `[id]`) | `server/manage/slack_bot.py` | move — Slack bot retired |
-| `admin/keys/openai` | `server/manage/` | **keep** — still need the OpenAI key |
-| `admin/users` | `server/manage/users.py` | **keep** |
-| `admin/sessions` | `server/query_and_chat/` | **keep** — Heal-added, serves the feedback loop |
-| `admin/systeminfo` | `server/manage/get_state.py` | **keep** — becomes the health/jobs view |
+| **Was it answered?** | Does the text address what was actually asked, including every part of a multi-part question | Whether a revision pass runs |
+| **Was it grounded?** | How much of the answer rests on a cited approved passage | What the reader is shown about the sources |
 
-### The one that is easy to get wrong
+These are independent. A correct refusal is fully *answered* and not *grounded*
+at all. A fluent answer that quietly ignores half the question can be perfectly
+grounded in the half it did address. Collapsing them into one number would hide
+both failures.
 
-`admin/documents/feedback` is not a report. It writes an integer `boost` per
-document (`db/document.py:152,173`), which `translate_boost_count_to_multiplier`
-(`document_index_utils.py:11-21`) turns into a **0.5x to 2.0x multiplier on the
-retrieval score** via a sigmoid, applied in `semantic_reranking`
-(`search_runner.py:204-206`). Moving that screen to `deprecated/` removes a
-ranking input.
-
-That is the right outcome — an unaudited crowd multiplier over clinical sources
-is a control Heal should not have — but it must be a **decision, not an
-accident**. Its replacement is stage [5] of the new pipeline: an admin-set,
-versioned, logged clinician boost, added in phase 2.5 only if the eval set shows
-it is needed.
-
-### Admin for the MVP
+### The revision back-flow
 
 ```text
-Phase 1
-  admin/users          accounts and roles
-  admin/sessions       chat sessions
-  admin/feedback       NEW - answer feedback review + export   <- serves the
-                       clinical review loop the product depends on
-  admin/systeminfo     health, versions, config
-  admin/keys           OpenAI key
-
-Phase 2 adds
-  admin/sources        approved medical sources: upload, approve, version,
-                       supersede, re-embed. Replaces documents/explorer.
-  admin/jobs           reference_ingest runs: queued/started/completed/failed,
-                       counts, model version, source version, actor, time.
-                       No patient text.
+  answer + question + cited passages
+        |
+        v
+  review()                             one structured call, configured model
+        |
+        +-- addressed >= REVIEW_FLOOR   -> done, nothing else runs
+        |
+        '-- addressed <  REVIEW_FLOOR   -> ONE revision pass
+                |
+                v
+        revise(answer, gaps, passages)
+          "here is your answer, here is what it did not cover,
+           here are the passages. Fill the gaps. Change nothing else."
+                |
+                v
+          revised answer -> re-reviewed once for grounding, then finalised
 ```
 
-`admin/feedback` is the highest-value new admin screen and the smallest. The
-plan already commits to a clinician-reviewed evaluation and feedback loop; that
-loop needs a place to read from. It is Week 2 work and it should not be cut.
+Four rules keep this from becoming a loop:
 
+1. **It edits, it does not regenerate.** The instruction names the gaps and
+   supplies the existing text. A regeneration would throw away a good paragraph
+   to fix a missing one, and would produce a different answer each time the
+   review was borderline.
+2. **Exactly one pass.** If the revision still falls short, the answer is
+   delivered as it stands. An answer that arrives is worth more than a better
+   one that does not, and an unbounded loop is a way to spend a health worker's
+   time without telling them.
+3. **The revision may not add uncited clinical content.** It fills gaps *from
+   the passages already retrieved*. If the gap cannot be filled from an approved
+   source, the honest revision is to say the source does not cover it — which is
+   the same rule the first answer was written under.
+4. **Refusals are never revised.** An answer that correctly refused for lack of
+   an approved source has done its job. Sending it back for "improvement" is how
+   a refusal turns into a guess.
 
----
+`REVIEW_FLOOR` starts at **0.6**. Like the retrieval score floor, it is a number
+chosen to be adjusted from measurement rather than defended as correct: too high
+and every answer pays for a revision pass, too low and the check never fires.
+The review outcome is recorded on every answer, so the distribution can be read
+before the threshold is tuned.
 
-## When a smaller-scale BGE-M3 actually earns its weight
-
-`BAAI/bge-m3` is a retrieval model, not a chat model or an agent: it turns
-queries and chunks into comparable representations. It is 1024-dim, 8192-token,
-roughly 2.3 GB. Under Design A it is **not needed at launch**. These are the
-concrete conditions that would justify it — and the lighter thing to try first
-in each case.
-
-| # | Use case | Why BGE-M3 fits | Try this first |
-| --- | --- | --- | --- |
-| 1 | **Luganda source documents must be ingested as-is** — a partner supplies Luganda-only protocols that cannot be translated at ingest | multilingual encoder; removes the translation hop from the corpus side | translate at ingest, keep both versions in PostgreSQL (Design A already covers this) |
-| 2 | **Cross-lingual retrieval without a translation hop** — Design A is reversed and a Luganda query must hit an English chunk directly | trained for cross-lingual alignment | `multilingual-e5-base` (768d, ~278M) — the genuine "smaller-scale BGE-M3" |
-| 3 | **Long clinical documents where 512-token chunks destroy meaning** — national treatment guidelines where a dosage clause depends on a table three pages earlier | 8192-token context keeps the clause and its qualifier in one vector | parent-document retrieval: embed small chunks, return the enclosing section. Cheaper and usually better |
-| 4 | **Drug names, dosages, and ICD codes must match lexically *and* semantically** — "TDF/3TC/DTG" or "500mg BD" must hit exactly | emits dense + sparse lexical weights + multi-vectors from one model | Qdrant sparse vectors / BM25 alongside the small dense model — hybrid without a 2.3 GB model |
-| 5 | **Measured recall failure isolated to the embedding** — eval set shows Recall@5 failing, and chunking, translation, and source coverage have each been ruled out | genuinely stronger retriever | re-chunk, then `bge-small-en-v1.5`, then `multilingual-e5-base`, in that order |
-| 6 | **Corpus grows past a few thousand documents with heavy domain vocabulary** | capacity to separate near-duplicate clinical text | not yet a real Heal condition at 100 documents |
-
-**Do not adopt it for any of these reasons:** it sounds stronger; it is newer;
-another project uses it; it is "more multilingual". Adoption requires a measured
-gain on the same held-out clinician set, run offline, against the incumbent.
-
-**Cost if adopted:** 1024 dims is a new Qdrant collection and a full re-embed
-(~2.7x the vector storage), a much slower ingest, and a materially larger
-container image. That is why D6 freezes the dimension before first ingest.
+The review runs on the **English** text, before translation — the same rule the
+whole pipeline follows, and for the same reason: the model reasons in the
+language the corpus is in.
 
 ---
 
-## Intent: keep it, with a medical label set (D4)
+## Citations and grounding
 
-### What is being retired and why
+A cited passage is stored, not recomputed. When an answer completes:
 
-| Fact | Location |
-| --- | --- |
-| `INTENT_MODEL_VERSION = "danswer/intent-model"` | `configs/model_configs.py:61` |
-| It is a `TFDistilBertForSequenceClassification` | `search/search_nlp_models.py:40,92` |
-| It is the only reason TensorFlow is a dependency | `model_server/custom_models.py:2` |
-| Its classes are keyword / semantic / QA | `search/danswer_helper.py:25-30` |
-| Its output is a `SearchType` + a `QueryFlow` | same |
-| Consumed only here | `search/request_preprocessing.py:101-126`, `server/query_and_chat/query_backend.py:106` |
-| Max context 256 tokens, English DistilBERT | `configs/model_configs.py:58` |
+1. Citation markers are extracted from the **finished** English answer. Not per
+   token — providers split `[12]` across three tokens, so per-token matching
+   finds nothing.
+2. Marker `N` maps to the `N`-th passage placed in the prompt. A marker beyond
+   the passages supplied is dropped with a warning rather than trusted.
+3. Only the passages the answer **actually cited** are persisted, with their
+   text, scores, source id and version. Storing the rest would show a reader
+   sources the answer never leaned on.
+4. The message and its citations commit in one transaction, so citations survive
+   a reload rather than living only in the stream.
 
-Its entire output feeds one decision: *should Vespa run keyword or semantic
-search, and should the UI show a result list or an answer.* With one Qdrant
-collection and one embedding model, that branch does not exist. `QueryFlow.SEARCH`
-is also dead once the search page is retired. And a Luganda query through an
-English DistilBERT is noise.
+In the UI, each `[n]` is a link that opens the passage it points at. A reader can
+also ask for a plain-language gloss of one passage, generated on demand and
+cached. The gloss never replaces the passage, the model generating it sees only
+the passage — not the question, not the history — and a failure shows no gloss
+rather than a guess.
 
-Note for the record: `check_if_need_search` (`chat/process_message.py:263`) is
-**not a model** — it is an LLM prompt in `secondary_llm_flows/choose_search.py`.
-It folds into the intent call. That is a merge, not a deletion.
+Version is part of a citation's identity. Two editions of one guideline are
+different sources clinically, and a reader must be able to tell which was used.
 
-### What replaces it
+### Showing how well an answer is grounded
 
-```text
-heal/medical_guidance/intent.py
+Today an answer that cites nothing and an answer built out of the Uganda
+Clinical Guidelines look identical on screen. A health worker cannot tell which
+one they are reading, and that is the difference that matters most to them.
 
-  MedicalIntent
-    EMERGENCY              escalation copy first, then answer
-    DOSAGE_OR_MEDICATION   citation REQUIRED; refuse if no approved source
-    CLINICAL_QUESTION      retrieve + cite
-    GENERAL_HEALTH_INFO    retrieve if available
-    ADMIN_OR_SMALLTALK     no retrieval, no citation
-    OUT_OF_SCOPE           decline + redirect
+**A weakly grounded answer is still shown.** It is not suppressed, not
+regenerated, and not marked as an error. Withholding a useful answer because the
+library is thin would be a worse failure than showing it plainly. What changes
+is the *reference display*, which tells the reader how much of what they just
+read rests on an approved source.
 
-  Implementation: structured output on the OpenAI Responses call.
-  Input: English query (post-translation) + short history.
-  No TensorFlow. No model server. No local weights. Works in both
-  languages because translation happens upstream.
+Grounding is computed deterministically from data already in hand — no extra
+model call:
 
-  Every classification writes an audit event: intent, confidence,
-  route taken, model version. No patient text in the event.
-```
+- **Citation coverage.** Of the answer's substantive sentences, how many carry a
+  citation marker. This is the headline signal.
+- **Lexical grounding.** How much of the answer's clinical content — drug names,
+  doses, numbers — actually appears in the cited passages. `tokenize()` in
+  `heal/knowledge/embedder.py` already extracts exactly those tokens, keeping
+  `TDF/3TC/DTG` and `500mg` intact. This is the supporting signal, and it is
+  what catches an answer that cites a passage but states something the passage
+  does not contain.
 
-This is the mechanism the safety requirement ("emergency escalation") currently
-has no implementation for. A small fine-tuned local classifier is a later
-optimisation if measured latency or cost demands it — and it belongs in
-`medical_guidance/`, not in a model server.
+Three states, and the reference panel renders each differently:
 
-**Route table is fixed and versioned.** The model classifies; it does not choose
-what happens next. Changing a route is a code change with review.
-
----
-
-## The one agent: MedicalGuidanceAgent (D3)
-
-```text
-MedicalGuidanceAgent
-  fixed, versioned safety instructions
-  English + Luganda response mode (via LanguageService)
-  MedicalIntent routing (fixed table, not model-chosen)
-  approved KnowledgeStore retrieval only
-  citations required whenever knowledge is used
-  actions/tools: none
-```
-
-It may retrieve only approved medical references and must cite them. It may never
-browse the web, execute code, change a record, or call an external clinical
-system. There is no agent selector, planner, tool loop, multi-agent handoff, or
-autonomous background task.
-
-Keep the module boundary so future capability is additive: an approved
-`FacilityProtocolModule` can be added later without touching the chat core. Any
-future tool requires an allowlist, an authenticated server-side handler,
-structured input/output, consent where applicable, an audit event, a failure
-message, and a human-review design before it is enabled.
-
-This works without importing Onyx. It is one policy module plus a
-`KnowledgeStore` interface — not a general-purpose agent runtime.
-
----
-
-## Chat refactor: borrow Onyx's seams, not its loop
-
-`stream_chat_message` is a 543-line function (`chat/process_message.py:151-543`)
-with ten inline branches. The Jan-2025 Onyx snapshot at
-`~/Desktop/dexta_s_lab/onyx-teacher` split the same job into named seams. Take
-three of them; refuse the rest.
-
-| Heal today | Onyx equivalent | Take it? |
+| State | What it means | How it reads |
 | --- | --- | --- |
-| inline prompt assembly in `process_message` | `chat/prompt_builder/` (186 + 180 lines) | **Yes** — system + history + context becomes testable |
-| citations parsed mid-stream | `chat/stream_processing/` | **Yes** — decouples citation extraction from the token stream |
-| the 543-line function | `chat/answer.py` — `Answer` orchestrator (309 lines) | **Yes, shape only** — an orchestrator that calls steps and holds none |
-| `check_if_need_search` + `retrieval_preprocessing` | `SearchTool` in `tools/tool_implementations/search/` | **No** — call `KnowledgeStore` directly; do not wrap it as a Tool |
-| — | `tools/tool_selection.py`, `tool_runner.py`, `force.py` | **No** — this is the model-picks-its-own-action loop D3 rules out |
-| — | `InternetSearchTool`, `ImageGenerationTool`, `CustomTool` | **No** |
+| **Grounded** | Most substantive statements cite an approved source | The reference list, as normal |
+| **Partly referenced** | An approved source was used, but much of the answer goes beyond it | The references shown, with it stated plainly that parts of the answer are not covered by them |
+| **General knowledge** | No retrieval ran, by design — a general health question routed not to retrieve | Labelled as general information, with no reference list to imply otherwise |
 
-The distinction that matters: Onyx's `Answer._get_response(llm_calls)` is a loop
-in which the model chooses tools. `MedicalGuidanceAgent` is a straight line that
-happens to reuse Onyx's prompt-building and stream-processing shapes. Testability
-without autonomy.
+Two things this must not do:
 
-Also do not copy from that checkout: Vespa, Redis, the two model servers
-(inference + indexing), the Supervisor/Celery queue set, Celery Beat, the
-connector fleet, and the Slack bot.
+- **It must not present a refusal as a failure.** An answer that correctly
+  declines for lack of an approved source is completely honest and zero percent
+  grounded. `AgentResponse.refused_unsourced` already distinguishes it, and it
+  is shown as what it is.
+- **It must not invent precision.** "78% grounded" implies a measurement that
+  has not been made. Plain counts — *"3 of 4 statements cite an approved
+  source"* — say the same thing without the false decimal point. This choice
+  changes what gets computed, which is why it is settled here rather than in the
+  UI.
+
+For a Luganda session the score is computed on the **English** text before
+translation, because that is the text the citations were extracted from.
 
 ---
 
-## What used to run in the background
+## Feedback
 
-The `background` service (`docker-compose.dev.yml:80`, and
-`deployment/kubernetes/background-deployment.yaml`) is a **second full copy of
-the backend image** whose command is `/usr/bin/supervisord`. Supervisor starts
-five long-lived programs (`backend/supervisord.conf`).
+Feedback is the only signal that says whether any of this works in the field, so
+it is collected on the answer itself rather than buried in an admin export.
 
-```text
-  background container  =  danswer/danswer-backend:latest  +  supervisord
-    |
-    |-- [1] document_indexing
-    |     python danswer/background/update.py :: update_loop(delay=10)
-    |     CURRENT_PROCESS_IS_AN_INDEXING_JOB=true
-    |
-    |     while True:                              <- forever, every 10s
-    |         cleanup_indexing_jobs()
-    |         create_indexing_jobs()                <- polls every connector
-    |         kickoff_indexing_jobs(client)
-    |         sleep(10 - elapsed)
-    |
-    |     client = Dask LocalCluster(n_workers=NUM_INDEXING_WORKERS,
-    |                                threads_per_worker=1)
-    |              or SimpleJobClient if DASK_JOB_CLIENT_ENABLED=false
-    |     each worker process loads torch + the embedding model into RAM
-    |     each job: connector pull -> chunk -> embed -> write Vespa
-    |               + checkpointing.py, run_indexing.py, dask_utils.py
-    |
-    |-- [2] celery_worker
-    |     celery -A danswer.background.celery worker
-    |            --pool=threads --autoscale=3,10
-    |     tasks:  cleanup_connector_credential_pair_task   (:53)
-    |             sync_document_set_task                   (:91)
-    |             check_for_document_sets_sync_task        (:172)
-    |             clean_old_temp_files_task                (:203)
-    |     threads pool, not prefork — a documented workaround for a
-    |     Celery + SQLAlchemy SIGSEGV bug (celery/celery#7007)
-    |
-    |-- [3] celery_beat                              celery.py:221
-    |     check-for-document-set-sync   every 5 SECONDS
-    |     clean-old-temp-files          every 30 minutes
-    |
-    |-- [4] slack_bot_listener
-    |     python danswer/danswerbot/slack/listener.py
-    |     startretries=5, startsecs=60 — if Slack is not configured it
-    |     fails five times and stays dead, logging as it goes
-    |
-    '-- [5] log-redirect-handler
-          tail -qF over six log files -> stdout
-```
+**A five-star rating, not a thumbs pair.** Thumbs up/down forces a binary
+judgement on a thing that is rarely binary: an answer can be correct but
+incomplete, or well-sourced but hard to act on. Five points give a health worker
+somewhere to put "useful but not quite", which is the most common real reaction
+and the one a binary control throws away. An optional comment stays available
+for the cases where the number is not enough.
 
-Plus `background/connector_deletion.py`, which exists purely to keep document
-deletions consistent between PostgreSQL and Vespa.
+Ratings aggregate per source and per answer through a **sigmoid**, so that the
+first few ratings move the score meaningfully and later ones move it less. A
+linear average lets a single early rating dominate, and lets a popular source
+accumulate an unbounded score; a bounded curve does neither.
 
-### What that costs Heal today
+**What the aggregate is allowed to do — and what it is not.** It is a *review
+signal*: it surfaces in the admin screens as "these are the answers and sources
+health workers rate poorly", and that is what drives a human to look at the
+underlying guideline. It is deliberately **not** wired back into the retrieval
+score.
 
-| Observation | Consequence |
-| --- | --- |
-| Beat polls for document-set sync **every 5 seconds** | ~17,000 database round trips a day. Heal has no document sets, so every one of them finds nothing. |
-| The indexing loop runs **every 10 seconds, forever** | ~8,600 iterations a day polling connectors Heal has not configured. |
-| Dask spawns N worker processes, each loading torch + the embedding model | This, not Vespa, is usually the largest resident-memory line in the deployment. |
-| The container carries `GEN_AI_API_KEY` (`docker-compose.dev.yml:95`) | The OpenAI key is mounted into a service Heal does not use, purely because DanswerBot once needed it. Reducing key blast radius is a security win on its own. |
-| The Slack listener is almost certainly dead in Heal's deployment | Five failed starts, then silence. Noise in the logs, zero function. |
-| Supervisor + Celery + Beat + Dask are **four** process supervisors | Four failure modes, four log formats, and a documented SIGSEGV workaround, to run jobs Heal does not have. |
+That is a change from the inherited system, which fed document feedback through
+a sigmoid into a 0.5×–2.0× multiplier on the retrieval score. The mechanism was
+reasonable for ranking web-like documents by popularity. For clinical guidance
+it means a source can be quietly demoted below the evidence threshold because
+users disliked answers built from it — with no audit trail, and no clinician in
+the loop. If reweighting is ever needed here it will be admin-set, versioned,
+recorded against a named actor, and visible. The curve is kept; the automatic
+authority over what a health worker gets told is not.
 
-None of this serves a health worker asking a question. All five programs exist to
-feed Vespa from external connectors.
+---
 
-### What replaces it
+## Ingest
 
-**Phase 1: nothing.** The `background` container is not deployed. A request comes
-in, an answer streams out, rows are written. There is no scheduler, no queue, no
-worker pool, and no supervisor. This is the single largest simplification in the
-plan and it costs no functionality Heal actually uses.
-
-**Phase 2: one job, triggered by a person.**
+One job, triggered by a person, running in a thread on the API process.
 
 ```text
   reference_ingest(source_file, actor)          heal/knowledge/
     validate upload
     extract text
-    chunk
-    embed            <- embedding_worker, loaded for the job, released after
-    write PostgreSQL source + source_version + chunk rows
-    write Qdrant points
-    record job result
+    chunk                    1200 chars, 200 overlap
+    for each batch of 32:
+        embed                gte-small, in-process
+        write Qdrant points  ALWAYS UNAPPROVED
+        report progress      (phase, done, total)
+    write PostgreSQL source + version + chunk rows
+    apply approval           as a separate final step
 ```
 
-Run it in-process on the API worker for the first release, or in a single
-`arq`/`RQ`-style queue if ingest of a large PDF blocks a request for too long.
-**Do not reach for Celery + Beat + a broker for one on-demand job.** Measure
-first: at 100 documents, ingest is a rare administrative action, not a workload.
+Three properties are deliberate:
 
-Rules that keep it from growing back into the fleet:
+- **Chunks are always written unapproved,** and approval is applied at the very
+  end even when "approve immediately" is ticked. Batches land one at a time, so
+  a document is briefly incomplete; writing it pre-approved would let retrieval
+  cite half a guideline.
+- **A crash costs one batch, not the document.** Point ids derive from
+  `(source_id, version, ordinal)`, so re-uploading the same title and version
+  repairs a partial document rather than duplicating it.
+- **Job state lives in memory on purpose.** A restart kills the embedding
+  thread, so a database row reading "embedding, 412/1242" would outlive the
+  thing it describes. The job endpoint reports that the upload needs retrying.
 
-1. **No scheduler.** Nothing is time-triggered. Every run has a human actor
-   recorded against it.
-2. **One writer.** `reference_ingest` is the only code that writes Qdrant.
-3. **PostgreSQL first, Qdrant second.** Postgres is the system of record, so it
-   commits first; Qdrant points are written after and are reconstructible from it.
-4. **Reconciliation, not sync.** The old `connector_deletion.py` problem does not
-   fully disappear — two stores can still drift. Replace continuous sync with a
-   cheap admin-triggered reconcile that compares PostgreSQL chunk rows against
-   Qdrant point ids and reports the difference. Report, do not auto-repair.
-5. **Every run writes an immutable event**: `queued`, `started`, `completed`,
-   `failed`, counts, model version, source version, actor, timestamp.
-   **No patient text in the event record.**
-6. Visible in `admin/jobs`. A background job nobody can see is the thing this
-   plan is removing.
+Embedding and extraction run in a thread pool, not on the event loop. Before
+that, one upload froze the whole API — `/health` itself timed out.
 
----
-
-## Background work policy going forward
-
-| Stage | Allowed background work | Explicitly not running |
-| --- | --- | --- |
-| Phase 1 — chat-only | **None.** Requests stream replies and write chat/feedback rows. | Vespa, Celery, Beat, Dask, Supervisor, Slack listener, connector polling, model server |
-| Phase 2 — curated reference | One on-demand `reference_ingest` job: validate upload → extract text → chunk → embed → write PostgreSQL rows + Qdrant points → record job result | Periodic crawling, connector sync, model warm-up, automatic re-index without an administrator action |
-| Later | A separate, named connector job only after approval; schedule, documents processed, failures and last successful run shown in the admin UI | Hidden background agents with authority to alter clinical data or call external systems |
-
-Each job writes an immutable operational event (`queued`, `started`, `completed`,
-`failed`, counts, model version, source version, actor, time). **No patient text
-in the event record.**
+PostgreSQL commits first and Qdrant is written after, because Postgres is the
+system of record and the index is reconstructible from it. Two stores can still
+drift; the answer is an admin-triggered reconcile that compares chunk rows
+against point ids and **reports** the difference rather than repairing it
+silently.
 
 ---
 
-## Two-week plan to pilot (2026-08-26 → 2026-09-09)
+## Schema and migrations
 
-The deadline is real, so the cut line is stated in advance: **Phase 1 ships on
-Day 10 whether or not Phase 2 is ready.** Knowledge/Qdrant is the part that gets
-cut, not the safety work and not the testing.
+PostgreSQL is the system of record. `api_server` runs `alembic upgrade head` on
+start, which is a no-op against a database already at head.
 
-### Week 1 — make it work without Vespa
+The history is **the inherited 49-file chain with Heal's migrations appended** —
+currently `a1c4f7d2e9b0` (three-tier roles). It was not squashed into a new
+baseline, so the schema still contains the retired tables: connectors, document
+sets, Slack configuration, user groups, tags. They are empty and cost nothing,
+but a fresh reader will find tables no code reads.
 
-| Day | Work | Done when |
-| --- | --- | --- |
-| 1 | Branch `simplify/phase-1`. Create the `deprecated/` trees + `docs/deprecated/MOVED.md` + the CI grep gate. **Back up the production PostgreSQL database and verify the restore.** Capture `pg_dump --schema-only`. | Gate fails on a deliberate test import; a restored copy of production runs locally |
-| 1–2 | **Alembic rebaseline:** write `0001_heal_baseline`, move the 49 old files, fix `env.py`, stamp production, upgrade a fresh DB. | The step [7] schema diff is clean and running as CI |
-| 2 | `heal/language/LanguageService` on OpenAI Responses. Upgrade `openai==1.3.5`. Move `utils/translation.py`. Timeouts, retries, user-safe error, no content logged. | English↔Luganda medical-phrase tests pass |
-| 3–4 | Chat-only flow: `MedicalGuidanceAgent` skeleton + `PromptBuilder` + `StreamProcessor`. Build messages from stored history + safety instruction. Retrieval bypassed. **UI API contract unchanged.** | Streaming, sessions, feedback, CSV export all work in both languages |
-| 5 | `MedicalIntent` + fixed route table + audit events. Retire `query_intent`, `check_if_need_search`, rephrase, chunk filter. | Emergency and out-of-scope cases route correctly on a written test set |
-| 6 | Move Vespa, indexing, search, connectors, background, bot, model_server, search UI. Reduce compose to api + web + postgres. Drop `tensorflow` and friends **after** CI is green. | `grep -rniE "vespa|VESPA_|VespaIndex" backend/heal web/src deployment` returns no live reference |
+**If a new baseline is ever written, one rule governs it: production is
+stamped, never upgraded.** `alembic stamp` writes the revision id and executes
+no DDL. Running a baseline as an upgrade against a database that already has
+those tables will attempt `CREATE TABLE` on existing tables and fail — or
+partially apply. The acceptance gate for such a change is a clean
+`pg_dump --schema-only` diff between production and a freshly migrated
+database, and it needs a verified backup before it starts.
 
-### Week 2 — make it safe, then ship
+Dropping the retired tables is a separate forward migration, on evidence that
+nothing reads them.
 
-| Day | Work | Done when |
-| --- | --- | --- |
-| 7 | Fresh-environment rebuild from the reduced compose. Verify login, new chat, streaming, rename/delete, export, feedback, both languages, on mobile. | A clean machine reaches a working chat |
-| 8 | **Go/no-go on Phase 2.** Qdrant up, ARM64 + auth + snapshot/restore verified. `KnowledgeStore` interface + `reference_ingest` job + `embedding_worker` on `gte-small`. | 100-document test collection ingested, or Phase 2 formally cut |
-| 9 | Clinician eval set: Recall@5, citation correctness, emergency and unsafe-answer cases, English and Luganda. **Include deliberate drug-code / dosage / abbreviation cases** (ranking risk #1) and **tune `MIN_RETRIEVAL_SCORE` from the results — do not guess it.** Rate limits, cost caps, structured error logging. | Eval results and the chosen score floor written into this repo, signed off by a clinician |
-| 10 | Load-smoke realistic concurrent streams (target 20–50 simultaneous chats). README corrected. Release behind a small pilot. | Pilot live with a documented rollback |
+### Identifiers
 
-**Not in these two weeks, deliberately:** the Danswer→Heal package rename, any
-`deprecated/` deletion, any **table-drop** migration (the rebaseline happens;
-dropping retired tables does not), connectors, rerankers, BGE-M3, Capacitor
-native shell releases, and Kubernetes. The rename is the final
-cleanup after the pilot is stable — doing it now would make every removal review
-unreadable and risk breaking migrations that are about to be retired anyway.
+**Anything a user can hold a URL to gets a UUID, not a sequential integer.**
+Chat sessions and chat messages are the ones that matter today.
 
-### Refactor discipline — non-negotiable under this deadline
+The inherited schema numbers them `1, 2, 3…`, which has three problems in a
+health product:
 
-1. **One concern per PR.** A move commit contains only moves. A behaviour commit
-   contains only behaviour.
-2. **The frontend API contract does not change in Week 1.** The UI keeps calling
-   the same endpoints with the same payloads. Frontend cleanup is Week 2 or later.
-3. **No schema drops.** Unused columns and tables stay. `language` and
-   `luganda_message` on `ChatMessage` are still used by Design A.
-4. **Every day ends on a green CI and a deployable branch.** If a day's work is
-   not green, it is reverted, not carried.
-5. **Feature-flag the retrieval path.** `KNOWLEDGE_ENABLED=false` must produce
-   the exact Phase 1 behaviour, so Day 8 can be cut without a rollback.
-6. **Nothing ships without the safety instruction and the emergency route.**
-   These are the reason the product exists; they are not a Week-2 nice-to-have.
+1. **They are guessable.** `/chat?chatId=41` invites `/chat?chatId=42`. The
+   access check is what actually stops that — every session load verifies
+   ownership — but an identifier that makes the attempt obvious is a weak place
+   to be one bug away from a clinical conversation belonging to someone else.
+2. **They leak volume.** A sequential id tells anyone who sees one roughly how
+   many conversations the system has ever had, and two ids taken a week apart
+   tell them the rate. That is business information given away for free.
+3. **They assume one writer.** Sequences are per-database. A UUID can be
+   generated anywhere — including in a client or a worker — without
+   coordination, which is what keeps an export, an import or a second instance
+   from colliding.
+
+The cost is real and worth stating: UUIDs are wider than integers, index less
+compactly, and do not sort chronologically. At Heal's scale none of that is
+material — this is thousands of rows, not billions — and `created_at` already
+carries the ordering that a sequential id was implicitly providing.
+
+The internal, non-addressable tables keep their integer keys. This is about
+identifiers that travel in URLs and API payloads, not about a schema-wide
+conversion for its own sake.
 
 ---
 
-## Capacity targets
+## What used to run in the background
 
-| Target | Initial approach |
+Worth recording, because removing it is the largest single simplification and
+the reasoning should outlive the memory of it.
+
+The `background` service was a **second full copy of the backend image** running
+`supervisord`, which started five long-lived programs: a document-indexing loop,
+a Celery worker, Celery Beat, a Slack listener, and a log tailer.
+
+| Observation | Consequence |
 | --- | --- |
-| 100 approved documents / a few thousand chunks | One Qdrant node, one PostgreSQL node, one embedding worker. No cluster, no replica. ~2,000 × 384 × 4 bytes ≈ 3 MiB of raw vectors. |
-| 700 registered or daily users | Same topology; rate-limit and monitor chat/API usage. |
-| 20–50 simultaneous chats | Multiple stateless API workers, connection pooling, streaming limits, OpenAI rate-limit budget, load testing. **This is the Day 10 target.** |
-| 700 simultaneous chats | A separate scaling exercise: scale API workers horizontally, queue ingest separately, size provider limits, load-test p95, add Qdrant replicas only if measured search latency requires it. |
+| Beat polled for document-set sync **every 5 seconds** | ~17,000 database round trips a day, every one finding nothing. |
+| The indexing loop ran **every 10 seconds, forever** | ~8,600 iterations a day polling connectors that were never configured. |
+| Dask spawned N workers, each loading torch and the embedding model | Usually the largest resident-memory line in the deployment — larger than Vespa. |
+| The container carried the LLM API key | Key mounted into a service that did not need it. |
+| The Slack listener failed five starts, then stayed dead | Log noise, zero function. |
+| Supervisor + Celery + Beat + Dask | Four process supervisors, four failure modes, four log formats — including a documented workaround for a Celery/SQLAlchemy segfault. |
 
-The first bottlenecks will be LLM latency and rate limits, streaming worker
-capacity, and database connections — not vector search over a few thousand
-chunks. Retrieval quality comes from approved sources, chunk boundaries,
-translation quality, and the clinical evaluation set, not from a bigger database.
+All five existed to feed Vespa from external connectors. None of it served a
+health worker asking a question.
 
-Qdrant's default local setup has **no authentication**. Its container must be
-private and authenticated in any real deployment.
+**What replaced it: nothing.** A request comes in, an answer streams out, rows
+are written. Ingest is the one job, and a person triggers it.
 
 ---
 
-## Findings that need attention regardless of scope
+## Advantages
 
-- Dependencies are not installed locally, so no build or automated test has been
-  run in this review. Day 1 should establish a green baseline before anything
-  moves.
-- The fork is a January 2024 upstream snapshot plus Heal changes. Treat it as a
-  migration, not a version upgrade.
-- `utils/translation.py` uses plain HTTP to hard-coded public IPs
-  (`65.108.33.93:4002` and `:5000`) with no timeout and no failure fallback.
-  This is the single highest-priority replacement — reliability and privacy both.
-- `README.md` currently promises private-source answers. It must be corrected
-  when Phase 1 removes retrieval, and corrected again if Phase 2 restores it.
-- `GEN_AI_MODEL_VERSION` defaults to `gpt-3.5-turbo` and `openai==1.3.5` is from
-  2023. Model choice must be tested on the English/Luganda medical eval set, not
-  chosen by name.
-- The reference link below to the Onyx repository looks wrong and should be
-  checked — Onyx appears to live at `onyx-dot-app/onyx`.
+**The whole product runs on one machine.** Five containers, one command, no
+GPU, no cluster, no cloud dependency beyond the LLM API. The embedding model is
+64 MB and lives in the image; the vector index for the target corpus is a few
+megabytes.
+
+**That makes development and testing genuinely parallel.** Every developer,
+tester or clinical reviewer runs the entire system on their own laptop —
+including retrieval, ingest and the admin screens — rather than queueing for a
+shared staging environment. Two people can test conflicting changes at the same
+time on different machines, each with their own database and their own document
+library, and neither can break the other's run. For a small team shipping
+iteratively, this is worth more than any single technical optimisation in this
+document: the cost of trying something is a rebuild, not a deployment.
+
+**Small surface, few failure modes.** Removing the worker fleet removed four
+process supervisors, a message broker, a scheduler, a distributed compute
+cluster and a search engine. What remains can be held in one person's head,
+which matters more than elegance when something breaks during a pilot.
+
+**Decisions are auditable.** One classification call, one recorded route, one
+versioned safety instruction, one audit event per answer. When an answer is
+wrong, it is possible to say *why* it was wrong — which model, which route,
+which sources, which safety version.
+
+**Retrieval failure is a sentence, not an outage.** Every failure path in the
+retrieval and translation stack degrades to something a health worker can act
+on.
+
+**The expensive decisions are reversible.** Vector store, chat model,
+translation provider and route table each sit behind a seam. Swapping any of
+them is a contained change rather than a rewrite.
+
+**Cost scales with use, not with idle time.** The old stack burned CPU and
+memory continuously whether or not anyone asked a question. This one is idle
+when nobody is using it.
+
+---
+
+## Limitations and risks
+
+Stated plainly, because the system is going to a small public and the people
+running it need to know where it is thin.
+
+### Not yet measured
+
+- **The score floor is a guess.** `MIN_RETRIEVAL_SCORE = 0.35` is a placeholder.
+  Until it is set from measured data, the boundary between "cites a source" and
+  "refuses" is unvalidated — in both directions.
+- **There is no clinician evaluation set.** Recall, citation correctness,
+  emergency routing and unsafe-answer rates are all unmeasured on Heal's own
+  corpus and question distribution. This is the single largest gap.
+- **Lexical retrieval is untested on real drug codes.** The sparse-vector
+  implementation exists specifically to handle `TDF/3TC/DTG` and `500mg BD`, but
+  no evaluation case has yet confirmed it does.
+- **Translation quality is on the clinical path and has no test set.** A
+  mistranslated negation or dosage unit is a clinical error that no amount of
+  retrieval quality will catch.
+
+### Structural
+
+- **Single instance of everything.** One Postgres, one Qdrant, one API process.
+  No replicas, no failover. Acceptable for a small pilot; not for more.
+- **Ingest competes with chat for CPU.** Embedding runs in a thread pool on the
+  API process. A large document indexes without freezing the API, but it does
+  consume the same machine.
+- **Ingest progress does not survive a restart.** Deliberate — see *Ingest* —
+  but it means an interrupted upload must be retried, and the operator has to
+  understand why.
+- **Drift between PostgreSQL and Qdrant is possible.** There is no continuous
+  reconciliation, only an admin-triggered report. Silent divergence would show
+  up as a source that is approved but never cited.
+- **No reranker and no corpus-statistics BM25.** The ranking stack is
+  deliberately simpler than what it replaced, and for a larger or noisier corpus
+  that simplicity would start to cost recall.
+- **Dependency on an external LLM provider** for both answers and intent
+  classification: availability, latency, cost and data handling are all outside
+  this system's control.
+- **The migration history is still the inherited one.** All 49 original
+  migrations remain, with Heal's appended. The retired tables — connectors,
+  document sets, Slack config, user groups — still exist in the schema, empty.
+  They cost nothing to keep, but a fresh reader of the database will find tables
+  that no code reads.
+- **`deprecated/` is still in the tree.** Frozen, unimported and gated in CI,
+  but present. Deletion is a separate change once the pilot is stable.
+
+### Operational
+
+- **Qdrant has no authentication by default.** A store on the private compose
+  network is acceptable and warns loudly; anywhere reachable over a network, an
+  API key is required and refused if missing.
+- **The emergency contact number is a configuration default** (`912`). It must
+  be set deliberately per deployment.
+- **Admins currently hold super-admin powers.** `PRIVILEGED_ROLE` is set to
+  `ADMIN`; tightening it to `SUPER_ADMIN` is one line, and a test asserts the
+  current state so the change has to be deliberate.
+- **The web image is slow to build** (~25 minutes; the Next.js compile is the
+  long pole). Budget for it.
+
+---
+
+## Capacity
+
+| Target | Approach |
+| --- | --- |
+| ~100 approved documents, a few thousand chunks | One Qdrant node, one PostgreSQL node, in-process embedding. Roughly 2,000 × 384 × 4 bytes ≈ 3 MiB of raw vectors. |
+| ~700 registered users | Same topology; rate-limit and monitor usage. |
+| 20–50 simultaneous chats | Multiple stateless API workers, connection pooling, streaming limits, and an LLM rate-limit budget. Needs load testing. |
+| 700 simultaneous chats | A separate exercise: scale API workers horizontally, move ingest to its own queue, size provider limits, measure p95, add Qdrant replicas only if search latency actually requires it. |
+
+The first bottlenecks will be LLM latency and provider rate limits, streaming
+worker capacity, and database connections — not vector search over a few
+thousand chunks. Retrieval quality comes from approved sources, chunk
+boundaries, translation quality and the evaluation set, not from a bigger
+database.
+
+---
 
 ## Reference material
 
-- [OpenAI Responses API reference](https://developers.openai.com/api/reference/cli/resources/responses/methods/create)
-- [OpenAI embeddings API reference](https://developers.openai.com/api/reference/ruby/resources/embeddings/methods/create)
+- [OpenAI API reference](https://platform.openai.com/docs/api-reference)
 - [Qdrant installation](https://qdrant.tech/documentation/installation/)
 - [Qdrant security](https://qdrant.tech/documentation/security/)
-- [BAAI/bge-m3 model card](https://huggingface.co/BAAI/bge-m3)
-- [Onyx (successor to Danswer)](https://github.com/danswer-ai/danswerai) — verify this URL
+- [Qdrant hybrid search](https://qdrant.tech/documentation/concepts/hybrid-queries/)
+- [`thenlper/gte-small` model card](https://huggingface.co/thenlper/gte-small)
+- [`BAAI/bge-m3` model card](https://huggingface.co/BAAI/bge-m3) — the
+  multilingual option, and why it is not used
+- [Onyx (successor to Danswer)](https://github.com/onyx-dot-app/onyx)

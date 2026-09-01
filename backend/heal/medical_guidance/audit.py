@@ -46,6 +46,10 @@ class RoutingEvent:
     # True when a dosage question was refused for lack of an approved source.
     # Counting these is how you tell a working score floor from one set too high.
     refused_unsourced: bool = False
+    # True when the question was successfully rewritten before retrieval. False
+    # means the search ran on the user's raw text, which is the fallback path
+    # and a different thing to debug.
+    rewritten: bool = False
     error: str | None = None
     occurred_at: str = field(
         default_factory=lambda: datetime.now(timezone.utc).isoformat()

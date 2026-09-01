@@ -76,10 +76,11 @@ Requirements: Docker and Docker Compose.
 ### Database
 
 `api_server` runs `alembic upgrade head` on start. This is a no-op against a
-database already at head. It must never be the thing that applies the Alembic
-rebaseline to production: production is **stamped**, not upgraded. The
-procedure, including the backup that has to happen first, is in
-`docs/architecture-decisions.md` under *Database migrations*.
+database already at head. The history is the inherited chain with Heal's
+migrations appended; it has not been squashed into a new baseline. If one is
+ever written, `upgrade` must never be what applies it to production —
+production is **stamped**, not upgraded. See `docs/architecture-decisions.md`
+under *Schema and migrations*.
 
 The database port is not published to the host in production. Use
 `docker compose exec relational_db psql -U postgres` for admin access.

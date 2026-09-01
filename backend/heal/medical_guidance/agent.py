@@ -24,11 +24,11 @@ from heal.llm import get_llm
 from heal.llm import to_provider_messages
 from heal.logger import get_logger
 from heal.medical_guidance import audit
-from heal.medical_guidance.intent import classify
-from heal.medical_guidance.intent import IntentResult
 from heal.medical_guidance.routes import emergency_preamble
 from heal.medical_guidance.routes import MedicalIntent
 from heal.medical_guidance.routes import route_for
+from heal.medical_guidance.understanding import understand
+from heal.medical_guidance.understanding import Understanding
 from heal.safety import safety_version
 
 if TYPE_CHECKING:
@@ -65,6 +65,10 @@ class AgentResponse:
     # which is the mapping the whole reference UI depends on: the caller needs
     # the passage itself to show what a citation marker actually points at.
     chunks: list["RetrievedChunk"] = field(default_factory=list)
+    # The question as retrieval saw it, after rewriting. Recorded so a bad
+    # retrieval can be traced to the query that produced it rather than to the
+    # message the user typed, which may not be what was searched.
+    search_query: str = ""
     # True when the answer was refused for lack of an approved source.
     refused_unsourced: bool = False
 
@@ -91,13 +95,17 @@ class MedicalGuidanceAgent:
         The AgentResponse is filled in as the stream runs, so read `text` only
         after the stream is exhausted.
         """
-        result = classify(request.message, [t for _, t in request.history])
+        # One call produces both the safety label and the query retrieval will
+        # search on. See heal/medical_guidance/understanding.py for why these
+        # are not two separate stages.
+        result = understand(request.message, [t for _, t in request.history])
         route = route_for(result.intent)
 
         response = AgentResponse(
             intent=result.intent,
             answered=route.answer,
             retrieved=False,
+            search_query=result.query,
         )
 
         if not route.answer:
@@ -108,7 +116,7 @@ class MedicalGuidanceAgent:
         # route table decided this deterministically, before the model ran.
         outcome = SearchOutcome()
         if route.retrieve and self.knowledge_enabled:
-            outcome = self._retrieve(request.message)
+            outcome = self._retrieve(result)
             response.retrieved = bool(outcome)
             response.sources = outcome.sources
             response.chunks = outcome.chunks
@@ -164,9 +172,18 @@ class MedicalGuidanceAgent:
             self._store = QdrantKnowledgeStore()
         return self._store
 
-    def _retrieve(self, query: str) -> SearchOutcome:
-        """Search approved sources. Never raises into the chat path."""
-        outcome = self.store.search(query, limit=config.CONTEXT_TOP_K)
+    def _retrieve(self, understanding: Understanding) -> SearchOutcome:
+        """Search approved sources. Never raises into the chat path.
+
+        The rewritten question is embedded; the lexical half also sees the
+        user's own wording, so an exact drug code they typed still matches even
+        when the rewrite phrased it more generally.
+        """
+        outcome = self.store.search(
+            understanding.query,
+            limit=config.CONTEXT_TOP_K,
+            lexical_query=understanding.lexical_query,
+        )
         if outcome.unavailable:
             logger.error(
                 "Retrieval unavailable (%s); answering unsourced", outcome.error
@@ -181,7 +198,7 @@ class MedicalGuidanceAgent:
     def _audit(
         self,
         request: AgentRequest,
-        result: IntentResult,
+        result: Understanding,
         response: AgentResponse,
     ) -> None:
         audit.emit(
@@ -195,6 +212,7 @@ class MedicalGuidanceAgent:
                 language=request.language,
                 sources=[s.source_id for s in response.sources],
                 refused_unsourced=response.refused_unsourced,
+                rewritten=result.rewritten,
                 classifier_model=result.model_id,
                 chat_model=request.model_id or config.CHAT_MODEL,
                 safety_version=safety_version(),

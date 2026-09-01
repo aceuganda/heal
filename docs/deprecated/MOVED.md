@@ -5,7 +5,8 @@ registered, linted, type-checked or tested — it is frozen text kept so that a
 removal can be reviewed and reverted cheaply. Deletion is a separate change
 after the pilot runs clean.
 
-See `docs/architecture-decisions.md` § *Deprecation policy* for the rules.
+See `docs/architecture-decisions.md` § *The decisions that shape everything
+else* (D5) for the rules.
 
 > **Package rename, 2026-08-29.** The live application package moved from
 > `backend/danswer/` to `backend/heal_app/`. Paths written `backend/danswer/...`

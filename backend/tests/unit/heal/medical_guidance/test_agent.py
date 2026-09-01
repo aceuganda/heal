@@ -3,25 +3,35 @@
 These are the safety tests. They assert what a health worker actually receives
 for each kind of question, and that every decision is audited.
 """
+import json
+
 import pytest
 
 from heal import config
 from heal.medical_guidance import agent as agent_mod
 from heal.medical_guidance import audit as audit_mod
-from heal.medical_guidance import intent as intent_mod
+from heal.medical_guidance import understanding as understanding_mod
 from heal.medical_guidance.agent import AgentRequest
 from heal.medical_guidance.agent import MedicalGuidanceAgent
 from heal.medical_guidance.intent import MedicalIntent
 
 
 class FakeLLM:
+    """A model that classifies as told and answers with fixed tokens.
+
+    `invoke` returns the JSON shape `understand()` asks for, rather than a bare
+    label, so these tests exercise the real parser rather than a stub of it.
+    """
+
     def __init__(self, label: str, answer: list[str]) -> None:
         self.label = label
         self.answer = answer
         self.prompts: list = []
 
     def invoke(self, prompt) -> str:
-        return self.label
+        return json.dumps(
+            {"category": self.label, "query": "a rewritten question", "terms": []}
+        )
 
     def stream(self, prompt):
         self.prompts.append(prompt)
@@ -36,7 +46,7 @@ def wire(monkeypatch: pytest.MonkeyPatch):
 
     def install(label: str, answer: list[str] | None = None) -> tuple[FakeLLM, list]:
         llm = FakeLLM(label, answer if answer is not None else ["an ", "answer"])
-        monkeypatch.setattr(intent_mod, "get_classifier_llm", lambda: llm)
+        monkeypatch.setattr(understanding_mod, "get_classifier_llm", lambda: llm)
         monkeypatch.setattr(agent_mod, "get_llm", lambda model_id=None: llm)
         monkeypatch.setattr(agent_mod, "to_provider_messages", lambda m: m)
         return llm, events
