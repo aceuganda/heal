@@ -7,7 +7,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import React, { useEffect, useRef, useState } from "react";
 import { CustomDropdown, DefaultDropdownElement } from "./Dropdown";
-import { FiMessageSquare, FiSearch } from "react-icons/fi";
+import { FiMessageSquare, FiSearch, FiUser } from "react-icons/fi";
 import { usePathname } from "next/navigation";
 
 interface HeaderProps {
@@ -115,9 +115,12 @@ export const Header: React.FC<HeaderProps> = ({ user }) => {
                 </div>
               }
             >
-              <div className="hover:bg-hover rounded p-1 w-fit">
-                <div className="my-auto bg-user text-sm rounded-lg px-1.5 select-none">
-                  {user && user.email ? user.email[0].toUpperCase() : "A"}
+              <div className="hover:bg-hover rounded-full p-1 w-fit">
+                <div
+                  className="flex h-8 w-8 items-center justify-center rounded-full border border-heal-teal-200 bg-heal-teal-50 text-accent"
+                  aria-label="Open account menu"
+                >
+                  <FiUser size={15} aria-hidden="true" />
                 </div>
               </div>
             </CustomDropdown>

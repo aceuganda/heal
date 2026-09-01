@@ -142,6 +142,37 @@ up: ## Build (with retries) and start the whole stack (web on :3000)
 	@echo "API    http://localhost:8080"
 	@echo "Admin  http://localhost:3000/admin/sources  (upload and index here)"
 
+# ---------------------------------------------------------------------------
+# Restarting one service
+#
+# Both of these REBUILD before recreating. A plain `docker compose restart`
+# reuses the existing image, so it picks up an environment change but not a
+# code change -- which looks exactly like your edit having no effect.
+#
+# Dependencies are started if they are down but never recreated, so Postgres
+# and Qdrant keep running (and keep their data) either way.
+# ---------------------------------------------------------------------------
+
+.PHONY: restart-api
+restart-api: ## Rebuild and restart ONLY the API (backend code changes)
+	$(call build_with_retry,api_server)
+	$(COMPOSE) up -d api_server
+	@echo "API http://localhost:8080  --  make api-logs to watch it"
+
+.PHONY: restart-web
+restart-web: ## Rebuild and restart ONLY the frontend (web code changes)
+	$(call build_with_retry,web_server)
+	$(COMPOSE) up -d web_server
+	@echo "Web http://localhost:3000  --  make web-logs to watch it"
+
+.PHONY: bounce-api
+bounce-api: ## Restart the API container WITHOUT rebuilding (env or state only)
+	$(COMPOSE) restart api_server
+
+.PHONY: bounce-web
+bounce-web: ## Restart the web container WITHOUT rebuilding
+	$(COMPOSE) restart web_server
+
 .PHONY: cache-size
 cache-size: ## Show how much build cache is being kept
 	@docker system df -v 2>/dev/null | awk '/Build Cache/,0' | head -5
@@ -191,6 +222,15 @@ ps: ## Show local stack status
 .PHONY: api-logs
 api-logs: ## Tail only the API server
 	$(COMPOSE) logs -f --tail=100 api_server
+
+.PHONY: web-logs
+web-logs: ## Tail only the web server
+	$(COMPOSE) logs -f --tail=100 web_server
+
+.PHONY: ingest-logs
+ingest-logs: ## Tail only indexing activity (progress, failures)
+	$(COMPOSE) logs -f --tail=200 api_server \
+		| grep --line-buffered -iE "ingest|embedding model|qdrant collection"
 
 # ---------------------------------------------------------------------------
 # Web

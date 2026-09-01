@@ -116,7 +116,9 @@ async def create_user(
     # for. The first account is the exception -- it bootstraps as SUPER_ADMIN
     # and is left alone, so a deployment cannot exist without one.
     if assigned_role != UserRole.SUPER_ADMIN and assigned_role != request.role:
-        async with AsyncSession(get_sqlalchemy_async_engine()) as asession:
+        async with AsyncSession(
+            get_sqlalchemy_async_engine(), expire_on_commit=False
+        ) as asession:
             user = await asession.get(User, created_id)
             if user is None:  # pragma: no cover - created moments ago
                 raise HTTPException(status_code=404, detail="User not found")

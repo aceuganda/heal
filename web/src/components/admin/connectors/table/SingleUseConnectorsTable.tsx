@@ -1,4 +1,8 @@
-import { DeletionAttemptSnapshot, ValidStatuses } from "@/lib/types";
+import {
+  ConnectorIndexingStatus,
+  DeletionAttemptSnapshot,
+  ValidStatuses,
+} from "@/lib/types";
 import { usePopup } from "@/components/admin/connectors/Popup";
 import { updateConnector } from "@/lib/connector";
 import { AttachCredentialButtonForTable } from "@/components/admin/connectors/buttons/AttachCredentialButtonForTable";
@@ -13,6 +17,8 @@ import {
   TableCell,
 } from "@tremor/react";
 import { DeleteButton } from "@/components/DeleteButton";
+import { ConfirmDeleteModal } from "@/components/ConfirmDeleteModal";
+import { useState } from "react";
 
 const SingleUseConnectorStatus = ({
   indexingStatus,
@@ -57,6 +63,9 @@ export function SingleUseConnectorsTable<
   includeName = false,
 }: ConnectorsTableProps<ConnectorConfigType, ConnectorCredentialType>) {
   const { popup, setPopup } = usePopup();
+  const [deleteCandidate, setDeleteCandidate] = useState<
+    ConnectorIndexingStatus<ConnectorConfigType, ConnectorCredentialType> | null
+  >(null);
 
   const connectorIncludesCredential =
     getCredential !== undefined && onCredentialLink !== undefined;
@@ -64,6 +73,42 @@ export function SingleUseConnectorsTable<
   return (
     <div>
       {popup}
+      {deleteCandidate && (
+        <ConfirmDeleteModal
+          title="Remove connector?"
+          description="This schedules removal of the connector and the content it indexed. This action cannot be undone."
+          onCancel={() => setDeleteCandidate(null)}
+          onConfirm={async () => {
+            const connector = deleteCandidate.connector;
+            await updateConnector({
+              ...connector,
+              disabled: !connector.disabled,
+            });
+
+            const deletionScheduleError =
+              await scheduleDeletionJobForConnector(
+                connector.id,
+                deleteCandidate.credential.id
+              );
+            if (deletionScheduleError) {
+              setPopup({
+                message:
+                  "Failed to schedule deletion of connector - " +
+                  deletionScheduleError,
+                type: "error",
+              });
+            } else {
+              setPopup({
+                message: "Scheduled deletion of connector!",
+                type: "success",
+              });
+            }
+            setDeleteCandidate(null);
+            onUpdate();
+          }}
+          confirmLabel="Remove connector"
+        />
+      )}
 
       <Table className="overflow-visible">
         <TableHead>
@@ -127,37 +172,7 @@ export function SingleUseConnectorsTable<
                 <TableCell>
                   <div
                     className="cursor-pointer mx-auto flex"
-                    onClick={async () => {
-                      // for one-time, just disable the connector at deletion time
-                      // this is required before deletion can happen
-                      await updateConnector({
-                        ...connector,
-                        disabled: !connector.disabled,
-                      });
-
-                      const deletionScheduleError =
-                        await scheduleDeletionJobForConnector(
-                          connector.id,
-                          connectorIndexingStatus.credential.id
-                        );
-                      if (deletionScheduleError) {
-                        setPopup({
-                          message:
-                            "Failed to schedule deletion of connector - " +
-                            deletionScheduleError,
-                          type: "error",
-                        });
-                      } else {
-                        setPopup({
-                          message: "Scheduled deletion of connector!",
-                          type: "success",
-                        });
-                      }
-                      setTimeout(() => {
-                        setPopup(null);
-                      }, 4000);
-                      onUpdate();
-                    }}
+                    onClick={() => setDeleteCandidate(connectorIndexingStatus)}
                   >
                     <DeleteButton />
                   </div>

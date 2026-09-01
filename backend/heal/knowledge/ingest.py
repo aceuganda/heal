@@ -14,6 +14,7 @@ from dataclasses import field
 from datetime import datetime
 from datetime import timezone
 from typing import Any
+from typing import Callable
 
 from heal import config
 from heal.knowledge.chunking import split_text
@@ -26,6 +27,9 @@ from heal.knowledge.store import SPARSE_VECTOR
 from heal.logger import get_logger
 
 logger = get_logger(__name__)
+
+# Called after each batch with (phase, chunks done, chunks total).
+ProgressFn = Callable[[str, int, int], None]
 
 # Guardrail against a mis-paste or a runaway extraction, not a policy limit.
 MAX_DOCUMENT_CHARS = 5_000_000
@@ -64,11 +68,23 @@ def reference_ingest(
     published: str = "",
     approved: bool = False,
     collection: str | None = None,
+    progress: ProgressFn | None = None,
+    batch_size: int | None = None,
 ) -> IngestResult:
     """Chunk, embed and write one document. The only path that writes Qdrant.
 
     `approved=False` by default: a document has to be approved deliberately
     before any answer can cite it, because the retrieval filter requires it.
+
+    Work happens in batches, and each batch is written before the next is
+    embedded. Previously everything was embedded into memory and written in one
+    upsert at the end, which had three consequences on a real 1242-chunk
+    guideline: nothing was visible in Qdrant for the whole run, there was no
+    way to report progress, and a failure at the last chunk discarded every
+    chunk before it.
+
+    `progress` is called after each batch with (phase, done, total) so a caller
+    can show a percentage.
     """
     started = _now()
     source_id = source_id or str(uuid.uuid4())
@@ -101,46 +117,80 @@ def reference_ingest(
         actor,
     )
 
+    total = len(chunks)
+    batch = batch_size or config.EMBED_BATCH_SIZE
+    target = collection or config.QDRANT_COLLECTION
+    source = SourceRef(
+        source_id=source_id,
+        title=title,
+        version=version,
+        publisher=publisher,
+        published=published,
+    )
+    _report(progress, "embedding", 0, total)
+
     try:
         embedder = embedder or get_embedder()
-        vectors = embedder.embed_passages(chunks)
         client = client or _client()
         # The first upload into a fresh stack would otherwise fail on a missing
         # collection, which reads as "indexing is broken" rather than "nobody
         # ran the setup step". Creating it here is idempotent and never
         # destructive -- see ensure_collection.
         _ensure_collection(client)
-        points = _build_points(
-            chunks=chunks,
-            vectors=vectors,
-            source=SourceRef(
-                source_id=source_id,
-                title=title,
-                version=version,
-                publisher=publisher,
-                published=published,
-            ),
-            approved=approved,
-        )
-        client.upsert(
-            collection_name=collection or config.QDRANT_COLLECTION,
-            points=points,
-            wait=True,
-        )
+
+        for start in range(0, total, batch):
+            window = chunks[start : start + batch]
+            vectors = embedder.embed_passages(window)
+            points = _build_points(
+                chunks=window,
+                vectors=vectors,
+                source=source,
+                # Always written unapproved, whatever the caller asked for.
+                # Batches land one at a time, so a document is briefly
+                # incomplete; approving at the end means retrieval can never
+                # cite half a guideline.
+                approved=False,
+                ordinal_offset=start,
+            )
+            client.upsert(collection_name=target, points=points, wait=True)
+            result.chunks_written += len(points)
+            result.chunk_ids.extend(str(p.id) for p in points)
+            _report(progress, "embedding", result.chunks_written, total)
+
+        if approved:
+            _report(progress, "approving", total, total)
+            set_approval(source_id, True, client=client, collection=target)
     except Exception as exc:  # noqa: BLE001 -- recorded, then surfaced to admin
-        logger.error("Ingest failed for source=%s: %s", source_id, exc)
+        logger.error(
+            "Ingest failed for source=%s after %d/%d chunks: %s",
+            source_id,
+            result.chunks_written,
+            total,
+            exc,
+        )
+        # Whatever landed stays, and stays unapproved. Deleting it would throw
+        # away good work; leaving it citable would be worse. Re-ingesting the
+        # same version overwrites by point id, so a retry repairs it.
         return _failed(result, f"{type(exc).__name__}: {exc}")
 
-    result.chunks_written = len(points)
-    result.chunk_ids = [str(p.id) for p in points]
     result.finished = _now()
     logger.info(
         "Ingest completed: source=%s chunks=%d approved=%s",
         source_id,
-        len(points),
+        result.chunks_written,
         approved,
     )
     return result
+
+
+def _report(progress: "ProgressFn | None", phase: str, done: int, total: int) -> None:
+    """Progress reporting never breaks an ingest that is otherwise fine."""
+    if progress is None:
+        return
+    try:
+        progress(phase, done, total)
+    except Exception:  # noqa: BLE001
+        logger.warning("Progress callback failed; ingest continues", exc_info=True)
 
 
 def _build_points(
@@ -148,14 +198,23 @@ def _build_points(
     vectors: list[list[float]],
     source: SourceRef,
     approved: bool,
+    ordinal_offset: int = 0,
 ) -> list[Any]:
+    """Build one batch of points.
+
+    `ordinal_offset` is the batch's position in the whole document. Without it
+    every batch would restart at ordinal 0, so each batch's point ids would
+    collide with the previous one and the document would end up as only its
+    final batch.
+    """
     from qdrant_client import models as qm
 
     if len(chunks) != len(vectors):
         raise ValueError("Embedding returned a different number of vectors")
 
     points = []
-    for ordinal, (text, dense) in enumerate(zip(chunks, vectors)):
+    for offset, (text, dense) in enumerate(zip(chunks, vectors)):
+        ordinal = ordinal_offset + offset
         sparse = sparse_vector(text)
         points.append(
             qm.PointStruct(

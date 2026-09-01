@@ -4,38 +4,37 @@
 
 html,
 body {
-  background-color: #ffffff;
-  color: #141416; /* heal.ink.900 */
+  background-color: #f8fafb;
+  color: #1f2933; /* heal.ink.900 */
 }
 
-/* Focus rings pick up the brand red so keyboard users see the same accent. */
+/* Focus rings use the clinical teal accent. */
 :focus-visible {
-  outline: 2px solid #d92d20; /* heal.red.600 */
+  outline: 2px solid #0f766e; /* heal.teal.700 */
   outline-offset: 2px;
 }
 
-/* Scrollbars follow the palette: an invisible track on the white page and an
-   ink thumb, so chrome never competes with the red used for actions. */
+/* Scrollbars stay deliberately quiet so they do not compete with content. */
 ::-webkit-scrollbar-track {
-  background: #ffffff;
+  background: #f8fafb;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #e4e4e5; /* heal.ink.200 */
+  background: #e2e8eb; /* heal.ink.200 */
   border-radius: 10px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #c9c9cb; /* heal.ink.300 */
+  background: #cbd5da; /* heal.ink.300 */
 }
 
 .dark-scrollbar::-webkit-scrollbar-thumb {
-  background: #c9c9cb; /* heal.ink.300 */
+  background: #cbd5da; /* heal.ink.300 */
   border-radius: 10px;
 }
 
 .dark-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: #9a9a9e; /* heal.ink.400 */
+  background: #94a3ab; /* heal.ink.400 */
 }
 
 ::-webkit-scrollbar {

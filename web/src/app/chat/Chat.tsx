@@ -40,6 +40,7 @@ import { ChatIntro } from "./ChatIntro";
 import { HEADER_PADDING } from "@/lib/constants";
 import { SearchLanguageSelector } from "@/components/search/SearchLanguageSelector";
 import { handleLugandaTranslation } from "./lib";
+import { ReferenceDrawer, SelectedReference } from "./reference/ReferenceDrawer";
 
 const MAX_INPUT_HEIGHT = 200;
 
@@ -80,6 +81,7 @@ export const Chat = ({
   useEffect(() => {
     textareaRef.current?.focus();
     setChatSessionId(existingChatSessionId);
+    setSelectedReference(null);
 
     async function initialSessionFetch() {
       if (existingChatSessionId === null) {
@@ -190,6 +192,8 @@ export const Chat = ({
   const [selectedDocuments, setSelectedDocuments] = useState<DanswerDocument[]>(
     []
   );
+  const [selectedReference, setSelectedReference] =
+    useState<SelectedReference | null>(null);
 
   const [selectedPersona, setSelectedPersona] = useState<Persona | undefined>(
     existingChatSessionPersonaId !== undefined
@@ -481,7 +485,7 @@ export const Chat = ({
   };
 
   return (
-    <div className="flex w-full overflow-x-hidden" ref={masterFlexboxRef}>
+    <div className="flex w-full min-w-0 overflow-x-hidden" ref={masterFlexboxRef}>
       {popup}
       {currentFeedback && (
         <FeedbackModal
@@ -497,7 +501,7 @@ export const Chat = ({
       {documentSidebarInitialWidth !== undefined ? (
         <>
 
-          <div className="w-full sm:relative">
+          <div className="min-w-0 flex-1 sm:relative">
             <div
               className={`w-full h-screen ${HEADER_PADDING} flex flex-col overflow-y-auto relative`}
               ref={scrollableDivRef}
@@ -539,7 +543,7 @@ export const Chat = ({
 
               <div
                 className={
-                  "mt-4 pt-12 sm:pt-0 sm:mx-8 mx-2" +
+                  "mt-3 pt-2" +
                   (hasPerformedInitialScroll ? "" : " invisible")
                 }
               >
@@ -635,6 +639,9 @@ export const Chat = ({
                               }
                             }
                           }}
+                          onCitationClick={(citationKey, document) =>
+                            setSelectedReference({ citationKey, document })
+                          }
                         />
                       </div>
                     );
@@ -646,7 +653,7 @@ export const Chat = ({
                           messageId={message.messageId}
                           handleTranslation={handleMessageTranslation}
                           content={
-                            <p className="text-red-700 text-sm my-auto">
+                            <p className="text-error text-sm my-auto">
                               {message.message}
                             </p>
                           }
@@ -668,7 +675,7 @@ export const Chat = ({
                             <ThreeDots
                               height="30"
                               width="50"
-                              color="#3b82f6"
+                              color="#0f766e"
                               ariaLabel="grid-loading"
                               radius="12.5"
                               wrapperStyle={{}}
@@ -682,16 +689,16 @@ export const Chat = ({
                   )}
 
                 {/* Some padding at the bottom so the search bar has space at the bottom to not cover the last message*/}
-                <div className={`min-h-[200px] w-full`}></div>
+                <div className="min-h-[170px] w-full" />
 
                 <div ref={endDivRef} />
               </div>
             </div>
 
-            <div className="absolute bottom-0 max-sm:left-0 sm:z-10 w-full bg-background border-t border-border">
+            <div className="absolute bottom-0 max-sm:left-0 sm:z-10 w-full border-t border-border bg-background/95 backdrop-blur">
               <div className="w-full pb-4 pt-2">
                 <div className="flex">
-                  <div className="w- 2xl:w-searchbar-sm 3xl:w-searchbar sm:mx-auto px-4 pt-1 flex">
+                  <div className="mx-auto flex w-full max-w-3xl px-4 pt-1 sm:px-6">
                     {/* {selectedDocuments.length > 0 ? (
                       <SelectedDocuments
                         selectedDocuments={selectedDocuments}
@@ -713,8 +720,8 @@ export const Chat = ({
                   </div>
                 </div>
 
-                <div className="flex justify-start sm:justify-center py-2 max-w-screen-lg sm:mx-auto mb-2">
-                  <div className="w-full shrink relative px-4 w-searchbar-xs 2xl:w-searchbar-sm 3xl:w-searchbar sm:mx-auto">
+                <div className="mx-auto mb-2 flex w-full max-w-3xl justify-center py-2">
+                  <div className="relative w-full px-4 sm:px-6">
                     <textarea
                       ref={textareaRef}
                       autoFocus
@@ -724,9 +731,11 @@ export const Chat = ({
                     shrink
                     border 
                     border-border 
-                    rounded-lg 
+                    rounded-xl
                     outline-none 
                     placeholder-gray-400 
+                    bg-background
+                    shadow-sm
                     pl-4
                     pr-12 
                     py-4 
@@ -761,8 +770,9 @@ export const Chat = ({
                       suppressContentEditableWarning={true}
                     />
                     <div className="absolute bottom-4 right-10">
-                      <div
-                        className={"cursor-pointer"}
+                      <button
+                        type="button"
+                        className="cursor-pointer"
                         onClick={() => {
                           if (!isStreaming) {
                             if (message) {
@@ -777,25 +787,33 @@ export const Chat = ({
                           <FiStopCircle
                             size={18}
                             className={
-                              "text-emphasis w-9 h-9 p-2 rounded-lg hover:bg-hover"
+                              "h-9 w-9 rounded-lg p-2 text-emphasis hover:bg-hover"
                             }
                           />
                         ) : (
                           <FiSend
                             size={18}
                             className={
-                              "text-emphasis w-9 h-9 p-2 rounded-lg " +
-                              (message ? "bg-heal-red-100" : "")
+                              "h-9 w-9 rounded-lg p-2 text-emphasis transition-colors " +
+                              (message
+                                ? "bg-accent text-white hover:bg-accent-hover"
+                                : "bg-background-strong text-subtle")
                             }
                           />
                         )}
-                      </div>
+                      </button>
                     </div>
                   </div>
                 </div>
               </div>
             </div>
           </div>
+          {selectedReference && (
+            <ReferenceDrawer
+              reference={selectedReference}
+              onClose={() => setSelectedReference(null)}
+            />
+          )}
           {/* The document-selection sidebar is retired: Phase 1 answers are
               not grounded in a document library, so there is nothing to pick
               from. It returns with the approved-source browser in Phase 2. */}

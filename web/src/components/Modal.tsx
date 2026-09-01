@@ -27,6 +27,8 @@ export function Modal({
           ${className}
         `}
           onClick={(event) => event.stopPropagation()}
+          role="dialog"
+          aria-modal="true"
         >
           {title && (
             <h2 className="text-xl font-bold mb-3 border-b border-border pt-4 pb-3 bg-background-strong px-6">

@@ -61,24 +61,40 @@ async def ensure_bootstrap_admin() -> None:
                 email,
             )
 
-        async with AsyncSession(get_sqlalchemy_async_engine()) as asession:
+        # expire_on_commit=False, matching get_async_session(). With the
+        # default, committing expires every attribute, and the first thing
+        # fastapi-users does next is `on_after_register`, which reads user.id
+        # -- a synchronous attribute read that triggers async IO and raises
+        # MissingGreenlet *after* the row has already been written.
+        async with AsyncSession(
+            get_sqlalchemy_async_engine(), expire_on_commit=False
+        ) as asession:
             user_db = SQLAlchemyUserAdminDB(asession, User, OAuthAccount)
             manager = UserManager(user_db)
             # Role is not passed: create() assigns SUPER_ADMIN because this is
             # the first account, which is exactly the rule we want applied.
-            created = await manager.create(
-                UserCreate(email=email, password=password)
-            )
+            created = await manager.create(UserCreate(email=email, password=password))
+            # Read inside the block. The commit inside create() expires the
+            # instance, so touching it after the session closes triggers a
+            # refresh -- async IO from a sync context, which raises
+            # MissingGreenlet long after the row was already written.
+            created_email = created.email
+            created_role = created.role.value
 
         logger.info(
-            "Bootstrap administrator created: %s (%s)",
-            created.email,
-            created.role.value,
+            "Bootstrap administrator created: %s (%s)", created_email, created_role
         )
     except Exception as exc:  # noqa: BLE001 -- never block startup
+        # Deliberately does not claim the account was not created: the failure
+        # can happen after the row is committed, and a log line insisting
+        # otherwise sends whoever reads it looking in the wrong place.
         logger.error(
-            "Could not create the bootstrap administrator (%s: %s). The API is "
-            "starting anyway; no account was created.",
+            "Bootstrap administrator did not complete (%s: %s). The API is "
+            "starting anyway -- check the user table before assuming it is "
+            "missing.",
             type(exc).__name__,
             exc,
+            # With the traceback suppressed, a failure here is a one-line
+            # mystery in a container log and the cause has to be guessed.
+            exc_info=True,
         )

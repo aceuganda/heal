@@ -68,7 +68,7 @@ export const Dropdown = ({
           rounded-md 
           shadow-sm 
           hover:bg-gray-700 
-          focus:ring focus:ring-offset-0 focus:ring-1 focus:ring-offset-gray-800 focus:ring-blue-800
+          focus:ring focus:ring-offset-0 focus:ring-1 focus:ring-offset-gray-800 focus:ring-accent
           `}
           id="options-menu"
           aria-expanded="true"
@@ -206,7 +206,7 @@ export function SearchMultiSelectDropdown({
           bg-gray-700 
           rounded-md 
           shadow-sm 
-          focus:ring focus:ring-offset-0 focus:ring-1 focus:ring-offset-gray-800 focus:ring-blue-800`}
+          focus:ring focus:ring-offset-0 focus:ring-1 focus:ring-offset-gray-800 focus:ring-accent`}
           onClick={(e) => e.stopPropagation()}
         />
         <button

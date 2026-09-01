@@ -12,6 +12,7 @@ Two properties are deliberate and should survive hardening:
   * `/search` returns raw scores, including hits below the floor. Tuning
     MIN_RETRIEVAL_SCORE is impossible without seeing what was just missed.
 """
+import threading
 from typing import Any
 
 from fastapi import APIRouter
@@ -25,6 +26,7 @@ from starlette.concurrency import run_in_threadpool
 
 from heal import config
 from heal.knowledge import extract as extraction
+from heal.knowledge import jobs
 from heal.knowledge.ingest import reference_ingest
 from heal.knowledge.ingest import set_approval
 from heal.knowledge.ingest import supersede
@@ -44,6 +46,12 @@ router = APIRouter(prefix="/manage/knowledge")
 # Refused before the file is read into memory.
 MAX_UPLOAD_BYTES = 25 * 1024 * 1024
 
+# Phase names the ingest reports, in words an admin can act on.
+_PHASE_LABELS = {
+    "embedding": "Embedding and indexing",
+    "approving": "Approving",
+}
+
 
 class SourceSummary(BaseModel):
     source_id: str
@@ -57,15 +65,33 @@ class SourceSummary(BaseModel):
 
 
 class IngestResponse(BaseModel):
+    """What the upload returns now: a handle, not a result.
+
+    Indexing a real guideline is minutes of CPU. Returning only when it is done
+    meant the browser held the connection until the proxy killed it and
+    reported failure for work that was still succeeding. The caller gets a job
+    id immediately and polls `/jobs/{job_id}` for progress.
+    """
+
+    job_id: str
     status: str
-    source_id: str
     title: str
-    version: str
-    chunks_written: int
-    approved: bool
     kind: str = "text"
     pages: int = 0
+
+
+class JobStatus(BaseModel):
+    job_id: str
+    title: str
+    status: str
+    phase: str
+    chunks_done: int
+    chunks_total: int
+    percent: int
+    source_id: str = ""
     error: str | None = None
+    started: str = ""
+    finished: str | None = None
 
 
 class SearchHit(BaseModel):
@@ -150,15 +176,20 @@ async def upload_source(
     approve: bool = Form(False),
     user: User | None = Depends(current_admin_user),
 ) -> IngestResponse:
-    """Upload, extract, chunk, embed and store one document.
+    """Extract the file, then index it in the background.
 
     Unapproved unless `approve` is set: retrieval filters on approval, so a
     document uploaded here cannot be cited until someone endorses it.
 
-    Extraction and ingest are pushed to a worker thread. Both are blocking and
-    CPU-bound -- embedding especially -- and this handler is `async`, so
-    running them inline executed them ON the event loop. One upload then froze
-    the whole API: `/health` itself timed out until indexing finished.
+    The split is deliberate. Extraction runs here, in a worker thread, so a
+    file that cannot be read is refused immediately with a reason. Embedding
+    does not: a 1242-chunk guideline is minutes of CPU, and holding the request
+    open for it meant nginx cut the connection at its timeout and reported
+    failure for work that was still running. That returns a job id instead, and
+    the caller polls `/jobs/{job_id}`.
+
+    Either way the work never runs on the event loop -- doing so froze the
+    whole API, `/health` included, until indexing finished.
     """
     _enabled()
 
@@ -182,29 +213,89 @@ async def upload_source(
     # than silently blank.
     actor = getattr(user, "email", None) or "local-admin"
 
-    result = await run_in_threadpool(
-        reference_ingest,
-        text=extracted.text,
-        title=title,
-        actor=actor,
-        version=version,
-        publisher=publisher,
-        published=published,
-        approved=approve,
-    )
-    if result.status == "failed":
-        raise HTTPException(status_code=400, detail=result.error or "Ingest failed")
+    job = jobs.registry.create(title=title)
+
+    def _progress(phase: str, done: int, total: int) -> None:
+        jobs.registry.update(
+            job.job_id,
+            phase=_PHASE_LABELS.get(phase, phase),
+            chunks_done=done,
+            chunks_total=total,
+        )
+
+    def _run() -> None:
+        jobs.registry.update(job.job_id, status="running", phase="Reading document")
+        try:
+            result = reference_ingest(
+                text=extracted.text,
+                title=title,
+                actor=actor,
+                version=version,
+                publisher=publisher,
+                published=published,
+                approved=approve,
+                progress=_progress,
+            )
+        except Exception as exc:  # noqa: BLE001 -- the job carries the failure
+            logger.error("Ingest thread died for job %s: %s", job.job_id, exc)
+            jobs.registry.update(
+                job.job_id, status=jobs.FAILED, phase="Failed", error=str(exc)
+            )
+            return
+
+        if result.status == "failed":
+            jobs.registry.update(
+                job.job_id,
+                status=jobs.FAILED,
+                phase="Failed",
+                error=result.error or "Ingest failed",
+                source_id=result.source_id,
+            )
+            return
+
+        jobs.registry.update(
+            job.job_id,
+            status=jobs.DONE,
+            phase="Approved" if approve else "Indexed, awaiting approval",
+            source_id=result.source_id,
+            chunks_done=result.chunks_written,
+            chunks_total=result.chunks_written,
+        )
+
+    # daemon: a shutdown should not be held open by an ingest that will be
+    # restarted from scratch anyway.
+    threading.Thread(target=_run, name=f"ingest-{job.job_id[:8]}", daemon=True).start()
 
     return IngestResponse(
-        status=result.status,
-        source_id=result.source_id,
-        title=result.title,
-        version=result.version,
-        chunks_written=result.chunks_written,
-        approved=approve,
+        job_id=job.job_id,
+        status=job.status,
+        title=title,
         kind=extracted.kind,
         pages=extracted.pages,
     )
+
+
+@router.get("/jobs/{job_id}")
+def get_job(
+    job_id: str,
+    _: User | None = Depends(current_admin_user),
+) -> JobStatus:
+    """Progress for one ingest.
+
+    404 also means "this process was restarted": jobs live in memory, so a
+    restart takes the running thread with them. That is the truth rather than a
+    lost record -- there is no work still going on behind it.
+    """
+    job = jobs.registry.get(job_id)
+    if job is None:
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                "No such indexing job. If the server restarted, the upload "
+                "stopped with it and needs to be retried."
+            ),
+        )
+    return JobStatus(**job.as_dict())
 
 
 @router.post("/sources/{source_id}/approval")

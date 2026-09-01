@@ -2,11 +2,14 @@
 
 import {
   FiLogOut,
+  FiMenu,
   FiMessageSquare,
   FiMoreHorizontal,
   FiPlusSquare,
   FiSearch,
   FiTool,
+  FiUser,
+  FiX,
 } from "react-icons/fi";
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
@@ -14,11 +17,9 @@ import { useRouter } from "next/navigation";
 import { isAdminRole, User } from "@/lib/types";
 import { logout } from "@/lib/user";
 import { BasicClickable, BasicSelectable } from "@/components/BasicClickable";
-import Image from "next/image";
 import { ChatSessionDisplay } from "./SessionDisplay";
 import { ChatSession } from "../interfaces";
 import { groupSessionsByDateRange } from "../lib";
-import { HEADER_PADDING } from "@/lib/constants";
 
 
 interface ChatSidebarProps {
@@ -37,7 +38,7 @@ export const ChatSidebar = ({
   const groupedChatSessions = groupSessionsByDateRange(existingChats);
 
   const [userInfoVisible, setUserInfoVisible] = useState(false);
-  const [menuHider, setMenuHider] = useState(false);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const userInfoRef = useRef<HTMLDivElement>(null);
 
   const handleLogout = () => {
@@ -69,25 +70,30 @@ export const ChatSidebar = ({
 
   return (
     <div className="relative">
-      <div onClick={() => { setMenuHider(!menuHider) }} className={`${menuHider ? "left-[100%] top-[5.25rem] " : "top-[5.25rem] left-[1rem]"} sm:hidden  flex w-[35px] h-[35px] absolute  z-50`}>
-        <Image
-          alt={'Menu'}
-          src={menuHider ? '/cancel.svg' : '/humbager.svg'}
-          fill
-          className="relative"
+      {isSidebarOpen && (
+        <button
+          type="button"
+          className="fixed inset-0 top-16 z-30 cursor-default bg-ink-900/10 sm:hidden"
+          onClick={() => setIsSidebarOpen(false)}
+          aria-label="Close chat history"
         />
-      </div>
-      <div
+      )}
+      <button
+        type="button"
+        onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+        className={`fixed top-[76px] z-50 flex h-9 w-9 items-center justify-center rounded-lg border border-border bg-background text-emphasis shadow-sm transition-all hover:bg-hover ${
+          isSidebarOpen ? "left-[17rem]" : "left-3"
+        }`}
+        aria-label={isSidebarOpen ? "Close chat history" : "Open chat history"}
+      >
+        {isSidebarOpen ? <FiX size={18} /> : <FiMenu size={18} />}
+      </button>
+      <aside
         className={`
-        w-72
-        2xl:w-80
-        ${HEADER_PADDING}
-        border-r 
-        border-border 
-        ${menuHider ? " flex max-sm:z-10  max-sm:relative  max-sm:bg-white" : "hidden sm:flex "}
-        flex-col 
-        h-screen
-        transition-transform`}
+          fixed inset-y-0 left-0 z-40 w-72 flex-col border-r border-border bg-background pt-[76px] shadow-xl transition-transform
+          sm:relative sm:z-auto sm:h-screen sm:pt-[84px] sm:shadow-none
+          ${isSidebarOpen ? "flex" : "hidden"}
+        `}
         id="chat-sidebar"
       >
 
@@ -185,8 +191,8 @@ export const ChatSidebar = ({
                 onClick={() => setUserInfoVisible(!userInfoVisible)}
                 className="flex h-8"
               >
-                <div className="my-auto mr-2 bg-user rounded-lg px-1.5">
-                  {user && user.email ? user.email[0].toUpperCase() : "A"}
+                <div className="my-auto mr-2 flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-heal-teal-200 bg-heal-teal-50 text-accent">
+                  <FiUser size={15} aria-hidden="true" />
                 </div>
                 <p className="my-auto">
                   {user ? user.email : "Anonymous Possum"}
@@ -196,7 +202,7 @@ export const ChatSidebar = ({
             </BasicSelectable>
           </div>
         </div>
-      </div>
+      </aside>
     </div>
   );
 };

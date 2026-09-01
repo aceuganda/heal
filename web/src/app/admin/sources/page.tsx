@@ -17,7 +17,7 @@
  * the admin to fix something that is not broken.
  */
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import useSWR, { mutate } from "swr";
 import {
   Button,
@@ -38,6 +38,7 @@ import { AdminPageTitle } from "@/components/admin/Title";
 import { usePopup } from "@/components/admin/connectors/Popup";
 import { BookmarkIcon } from "@/components/icons/icons";
 import { fetcher } from "@/lib/fetcher";
+import { ConfirmDeleteModal } from "@/components/ConfirmDeleteModal";
 
 interface SourceSummary {
   source_id: string;
@@ -65,6 +66,18 @@ interface KnowledgeStatus {
   max_chunks_per_source?: number;
 }
 
+interface IngestJob {
+  job_id: string;
+  title: string;
+  status: string;
+  phase: string;
+  chunks_done: number;
+  chunks_total: number;
+  percent: number;
+  source_id: string;
+  error: string | null;
+}
+
 interface SearchHit {
   title: string;
   version: string;
@@ -88,6 +101,10 @@ interface SearchResponse {
 const SOURCES_URL = "/api/manage/knowledge/sources";
 const STATUS_URL = "/api/manage/knowledge/status";
 const SEARCH_URL = "/api/manage/knowledge/search";
+const JOBS_URL = "/api/manage/knowledge/jobs";
+
+/** How often to ask the server how far the index has got. */
+const JOB_POLL_MS = 1000;
 
 const ACCEPTED = ".txt,.md,.markdown,.text,.pdf,.docx";
 
@@ -196,7 +213,17 @@ function UploadPanel({ setPopup }: { setPopup: (p: any) => void }) {
   const [approve, setApprove] = useState(false);
   const [busy, setBusy] = useState(false);
   const [dragging, setDragging] = useState(false);
+  const [job, setJob] = useState<IngestJob | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Stop polling if the admin navigates away mid-index. The server keeps
+  // going; only the watching stops.
+  useEffect(() => {
+    return () => {
+      if (pollRef.current) clearTimeout(pollRef.current);
+    };
+  }, []);
 
   const chooseFile = (chosen: File | null) => {
     setFile(chosen);
@@ -224,6 +251,7 @@ function UploadPanel({ setPopup }: { setPopup: (p: any) => void }) {
       return;
     }
     setBusy(true);
+    setJob(null);
     const body = new FormData();
     body.append("file", file);
     body.append("title", title.trim());
@@ -238,23 +266,72 @@ function UploadPanel({ setPopup }: { setPopup: (p: any) => void }) {
           message: await errorMessage(res, "Upload failed"),
           type: "error",
         });
+        setBusy(false);
         return;
       }
+      // The upload returns as soon as the file is readable; indexing carries
+      // on server-side. Everything below watches it rather than waiting on it.
       const payload = await res.json();
-      setPopup({
-        message: `Indexed ${payload.chunks_written} chunks from ${payload.title}${
-          payload.approved ? "" : " — approve it below before answers can cite it"
-        }`,
-        type: "success",
-      });
       clearForm();
-      mutate(SOURCES_URL);
-      mutate(STATUS_URL);
+      followJob(payload.job_id);
     } catch (e) {
       setPopup({ message: `Upload failed: ${e}`, type: "error" });
-    } finally {
       setBusy(false);
     }
+  };
+
+  /**
+   * Poll one job to completion.
+   *
+   * setTimeout rather than setInterval: a slow response would otherwise let
+   * requests overlap and arrive out of order, so the bar could jump backwards.
+   */
+  const followJob = (jobId: string) => {
+    const tick = async () => {
+      try {
+        const res = await fetch(`${JOBS_URL}/${jobId}`);
+        if (!res.ok) {
+          setPopup({
+            message: await errorMessage(res, "Lost track of the indexing job"),
+            type: "error",
+          });
+          setBusy(false);
+          setJob(null);
+          return;
+        }
+        const current: IngestJob = await res.json();
+        setJob(current);
+
+        if (current.status === "completed") {
+          setPopup({
+            message: `Indexed ${current.chunks_done} chunks from ${current.title}${
+              approve ? "" : " — approve it below before answers can cite it"
+            }`,
+            type: "success",
+          });
+          setBusy(false);
+          mutate(SOURCES_URL);
+          mutate(STATUS_URL);
+          return;
+        }
+        if (current.status === "failed") {
+          setPopup({
+            message: current.error ?? "Indexing failed",
+            type: "error",
+          });
+          setBusy(false);
+          // Partial batches are kept and stay unapproved, so show what landed.
+          mutate(SOURCES_URL);
+          mutate(STATUS_URL);
+          return;
+        }
+        pollRef.current = setTimeout(tick, JOB_POLL_MS);
+      } catch (e) {
+        setPopup({ message: `Lost track of the job: ${e}`, type: "error" });
+        setBusy(false);
+      }
+    };
+    tick();
   };
 
   return (
@@ -334,20 +411,71 @@ function UploadPanel({ setPopup }: { setPopup: (p: any) => void }) {
           <Button onClick={submit} disabled={busy} loading={busy}>
             {busy ? "Indexing…" : "Upload and index"}
           </Button>
-          {busy && (
-            <Text className="text-xs">
-              Reading, chunking and embedding the document. A large PDF takes a
-              minute; leave this page open.
-            </Text>
-          )}
         </div>
+
+        {job && <IngestProgress job={job} />}
       </div>
     </Card>
   );
 }
 
+/**
+ * Live progress for one ingest.
+ *
+ * A 1242-chunk guideline is minutes of work. Without this the page showed a
+ * spinner and nothing else, which is indistinguishable from a hang -- and the
+ * proxy timing out made it look like a failure even when the indexing was
+ * fine. The count is the honest signal: chunks written, out of the total.
+ */
+function IngestProgress({ job }: { job: IngestJob }) {
+  const failed = job.status === "failed";
+  const done = job.status === "completed";
+  const known = job.chunks_total > 0;
+
+  return (
+    <div
+      className={`border rounded p-3 mt-1 ${
+        failed ? "border-error" : "border-border"
+      }`}
+    >
+      <div className="flex items-baseline gap-2 mb-2">
+        <span className="text-sm font-medium">{job.phase}</span>
+        {known && (
+          <span className="text-xs text-subtle">
+            {job.chunks_done} of {job.chunks_total} chunks
+          </span>
+        )}
+        <span className="ml-auto text-sm font-semibold">{job.percent}%</span>
+      </div>
+
+      <div className="h-2 w-full rounded bg-hover-light overflow-hidden">
+        <div
+          className={`h-full transition-all duration-300 ${
+            failed ? "bg-error" : done ? "bg-emerald-500" : "bg-accent"
+          }`}
+          // Before the total is known there is nothing honest to show, so the
+          // bar stays empty rather than inventing a position.
+          style={{ width: `${job.percent}%` }}
+        />
+      </div>
+
+      {failed && job.error && (
+        <Text className="text-error text-xs mt-2">{job.error}</Text>
+      )}
+      {!failed && !done && (
+        <Text className="text-xs mt-2">
+          Indexing continues on the server. You can leave this page — the
+          document will be in the list when it finishes.
+        </Text>
+      )}
+    </div>
+  );
+}
+
 function SourcesTable({ setPopup }: { setPopup: (p: any) => void }) {
   const { data, isLoading } = useSWR<SourceSummary[]>(SOURCES_URL, fetcher);
+  const [sourcePendingDeletion, setSourcePendingDeletion] =
+    useState<SourceSummary | null>(null);
   // A 409 or a 500 returns an object, not an array; `.map` on it blanked the
   // whole screen with no message.
   const sources = Array.isArray(data) ? data : [];
@@ -379,8 +507,26 @@ function SourcesTable({ setPopup }: { setPopup: (p: any) => void }) {
   }
 
   return (
-    <Card>
-      <Table>
+    <>
+      {sourcePendingDeletion && (
+        <ConfirmDeleteModal
+          title="Delete source?"
+          description={`This permanently removes “${sourcePendingDeletion.title}” (version ${sourcePendingDeletion.version}) and its ${sourcePendingDeletion.chunks} indexed chunks. If this guidance has been replaced, make the newer version current instead.`}
+          onCancel={() => setSourcePendingDeletion(null)}
+          onConfirm={() => {
+            call(
+              `${SOURCES_URL}/${sourcePendingDeletion.source_id}?version=${encodeURIComponent(
+                sourcePendingDeletion.version
+              )}`,
+              { method: "DELETE" },
+              "Source deleted"
+            );
+            setSourcePendingDeletion(null);
+          }}
+        />
+      )}
+      <Card>
+        <Table>
         <TableHead>
           <TableRow>
             <TableHeaderCell>Title</TableHeaderCell>
@@ -451,22 +597,7 @@ function SourcesTable({ setPopup }: { setPopup: (p: any) => void }) {
                     size="xs"
                     variant="light"
                     color="red"
-                    onClick={() => {
-                      if (
-                        !confirm(
-                          `Delete "${s.title}" v${s.version} and all ${s.chunks} of its chunks? ` +
-                            `To retire guidance that has merely been replaced, supersede it instead.`
-                        )
-                      )
-                        return;
-                      call(
-                        `${SOURCES_URL}/${s.source_id}?version=${encodeURIComponent(
-                          s.version
-                        )}`,
-                        { method: "DELETE" },
-                        "Source deleted"
-                      );
-                    }}
+                    onClick={() => setSourcePendingDeletion(s)}
                   >
                     Delete
                   </Button>
@@ -475,8 +606,9 @@ function SourcesTable({ setPopup }: { setPopup: (p: any) => void }) {
             </TableRow>
           ))}
         </TableBody>
-      </Table>
-    </Card>
+        </Table>
+      </Card>
+    </>
   );
 }
 

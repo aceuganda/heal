@@ -82,12 +82,28 @@ def sparse_vector(text: str) -> SparseVector:
     Sublinear (1 + log tf) rather than raw counts so a term repeated twenty
     times in a long guideline does not swamp a rarer term that actually
     distinguishes the passage.
+
+    Weights are accumulated PER INDEX, not per token. Two different tokens can
+    hash to the same slot -- that is inherent to the hashing trick, not a bug --
+    and emitting one entry each produced a duplicate index. Qdrant rejects that
+    outright:
+
+        422 ... points[11].vector.?.indices: must be unique
+
+    which failed the whole write. Summing the colliding weights is also the
+    correct reading: they are the same feature as far as the vector is
+    concerned.
     """
     counts = Counter(tokenize(text))
     if not counts:
         return SparseVector(indices=[], values=[])
 
-    pairs = sorted((_hash_token(t), 1.0 + math.log(c)) for t, c in counts.items())
+    weights: dict[int, float] = {}
+    for token, count in counts.items():
+        index = _hash_token(token)
+        weights[index] = weights.get(index, 0.0) + 1.0 + math.log(count)
+
+    pairs = sorted(weights.items())
     norm = math.sqrt(sum(v * v for _, v in pairs)) or 1.0
     return SparseVector(
         indices=[i for i, _ in pairs],

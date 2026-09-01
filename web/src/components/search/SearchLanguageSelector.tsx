@@ -1,5 +1,7 @@
+import { FiGlobe } from "react-icons/fi";
+
 const defaultStyle =
-    "py-1 px-2 border rounded border-gray-700 cursor-pointer font-bold ";
+    "rounded-full px-3 py-1.5 font-medium transition-all ";
 
 interface Props {
     setLanguage: (language: string) => void;
@@ -11,29 +13,36 @@ export const SearchLanguageSelector: React.FC<Props> = ({
     language
 }) => {
     return (
-        <div className="flex text-xs mt-[1.5rem] mb-[1rem]">
-            <div
+        <div className="mt-3 mb-2 inline-flex w-fit items-center rounded-full border border-border bg-background p-1 text-xs shadow-sm">
+            <FiGlobe className="ml-2 mr-1 text-subtle" size={14} aria-hidden="true" />
+            <button
+                type="button"
                 className={
-                    defaultStyle + `bg-white hover:bg-blue-700  border-[1px] hover:text-white ${language === 'english' ? "  " : "border-white bg-blue-700"} `
+                    defaultStyle + `${language === 'english'
+                        ? "bg-accent text-white shadow-sm"
+                        : "text-default hover:bg-hover hover:text-strong"}`
                 }
                 onClick={() => {
                     setLanguage('english');
                 }}
             >
                 English
-            </div>
+            </button>
 
-            <div
+            <button
+                type="button"
                 className={
                     defaultStyle +
-                    `ml-2 bg-white border-[1px] hover:bg-blue-700 hover:text-white  ${language === 'luganda' ? " " : "border-white  bg-blue-700 "}`
+                    `ml-1 ${language === 'luganda'
+                        ? "bg-accent text-white shadow-sm"
+                        : "text-default hover:bg-hover hover:text-strong"}`
                 }
                 onClick={() => {
                     setLanguage('luganda');
                 }}
             >
                 Luganda
-            </div>
+            </button>
         </div>
     );
 };

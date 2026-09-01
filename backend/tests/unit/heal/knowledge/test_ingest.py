@@ -51,10 +51,28 @@ class TestApprovalGate:
         points = fake_client.upserts[0]["points"]
         assert all(p.payload["approved"] is False for p in points)
 
-    def test_approval_can_be_given_at_ingest(self, fake_client, fake_embedder) -> None:
+    def test_approval_is_applied_after_every_batch_has_landed(
+        self, fake_client, fake_embedder
+    ) -> None:
+        """Approval is the last step, never a property of the written points.
+
+        Batches land one at a time, so a document is briefly incomplete while
+        it indexes. Writing chunks pre-approved would let retrieval cite half a
+        guideline; approving at the end cannot.
+        """
         ingest(fake_client, fake_embedder, approved=True)
-        points = fake_client.upserts[0]["points"]
-        assert all(p.payload["approved"] is True for p in points)
+
+        for call in fake_client.upserts:
+            assert all(p.payload["approved"] is False for p in call["points"])
+        assert fake_client.payload_sets[-1]["payload"] == {"approved": True}
+
+    def test_a_failed_ingest_never_approves(self, fake_client, fake_embedder) -> None:
+        """Whatever landed stays unapproved, so it cannot be cited."""
+        fake_client.raises = RuntimeError("qdrant unavailable")
+        result = ingest(fake_client, fake_embedder, approved=True)
+
+        assert result.status == "failed"
+        assert fake_client.payload_sets == []
 
     def test_set_approval_targets_every_chunk_of_one_source(self, fake_client) -> None:
         set_approval("src-1", approved=True, client=fake_client)
@@ -169,3 +187,117 @@ class TestFirstUpload:
         ingest(fake_client, fake_embedder)
 
         assert not hasattr(fake_client, "created")
+
+
+class TestBatching:
+    """Ingest writes in batches and reports progress as it goes.
+
+    Before this, everything was embedded into memory and written in one upsert
+    at the end. On a real 1242-chunk guideline that meant Qdrant stayed empty
+    for the whole run, there was nothing to show the admin, and a failure on
+    the last chunk discarded every chunk before it.
+    """
+
+    def _long_document(self, chunks_wanted: int) -> str:
+        # split_text works on characters, so make it comfortably longer than
+        # CHUNK_SIZE * chunks_wanted rather than guessing the exact boundary.
+        return "Give TDF/3TC/DTG once daily. " * 60 * chunks_wanted
+
+    def test_chunks_are_written_in_batches_not_one_upsert(
+        self, fake_client, fake_embedder
+    ) -> None:
+        result = ingest(
+            fake_client,
+            fake_embedder,
+            text=self._long_document(4),
+            batch_size=2,
+        )
+
+        assert result.status == "completed"
+        assert len(fake_client.upserts) > 1, "a batched ingest makes several writes"
+
+    def test_every_chunk_is_written_exactly_once(
+        self, fake_client, fake_embedder
+    ) -> None:
+        """Batches must not overlap or skip: point ids come from the ordinal."""
+        result = ingest(
+            fake_client,
+            fake_embedder,
+            text=self._long_document(4),
+            batch_size=2,
+        )
+
+        written = [p for call in fake_client.upserts for p in call["points"]]
+        ordinals = [p.payload["ordinal"] for p in written]
+
+        assert ordinals == sorted(ordinals)
+        assert len(set(ordinals)) == len(ordinals), "an ordinal was reused"
+        assert ordinals == list(range(len(ordinals)))
+        assert result.chunks_written == len(written)
+
+    def test_point_ids_are_unique_across_batches(
+        self, fake_client, fake_embedder
+    ) -> None:
+        """The bug a missing ordinal offset causes: every batch overwrites the last."""
+        ingest(fake_client, fake_embedder, text=self._long_document(4), batch_size=2)
+
+        ids = [p.id for call in fake_client.upserts for p in call["points"]]
+        assert len(set(ids)) == len(ids)
+
+    def test_progress_is_reported_and_reaches_the_total(
+        self, fake_client, fake_embedder
+    ) -> None:
+        seen: list[tuple[str, int, int]] = []
+        result = ingest(
+            fake_client,
+            fake_embedder,
+            text=self._long_document(4),
+            batch_size=2,
+            progress=lambda phase, done, total: seen.append((phase, done, total)),
+        )
+
+        assert seen, "no progress was reported at all"
+        # Starts at zero so a bar can render before the first batch lands.
+        assert seen[0][1] == 0
+        done_values = [done for _, done, _ in seen]
+        assert done_values == sorted(done_values), "progress went backwards"
+        assert seen[-1][1] == result.chunks_written
+
+    def test_a_broken_progress_callback_does_not_fail_the_ingest(
+        self, fake_client, fake_embedder
+    ) -> None:
+        """Reporting is cosmetic; it must never cost an indexed document."""
+
+        def explode(phase: str, done: int, total: int) -> None:
+            raise RuntimeError("the UI went away")
+
+        result = ingest(fake_client, fake_embedder, progress=explode)
+        assert result.status == "completed"
+
+    def test_work_done_before_a_failure_is_kept(
+        self, fake_client, fake_embedder
+    ) -> None:
+        """A crash costs one batch, not the whole document."""
+
+        class FailsOnSecondUpsert:
+            def __init__(self, inner) -> None:
+                self.inner = inner
+                self.calls = 0
+
+            def __getattr__(self, name):
+                return getattr(self.inner, name)
+
+            def upsert(self, **kwargs):
+                self.calls += 1
+                if self.calls > 1:
+                    raise RuntimeError("qdrant went away mid-document")
+                return self.inner.upsert(**kwargs)
+
+        client = FailsOnSecondUpsert(fake_client)
+        result = ingest(
+            client, fake_embedder, text=self._long_document(4), batch_size=2
+        )
+
+        assert result.status == "failed"
+        assert result.chunks_written > 0, "the first batch should have survived"
+        assert fake_client.upserts, "the first batch was written"

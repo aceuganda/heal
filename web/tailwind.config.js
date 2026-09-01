@@ -38,14 +38,8 @@ module.exports = {
       },
       colors: {
         // ---------------------------------------------------------------
-        // Heal palette: a white page, carried by red and black.
-        //
-        // `red` is the brand and every action. It is a deep clinical red
-        // rather than an alarm red, so it can hold large surfaces without
-        // shouting at a health worker reading it all day.
-        //
-        // `ink` is the neutral ramp -- warm blacks for text and chrome.
-        // Blue and indigo are gone from the design entirely.
+        // Heal palette: quiet clinical teal and calm blue-ink neutrals.
+        // Red is deliberately reserved for warnings and destructive states.
         // ---------------------------------------------------------------
         heal: {
           red: {
@@ -60,58 +54,67 @@ module.exports = {
             800: "#912018",
             900: "#7a271a",
           },
+          teal: {
+            50: "#f0fdfa",
+            100: "#ccfbf1",
+            200: "#99f6e4",
+            300: "#5eead4",
+            400: "#2dd4bf",
+            500: "#14b8a6",
+            600: "#0d9488",
+            700: "#0f766e",
+            800: "#115e59",
+            900: "#134e4a",
+          },
           ink: {
-            50: "#f8f8f8",
-            100: "#f1f1f1",
-            200: "#e4e4e5",
-            300: "#c9c9cb",
-            400: "#9a9a9e",
-            500: "#6e6e73",
-            600: "#4b4b4f",
-            700: "#333336",
-            800: "#1f1f22",
-            900: "#141416",
-            950: "#0a0a0b",
+            50: "#f8fafb",
+            100: "#f1f5f6",
+            200: "#e2e8eb",
+            300: "#cbd5da",
+            400: "#94a3ab",
+            500: "#64727c",
+            600: "#52606a",
+            700: "#3d4a53",
+            800: "#29353d",
+            900: "#1f2933",
+            950: "#11181c",
           },
         },
 
         // Semantic tokens. Components use these, not the ramps above, so a
         // palette change stays a one-file change.
-        link: "#d92d20", // heal.red.600
-        subtle: "#9a9a9e", // heal.ink.400
-        default: "#6e6e73", // heal.ink.500
-        emphasis: "#333336", // heal.ink.700
-        strong: "#141416", // heal.ink.900
+        link: "#0f766e", // heal.teal.700
+        subtle: "#94a3ab", // heal.ink.400
+        default: "#64727c", // heal.ink.500
+        emphasis: "#3d4a53", // heal.ink.700
+        strong: "#1f2933", // heal.ink.900
         inverted: "#ffffff",
-        background: "#ffffff", // the page is white, not gray-50
-        "background-emphasis": "#fafafa",
-        "background-strong": "#f1f1f1", // heal.ink.100
-        border: "#e8e8e9",
-        "border-light": "#f3f3f4",
-        "border-strong": "#c9c9cb", // heal.ink.300
-        "hover-light": "#fef3f2", // heal.red.50 -- hover reads as red
-        hover: "#f1f1f1", // heal.ink.100
+        background: "#ffffff",
+        "background-emphasis": "#f8fafb",
+        "background-strong": "#f1f5f6", // heal.ink.100
+        border: "#e2e8eb",
+        "border-light": "#f1f5f6",
+        "border-strong": "#cbd5da", // heal.ink.300
+        "hover-light": "#f0fdfa", // heal.teal.50
+        hover: "#f1f5f6", // heal.ink.100
         popup: "#ffffff",
-        accent: "#d92d20", // heal.red.600
-        "accent-hover": "#b42318", // heal.red.700
+        accent: "#0f766e", // heal.teal.700
+        "accent-hover": "#115e59", // heal.teal.800
         highlight: {
-          text: "#fee4e2", // heal.red.100 -- search highlight, was yellow
+          text: "#ccfbf1", // heal.teal.100
         },
-        // Error shares the brand hue, so it is pitched darker than `accent`
-        // and should always be paired with an icon or a wash, never colour
-        // alone. See the note in the UI section of the plan.
-        error: "#912018", // heal.red.800
+        error: "#b42318", // heal.red.700
         success: "#047857", // emerald-700
-        user: "#d92d20", // heal.red.600
-        ai: "#141416", // heal.ink.900
+        user: "#0f766e", // heal.teal.700
+        ai: "#1f2933", // heal.ink.900
         // light mode
         tremor: {
           brand: {
-            faint: "#fef3f2", // heal.red.50
-            muted: "#fecdca", // heal.red.200
-            subtle: "#f97066", // heal.red.400
-            DEFAULT: "#d92d20", // heal.red.600
-            emphasis: "#b42318", // heal.red.700
+            faint: "#f0fdfa", // heal.teal.50
+            muted: "#99f6e4", // heal.teal.200
+            subtle: "#2dd4bf", // heal.teal.400
+            DEFAULT: "#0f766e", // heal.teal.700
+            emphasis: "#115e59", // heal.teal.800
             inverted: "#ffffff",
           },
           background: {
@@ -137,11 +140,11 @@ module.exports = {
         // dark mode
         "dark-tremor": {
           brand: {
-            faint: "#2a0f0d", // heal.red, deepened for dark surfaces
-            muted: "#7a271a", // heal.red.900
-            subtle: "#912018", // heal.red.800
-            DEFAULT: "#d92d20", // heal.red.600
-            emphasis: "#f97066", // heal.red.400
+            faint: "#102f2c", // heal.teal, deepened for dark surfaces
+            muted: "#134e4a", // heal.teal.900
+            subtle: "#115e59", // heal.teal.800
+            DEFAULT: "#0d9488", // heal.teal.600
+            emphasis: "#5eead4", // heal.teal.300
             inverted: "#0a0a0b", // heal.ink.950
           },
           background: {

@@ -152,6 +152,14 @@ HYBRID_ALPHA = _env_float("HEAL_HYBRID_ALPHA", 0.6)
 CHUNK_SIZE = _env_int("HEAL_CHUNK_SIZE", 1200)
 CHUNK_OVERLAP = _env_int("HEAL_CHUNK_OVERLAP", 200)
 
+# Chunks embedded and written per batch during ingest.
+#
+# This is the granularity of both progress reporting and crash loss: a smaller
+# batch updates the progress bar more often and loses less work when something
+# fails, at the cost of more round trips to Qdrant. 32 keeps a 1200-chunk
+# guideline reporting roughly every percent.
+EMBED_BATCH_SIZE = _env_int("HEAL_EMBED_BATCH_SIZE", 32)
+
 
 class KnowledgeNotConfigured(RuntimeError):
     """Retrieval was requested but the vector store is not configured."""

@@ -1,5 +1,6 @@
 import {
   FiCheck,
+  FiChevronRight,
   FiCopy,
   // FiCpu,
   FiThumbsDown,
@@ -43,7 +44,8 @@ export const AIMessage = ({
   handleShowRetrieved,
   handleTranslation,
   handleSearchQueryEdit,
-  messageIdTranslating
+  messageIdTranslating,
+  onCitationClick,
 }: {
   messageId: number | null;
   content: string | JSX.Element | null | undefined;
@@ -59,12 +61,13 @@ export const AIMessage = ({
   handleShowRetrieved?: (messageNumber: number | null) => void;
   handleSearchQueryEdit?: (query: string) => void;
   messageIdTranslating?: number | null;
+  onCitationClick?: (citationKey: string, document: DanswerDocument) => void;
 }) => {
   const [copyClicked, setCopyClicked] = useState(false);
   return (
-    <div className={"py-5 px-5 flex -mr-6 w-full"}>
-      <div className="sm:mx-auto w-searchbar-xs 2xl:w-searchbar-sm 3xl:w-searchbar relative">
-        <div className="sm:ml-8 ml-[0.5rem]">
+    <div className="flex w-full px-4 py-5 sm:px-6">
+      <div className="mx-auto w-full max-w-3xl">
+        <div>
           <div className="flex">
             <div className="p-1 bg-ai rounded-lg h-fit my-auto">
               <div className="text-inverted">
@@ -96,7 +99,7 @@ export const AIMessage = ({
               )} */}
           </div>
 
-          <div className="w-message-xs 2xl:w-message-sm 3xl:w-message-default break-words mt-1 sm:ml-8">
+          <div className="mt-2 max-w-2xl break-words sm:ml-9">
             {query !== undefined &&
               handleShowRetrieved !== undefined &&
               isCurrentlyShowingRetrieved !== undefined && (
@@ -139,7 +142,7 @@ export const AIMessage = ({
                 <ThreeDots
                   height="30"
                   width="50"
-                  color="#3b82f6"
+                  color="#0f766e"
                   ariaLabel="grid-loading"
                   radius="12.5"
                   wrapperStyle={{}}
@@ -150,43 +153,25 @@ export const AIMessage = ({
             )}
             {citedDocuments && citedDocuments.length > 0 && (
               <div className="mt-2">
-                <b className="text-sm text-emphasis">Sources:</b>
+                <b className="text-sm text-emphasis">References</b>
                 <div className="flex flex-wrap gap-2">
                   {citedDocuments
                     .filter(([_, document]) => document.semantic_identifier)
                     .map(([citationKey, document], ind) => {
-                      const display = (
-                        <div className="max-w-350 text-ellipsis flex text-sm border border-border py-1 px-2 rounded flex">
-                          <div className="mr-1 my-auto">
-                            <SourceIcon
-                              sourceType={document.source_type}
-                              iconSize={16}
-                            />
-                          </div>
-                          [{citationKey}] {document!.semantic_identifier}
-                        </div>
+                      return (
+                        <button
+                          key={document.document_id}
+                          type="button"
+                          onClick={() => onCitationClick?.(citationKey, document)}
+                          className="group flex max-w-full items-center rounded-lg border border-border bg-background px-2.5 py-1.5 text-left text-xs text-emphasis transition-colors hover:border-heal-teal-200 hover:bg-hover-light"
+                        >
+                          <SourceIcon sourceType={document.source_type} iconSize={15} />
+                          <span className="ml-1.5 line-clamp-1">
+                            [{citationKey}] {document.semantic_identifier}
+                          </span>
+                          <FiChevronRight className="ml-1 shrink-0 text-subtle group-hover:text-accent" size={15} />
+                        </button>
                       );
-                      if (document.link) {
-                        return (
-                          <a
-                            key={document.document_id}
-                            href={document.link}
-                            target="_blank"
-                            className="cursor-pointer hover:bg-hover"
-                          >
-                            {display}
-                          </a>
-                        );
-                      } else {
-                        return (
-                          <div
-                            key={document.document_id}
-                            className="cursor-default"
-                          >
-                            {display}
-                          </div>
-                        );
-                      }
                     })}
                 </div>
               </div>
@@ -244,9 +229,9 @@ export const HumanMessage = ({
   messageIdTranslating?: number | null;
 }) => {
   return (
-    <div className="py-5 px-5 flex flex-col -mr-6 w-full">
-      <div className="sm:mx-auto w-searchbar-xs 2xl:w-searchbar-sm 3xl:w-searchbar">
-        <div className="sm:ml-8 ml-[0.5rem]">
+    <div className="flex w-full flex-col px-4 py-5 sm:px-6">
+      <div className="mx-auto w-full max-w-3xl">
+        <div>
           <div className="flex">
             <div className="p-1 bg-user rounded-lg h-fit">
               <div className="text-inverted">
@@ -256,8 +241,8 @@ export const HumanMessage = ({
 
             <div className="font-bold text-emphasis ml-2 my-auto">You</div>
           </div>
-          <div className="mx-auto mt-1 ml-8 w-searchbar-xs 2xl:w-searchbar-sm 3xl:w-searchbar-default flex flex-wrap">
-            <div className="w-message-xs 2xl:w-message-sm 3xl:w-message-default break-words">
+          <div className="mt-2 ml-9 flex flex-wrap">
+            <div className="max-w-2xl break-words">
               {typeof content === "string" ? (
                 <ReactMarkdown
                   className="prose max-w-full"

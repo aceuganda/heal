@@ -3,6 +3,9 @@
 The sparse half exists for one reason: drug codes and dosages are strings to
 match, not concepts to embed. These tests pin that behaviour.
 """
+import pytest
+
+from heal.knowledge import embedder
 from heal.knowledge.embedder import sparse_vector
 from heal.knowledge.embedder import tokenize
 
@@ -55,3 +58,56 @@ class TestSparseVector:
         once = sparse_vector("rifampicin isoniazid")
         many = sparse_vector("rifampicin " * 20 + "isoniazid")
         assert max(many.values) < 20 * max(once.values)
+
+
+class TestHashCollisions:
+    """Two tokens can hash to the same slot. Qdrant will not accept that.
+
+    The hashing trick maps an unbounded vocabulary into a fixed space, so
+    collisions are expected rather than exceptional. Emitting one entry per
+    token produced a duplicate index and Qdrant rejected the entire write:
+
+        422 ... points[11].vector.?.indices: must be unique
+
+    A one-chunk test document never collides, so this only appeared on a real
+    1242-chunk guideline -- after minutes of embedding, and it failed the lot.
+    """
+
+    def test_indices_are_unique_when_tokens_collide(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # Force every token into the same slot: the worst possible collision.
+        monkeypatch.setattr(embedder, "_hash_token", lambda token: 7)
+
+        vector = embedder.sparse_vector("amoxicillin ceftriaxone metronidazole")
+
+        assert vector.indices == [7]
+        assert len(vector.indices) == len(set(vector.indices))
+        assert len(vector.values) == len(vector.indices)
+
+    def test_colliding_weights_are_summed_not_dropped(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A collision merges two features; it must not silently discard one."""
+        monkeypatch.setattr(
+            embedder, "_hash_token", lambda token: 1 if token == "aspirin" else 2
+        )
+
+        merged = embedder.sparse_vector("aspirin ibuprofen paracetamol")
+
+        # ibuprofen and paracetamol share slot 2, so it outweighs slot 1.
+        weights = dict(zip(merged.indices, merged.values))
+        assert weights[2] > weights[1]
+
+    def test_a_real_document_never_produces_duplicate_indices(self) -> None:
+        """The property Qdrant enforces, checked against ordinary clinical text."""
+        text = (
+            "Give TDF/3TC/DTG once daily. Cotrimoxazole 960 mg once daily. "
+            "Artemether-lumefantrine 80/480 mg BD for three days. "
+            "Artesunate 2.4 mg/kg IV at 0, 12 and 24 hours. "
+        ) * 40
+
+        vector = embedder.sparse_vector(text)
+
+        assert len(vector.indices) == len(set(vector.indices))
+        assert vector.indices == sorted(vector.indices)
