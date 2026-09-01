@@ -55,9 +55,13 @@ def _cached_llm(model_id: str, timeout: int) -> Any:
     return build_llm(get_model(model_id), timeout=timeout)
 
 
-def get_classifier_llm() -> Any:
+def get_classifier_llm(model_id: str | None = None) -> Any:
     """Client for short internal calls such as intent classification.
 
     Cached because it is built on every message and the clients are stateless.
+
+    `model_id` names a different classifier for one call. It exists for the
+    admin playground, which compares classifiers without changing the one every
+    live conversation is using; omitted, this is the configured default.
     """
-    return _cached_llm(config.CLASSIFIER_MODEL, config.LLM_TIMEOUT)
+    return _cached_llm(model_id or config.CLASSIFIER_MODEL, config.LLM_TIMEOUT)

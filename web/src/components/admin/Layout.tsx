@@ -6,6 +6,7 @@ import {
   ConnectorIcon,
   BookmarkIcon,
   NotebookIcon,
+  ZoomInIcon,
 } from "@/components/icons/icons";
 import { isAdminRole, User } from "@/lib/types";
 import {
@@ -70,6 +71,17 @@ export async function Layout({ children }: { children: React.ReactNode }) {
                       </div>
                     ),
                     link: "/admin/sources",
+                  },
+                  {
+                    // Sits with the library rather than under System: it is
+                    // how the library's own ranking gets tuned.
+                    name: (
+                      <div className="flex">
+                        <ZoomInIcon size={18} />
+                        <div className="ml-1">Retrieval playground</div>
+                      </div>
+                    ),
+                    link: "/admin/playground",
                   },
                 ],
               },

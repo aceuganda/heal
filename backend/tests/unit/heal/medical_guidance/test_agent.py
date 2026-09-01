@@ -46,7 +46,7 @@ def wire(monkeypatch: pytest.MonkeyPatch):
 
     def install(label: str, answer: list[str] | None = None) -> tuple[FakeLLM, list]:
         llm = FakeLLM(label, answer if answer is not None else ["an ", "answer"])
-        monkeypatch.setattr(understanding_mod, "get_classifier_llm", lambda: llm)
+        monkeypatch.setattr(understanding_mod, "get_classifier_llm", lambda *_: llm)
         monkeypatch.setattr(agent_mod, "get_llm", lambda model_id=None: llm)
         monkeypatch.setattr(agent_mod, "to_provider_messages", lambda m: m)
         return llm, events

@@ -184,9 +184,10 @@ Three properties of that flow drove the redesign:
     |-- 8. review(question, answer, passages)             heal/medical_guidance/
     |        coverage  how much of the answer rests on a cited passage
     |        addressed did it actually answer what was asked (0..1)
+    |        readable  is it plain English at the question's own level (0..1)
     |        gaps      what is missing, in words
     |        |
-    |        '-- if addressed < REVIEW_FLOOR (0.6): ONE revision pass that
+    |        '-- if addressed < REVIEW_FLOOR (0.4): ONE revision pass that
     |            EDITS THE GAPS. Not a regeneration -- the answer that exists
     |            is kept and the holes in it are filled, so a good paragraph
     |            is never thrown away to fix a missing one.
@@ -469,6 +470,49 @@ prompt.
    same judgement, and adopting one without measurement would add a confident
    reordering step nobody has checked.
 
+Point 3 deserves more than a line, because it is the one that would cause harm
+rather than merely waste effort.
+
+MS MARCO is a dataset of web search queries paired with passages a human found
+useful. A model trained on it learns what *satisfies a searcher*: passages that
+are direct, self-contained, confidently worded, and topically on the nose. Those
+are good instincts for a search engine and subtly wrong ones for clinical
+guidance, where the passage that should be cited is often the least satisfying
+one on the page — hedged, full of qualifiers, pointing at a table, and correct
+precisely because of the hedging.
+
+The concrete failure is a reordering that prefers the confident passage over the
+qualified one. A guideline saying "give 5mg/kg" reads as a better answer than one
+saying "give 5mg/kg in children over 3 months with normal renal function; see
+Table 4 for adjustment" — and the second is the one a health worker needs. A
+reranker trained to maximise searcher satisfaction has been trained, in effect,
+to strip the caveat. Nothing in the score it returns would reveal that it had
+done so.
+
+This is worse than no reranker for a specific reason: it fails *silently and
+confidently*. Dense retrieval's weakness is legible — a wrong passage scores
+close to a right one and the score floor can be tuned against it. A reranker
+overrides that ordering with a number derived from a judgement nobody has
+inspected, so a bad reordering looks exactly like a good one from the outside.
+Adding an opaque authority over which passage a health worker gets shown, on the
+strength of "rerankers usually help", is not a trade this product should make
+without evidence.
+
+**What validating one would actually require** — worth writing down, because
+"we'll evaluate it" is how this gets waved through:
+
+- The same held-out clinician-labelled set used for everything else, with the
+  correct chunk marked per question, not a general relevance judgement.
+- Measured against the incumbent, offline, on the *same* candidate sets — the
+  question is whether reordering helps, not whether retrieval works.
+- Deliberate coverage of the hedged-versus-confident case above, since that is
+  the specific way this class of model is expected to fail here.
+- Latency measured at the real `RETRIEVAL_TOP_K`, not in isolation, because the
+  cost is per-question and permanent.
+
+If it clears that, adopt it. If nobody has time to run it, that is an answer
+too, and the answer is no.
+
 Note what is *not* on that list: language. Because translation happens upstream,
 a reranker would receive an English query, so the inherited English
 cross-encoders are perfectly usable candidates. They are deferred on cost and
@@ -476,14 +520,36 @@ evidence, not on capability.
 
 **The trigger to add one is specific,** and worth writing down now so it is not
 argued about later: the evaluation set shows the correct chunk retrieved inside
-the top 20 but not inside the top 5. That is the reranker-shaped failure, and it
-is the only one a reranker fixes. If the correct chunk is not in the top 20 at
-all, reranking cannot help — that is a chunking, translation, or source-coverage
-problem, and adding a reranker would only make the symptom harder to see.
+the top 20 but not inside the top 5.
 
-Until then, the cheaper interventions come first: better chunk boundaries, then
-the hybrid weight (`HYBRID_ALPHA`), then a stronger 384-dimension embedding
-model. All three are reversible; a reranker is a permanent latency cost.
+The reasoning behind that shape is worth spelling out, because it is a
+diagnostic and not a threshold. Retrieval fetches `RETRIEVAL_TOP_K` (20)
+candidates and the prompt receives `CONTEXT_TOP_K` (5). So there are exactly
+three things that can go wrong, and only one of them is a ranking problem:
+
+| What the evaluation shows | What it means | What fixes it |
+| --- | --- | --- |
+| Correct chunk in the top 5 | Retrieval is working | Nothing — look at the prompt or the answer |
+| Correct chunk in the top 20, not the top 5 | **Found but mis-ordered** | A reranker. This is the only case it addresses |
+| Correct chunk not in the top 20 at all | Never found | Chunking, translation, or the library does not contain it |
+
+The third row is the one that matters most, and it is where a reranker does
+active harm. A reranker cannot promote a candidate that was never fetched — it
+only reorders what retrieval already returned. So if the correct passage is
+missing entirely, adding a reranker changes the top 5 to a *different* set of
+wrong passages, and the aggregate score often improves slightly, because the
+reordering does help the questions that were already nearly right. The
+underlying failure — a badly chunked guideline, a mistranslated query, a source
+nobody uploaded — is now buried under a metric that moved in the right
+direction. That is the expensive kind of wrong: real money and latency spent
+making a diagnostic harder to read.
+
+So the order is: measure where the correct chunk actually lands *before*
+reaching for a reranker. If it is missing from the candidate set, fix the thing
+that lost it. Reranking is the last intervention, not the first, and the
+cheaper ones — chunk boundaries, `HYBRID_ALPHA`, a stronger 384-dimension
+embedding model — are all reversible in a way a permanent per-question latency
+cost is not.
 
 ---
 
@@ -508,13 +574,31 @@ model. All three are reversible; a reranker is a permanent latency cost.
    Luganda answer  +  citations rendered from PostgreSQL source metadata
 ```
 
-**Why translate rather than embed Luganda directly.** The multilingual
-retrieval models that would allow direct Luganda embedding — the
-`multilingual-e5` family, `BAAI/bge-m3` — are built on XLM-RoBERTa, whose
-pretraining language list does not appear to include Luganda. Adopting one buys
-coverage of languages Heal does not serve, at several times the model weight.
-Genuine Luganda retrieval would mean AfroXLMR-family encoders fine-tuned for the
-task: a research programme, not a component swap.
+**Why translate rather than embed Luganda directly.** The short answer is that
+this is not a live question, and the section exists so it is not re-opened
+casually.
+
+Direct Luganda retrieval is not a component that can be swapped in. The
+multilingual retrieval models usually reached for — the `multilingual-e5`
+family, `BAAI/bge-m3` — are built on XLM-RoBERTa, whose pretraining language
+list does not appear to include Luganda, so they would buy coverage of
+languages Heal does not serve at several times the model weight, without
+actually solving the language it does serve. Genuine Luganda retrieval would
+mean AfroXLMR-family encoders fine-tuned for the task: a research effort with
+its own data collection, not an afternoon's configuration change.
+
+**What has to be true before this is even worth costing.** The current design
+has not yet been measured. Nobody has established how much retrieval quality
+the translation hop costs, because there is no evaluation set to measure it
+with. Until that exists, "embed Luganda directly" is a solution to a problem of
+unknown size — and the far more likely finding is that translation quality, not
+embedding language, is where the loss actually is. That is also the cheaper
+thing to fix.
+
+So the order is: build the English↔Luganda medical-phrase test set, measure
+where answers actually degrade, and only then ask whether the corpus language is
+the constraint. Verify the XLM-R language list on the model cards before anyone
+re-opens this on the strength of a model name.
 
 Consequences to hold onto:
 
@@ -575,11 +659,44 @@ questions that are easy to confuse:
 | --- | --- | --- |
 | **Was it answered?** | Does the text address what was actually asked, including every part of a multi-part question | Whether a revision pass runs |
 | **Was it grounded?** | How much of the answer rests on a cited approved passage | What the reader is shown about the sources |
+| **Is it readable?** | Is it in plain English, at the level the question was asked in | Whether a revision pass runs |
 
 These are independent. A correct refusal is fully *answered* and not *grounded*
 at all. A fluent answer that quietly ignores half the question can be perfectly
-grounded in the half it did address. Collapsing them into one number would hide
-both failures.
+grounded in the half it did address. An answer can be complete, well-sourced,
+and written so densely that the person reading it cannot act on it. Collapsing
+them into one number would hide all three failures.
+
+### Plain English is a requirement, not a style preference
+
+Answers default to **basic English**: short sentences, common words, the
+structure a colleague would use out loud. This is not simplification of the
+content — it is simplification of the language carrying it.
+
+The distinction matters enough to state flatly: **plain English does not mean
+fewer facts.** Every dose, every unit, every qualifier, every contraindication
+and every caveat stays exactly as it was. What changes is the sentence around
+them. "Administer prophylaxis in accordance with the weight-band schedule" and
+"Give the dose for the child's weight band" carry identical clinical content;
+only one of them can be read at speed by someone with a patient in front of
+them. If simplifying a sentence would drop a qualifier, the sentence does not
+get simplified — the qualifier wins.
+
+Two things override the default:
+
+- **The question's own register.** A health worker who writes in full clinical
+  terminology gets an answer in the same terminology. Explaining `TDF/3TC/DTG`
+  to someone who just typed it is condescending and wastes their time.
+- **Terms with no plain equivalent.** A drug name, a regimen code, a scored
+  clinical scale — these are named things. They are used, and briefly expanded
+  the first time they appear, not replaced with an approximation.
+
+This applies to the English answer. Under the translate-then-answer design the
+Luganda reader receives a translation of it, so plain English upstream is also
+what makes the Luganda output tractable: a short, concrete English sentence
+survives machine translation far better than a long subordinate-clause one, and
+the failure mode of translating dense clinical prose is exactly the kind of
+mangled qualifier that matters most here.
 
 ### The revision back-flow
 
@@ -589,9 +706,9 @@ both failures.
         v
   review()                             one structured call, configured model
         |
-        +-- addressed >= REVIEW_FLOOR   -> done, nothing else runs
+        +-- both scores >= REVIEW_FLOOR -> done, nothing else runs
         |
-        '-- addressed <  REVIEW_FLOOR   -> ONE revision pass
+        '-- either <  REVIEW_FLOOR      -> ONE revision pass
                 |
                 v
         revise(answer, gaps, passages)
@@ -619,12 +736,22 @@ Four rules keep this from becoming a loop:
 4. **Refusals are never revised.** An answer that correctly refused for lack of
    an approved source has done its job. Sending it back for "improvement" is how
    a refusal turns into a guess.
+5. **Simplifying may not cost a fact.** A revision that rewrites for readability
+   keeps every dose, unit, qualifier and contraindication intact. If a sentence
+   cannot be made plainer without losing one, it stays as it is. Losing a
+   qualifier is a clinical error; a long sentence is an inconvenience.
 
-`REVIEW_FLOOR` starts at **0.6**. Like the retrieval score floor, it is a number
-chosen to be adjusted from measurement rather than defended as correct: too high
-and every answer pays for a revision pass, too low and the check never fires.
-The review outcome is recorded on every answer, so the distribution can be read
-before the threshold is tuned.
+`REVIEW_FLOOR` starts at **0.4**, deliberately low. The revision pass is an
+intervention, not a polish step: it should fire when an answer genuinely missed
+what was asked, not whenever it could have been a little better. A high floor
+would make almost every answer pay for a second model call, which is latency a
+health worker feels and cost the deployment pays, in exchange for rewriting
+answers that were already fine. Set low, the check stays what it is meant to be
+— a floor under the bad cases rather than a gate every answer squeezes through.
+
+Like the retrieval score floor, it is a number chosen to be adjusted from
+measurement rather than defended as correct. The review outcome is recorded on
+every answer, so the distribution can be read before the threshold is moved.
 
 The review runs on the **English** text, before translation — the same rule the
 whole pipeline follows, and for the same reason: the model reasons in the

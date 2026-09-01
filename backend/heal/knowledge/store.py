@@ -16,7 +16,14 @@ enforced, in this order:
   5. context ordering       final order sets citation numbers
 
 There is no reranker. See the plan for the trigger to add one.
+
+The tuning constants reach this module as a `RetrievalSettings` value rather
+than being read from `heal.config` in place. Omitting it reads exactly the same
+constants, so the chat path is unchanged; passing one lets the admin playground
+try a different floor for a single request without touching what any concurrent
+conversation sees. See heal/knowledge/settings.py.
 """
+from dataclasses import dataclass
 from typing import Any
 from typing import Protocol
 
@@ -28,6 +35,7 @@ from heal.knowledge.models import Chunk
 from heal.knowledge.models import RetrievedChunk
 from heal.knowledge.models import SearchOutcome
 from heal.knowledge.models import SourceRef
+from heal.knowledge.settings import RetrievalSettings
 from heal.logger import get_logger
 
 logger = get_logger(__name__)
@@ -44,7 +52,23 @@ class KnowledgeStore(Protocol):
         query: str,
         limit: int | None = None,
         lexical_query: str | None = None,
+        settings: RetrievalSettings | None = None,
     ) -> SearchOutcome:
+        ...
+
+    def candidates(
+        self,
+        query: str,
+        lexical_query: str | None = None,
+        settings: RetrievalSettings | None = None,
+    ) -> list[RetrievedChunk]:
+        """Ranked hits with nothing discarded yet.
+
+        Part of the seam rather than an implementation detail: the admin
+        surfaces exist to show what the floor and the cap are about to throw
+        away, and a store that could not report that would be unusable behind
+        them.
+        """
         ...
 
 
@@ -83,6 +107,7 @@ class QdrantKnowledgeStore:
         query: str,
         limit: int | None = None,
         lexical_query: str | None = None,
+        settings: RetrievalSettings | None = None,
     ) -> SearchOutcome:
         """Retrieve approved chunks for an English query.
 
@@ -90,16 +115,20 @@ class QdrantKnowledgeStore:
         half matches on. They differ when the question has been rewritten for
         retrieval and the user's literal wording still has to match.
 
+        `settings` is one request's tuning. Omitted, it reads the deployment's
+        own constants, which is what every chat turn does.
+
         Never raises at the caller: an unreachable store degrades to an empty
         outcome flagged `unavailable`, because a chat answer that says "I could
         not reach the library" is better than a 500.
         """
-        want = limit if limit is not None else config.CONTEXT_TOP_K
+        settings = settings or RetrievalSettings()
+        want = limit if limit is not None else settings.context_top_k
         if not query.strip():
             return SearchOutcome()
 
         try:
-            candidates = self._candidates(query, lexical_query)
+            candidates = self.candidates(query, lexical_query, settings)
         except Exception as exc:  # noqa: BLE001 -- degrade, never fail the chat
             logger.error("Knowledge store unavailable: %s", type(exc).__name__)
             return SearchOutcome(unavailable=True, error=type(exc).__name__)
@@ -108,34 +137,42 @@ class QdrantKnowledgeStore:
             return SearchOutcome()
 
         best = max(c.score for c in candidates)
-        kept = [c for c in candidates if c.score >= config.MIN_RETRIEVAL_SCORE]
-        if not kept:
+        selection = select_context(candidates, settings, limit=want)
+        if not selection.above_floor:
             # The near-miss is logged because it is what tunes the floor.
             logger.info(
                 "All %d candidates below MIN_RETRIEVAL_SCORE (%.3f); best %.3f",
                 len(candidates),
-                config.MIN_RETRIEVAL_SCORE,
+                settings.min_retrieval_score,
                 best,
             )
             return SearchOutcome(best_score_before_floor=best, below_floor=True)
 
         return SearchOutcome(
-            chunks=_cap_per_source(kept, config.MAX_CHUNKS_PER_SOURCE)[:want],
+            chunks=selection.context,
             best_score_before_floor=best,
         )
 
-    def _candidates(
-        self, query: str, lexical_query: str | None = None
+    def candidates(
+        self,
+        query: str,
+        lexical_query: str | None = None,
+        settings: RetrievalSettings | None = None,
     ) -> list[RetrievedChunk]:
         """Fetch and fuse. Dense and sparse are searched separately, then merged.
 
         `lexical_query` feeds only the sparse half. It exists so the caller can
         embed a cleaned-up question while still matching literally on what the
         health worker actually typed -- see `Understanding.lexical_query`.
+
+        Returns every candidate, unfiltered: the floor and the diversity cap are
+        applied afterwards by `select_context`. That split is what lets an admin
+        see the near-misses a floor is about to discard.
         """
         from qdrant_client import models as qm
 
-        top_k = config.RETRIEVAL_TOP_K
+        settings = settings or RetrievalSettings()
+        top_k = settings.retrieval_top_k
         # Applied before the ANN search, not after -- see the module docstring.
         approved_only = qm.Filter(
             must=[
@@ -153,7 +190,7 @@ class QdrantKnowledgeStore:
         )
         results = {p.id: (_to_chunk(p), float(p.score), 0.0) for p in dense}
 
-        if config.HYBRID_SEARCH:
+        if settings.hybrid_search:
             sparse = sparse_vector(lexical_query or query)
             if len(sparse):
                 lexical = self.client.search(
@@ -174,7 +211,7 @@ class QdrantKnowledgeStore:
                     )
                     results[point.id] = (chunk, dense_score, float(point.score))
 
-        alpha = config.HYBRID_ALPHA if config.HYBRID_SEARCH else 1.0
+        alpha = settings.alpha
         fused = [
             RetrievedChunk(
                 chunk=chunk,
@@ -186,6 +223,45 @@ class QdrantKnowledgeStore:
         ]
         fused.sort(key=lambda r: r.score, reverse=True)
         return fused
+
+
+@dataclass(frozen=True)
+class Selection:
+    """What each stage of the filter did to a candidate list.
+
+    `context` is what reaches the prompt. The two id sets exist so a caller can
+    explain a candidate's fate rather than merely observing that it vanished --
+    "0.34, one hundredth under the floor" and "cut because two better chunks
+    from the same guideline came first" are different problems with different
+    fixes, and an admin tuning the floor has to be able to tell them apart.
+    """
+
+    above_floor: list[RetrievedChunk]
+    context: list[RetrievedChunk]
+    passed_floor: frozenset[str]
+    survived_cap: frozenset[str]
+
+
+def select_context(
+    candidates: list[RetrievedChunk],
+    settings: RetrievalSettings,
+    limit: int | None = None,
+) -> Selection:
+    """Apply the score floor, then the diversity cap, then the context size.
+
+    The single implementation of stages 3-5 in the module docstring. The chat
+    path and the admin playground both go through it, so a playground result
+    cannot describe a pipeline the health worker's answer did not run.
+    """
+    want = limit if limit is not None else settings.context_top_k
+    above_floor = [c for c in candidates if c.score >= settings.min_retrieval_score]
+    capped = _cap_per_source(above_floor, settings.max_chunks_per_source)
+    return Selection(
+        above_floor=above_floor,
+        context=capped[:want],
+        passed_floor=frozenset(c.chunk.chunk_id for c in above_floor),
+        survived_cap=frozenset(c.chunk.chunk_id for c in capped),
+    )
 
 
 def _clamp(score: float) -> float:

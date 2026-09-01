@@ -24,9 +24,18 @@ class FakeStore:
         # falsy. See SearchOutcome.__bool__.
         self.outcome = SearchOutcome() if outcome is None else outcome
         self.queries: list[str] = []
+        self.lexical_queries: list[str | None] = []
 
-    def search(self, query: str, limit: int | None = None) -> SearchOutcome:
+    def search(
+        self,
+        query: str,
+        limit: int | None = None,
+        lexical_query: str | None = None,
+    ) -> SearchOutcome:
         self.queries.append(query)
+        # Recorded separately: the dense half searches `query`, the lexical half
+        # searches this, and a test that cares about drug codes cares which.
+        self.lexical_queries.append(lexical_query)
         return self.outcome
 
 

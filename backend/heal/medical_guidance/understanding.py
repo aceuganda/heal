@@ -143,8 +143,15 @@ class Understanding:
         return " ".join(part for part in parts if part.strip())
 
 
-def understand(message: str, history: list[str] | None = None) -> Understanding:
+def understand(
+    message: str,
+    history: list[str] | None = None,
+    model_id: str | None = None,
+) -> Understanding:
     """Classify and rewrite one English message.
+
+    `model_id` names a classifier for this call only; omitted, the configured
+    one is used, which is what every chat turn does.
 
     Never raises. On any failure the label falls back to CLINICAL_QUESTION and
     the query falls back to the user's own text -- which is exactly how the
@@ -154,13 +161,13 @@ def understand(message: str, history: list[str] | None = None) -> Understanding:
     from heal import config
 
     original = message.strip()
-    model_id = config.CLASSIFIER_MODEL
+    model_id = model_id or config.CLASSIFIER_MODEL
     prompt = UNDERSTANDING_PROMPT.format(
         history=_format_history(history or []), message=original
     )
 
     try:
-        raw = get_classifier_llm().invoke(prompt)
+        raw = get_classifier_llm(model_id).invoke(prompt)
     except Exception as e:  # noqa: BLE001 -- deliberately broad, see docstring
         logger.error(f"Query understanding failed: {type(e).__name__}: {e}")
         return _fallback(original, model_id, f"{type(e).__name__}")

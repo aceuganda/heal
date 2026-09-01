@@ -5,7 +5,9 @@ import pytest
 from pytest_mock import MockFixture
 
 from heal_app.configs.constants import DocumentSource
-from heal_app.connectors.cross_connector_utils.miscellaneous_utils import time_str_to_utc
+from heal_app.connectors.cross_connector_utils.miscellaneous_utils import (
+    time_str_to_utc,
+)
 from heal_app.connectors.gmail.connector import GmailConnector
 from heal_app.connectors.models import Document
 

@@ -347,7 +347,7 @@ def test_search(
     _enabled()
     store = QdrantKnowledgeStore()
     try:
-        candidates = store._candidates(query)
+        candidates = store.candidates(query)
     except Exception as exc:  # noqa: BLE001
         return SearchResponse(
             query=query,

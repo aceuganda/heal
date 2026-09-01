@@ -7,7 +7,10 @@ clinical-safety half of the module, so they are asserted, not assumed.
 import pytest
 
 from heal import config
+from heal.knowledge.models import RetrievedChunk
+from heal.knowledge.settings import RetrievalSettings
 from heal.knowledge.store import QdrantKnowledgeStore
+from heal.knowledge.store import select_context
 from tests.unit.heal.knowledge.conftest import FakeQdrant
 from tests.unit.heal.knowledge.conftest import make_point
 
@@ -157,6 +160,100 @@ class TestFailureIsNotAnException:
     ) -> None:
         assert not build(fake_client, fake_embedder).search("   ")
         assert fake_client.searches == []
+
+
+class TestPerRequestSettings:
+    """Tuning travels as an argument, never as a write to the module config.
+
+    The chat path passes nothing and must keep behaving exactly as it did; the
+    admin playground passes a value that lives only as long as the call.
+    """
+
+    def test_omitting_settings_uses_the_deployment_constants(
+        self, fake_client, fake_embedder, monkeypatch
+    ) -> None:
+        monkeypatch.setattr(config, "HYBRID_SEARCH", False)
+        monkeypatch.setattr(config, "MIN_RETRIEVAL_SCORE", 0.5)
+        fake_client.dense_results = [make_point(score=0.45)]
+        assert not build(fake_client, fake_embedder).search("q")
+
+    def test_a_lower_floor_for_one_call_admits_what_the_default_refused(
+        self, fake_client, fake_embedder, monkeypatch
+    ) -> None:
+        monkeypatch.setattr(config, "HYBRID_SEARCH", False)
+        monkeypatch.setattr(config, "MIN_RETRIEVAL_SCORE", 0.5)
+        fake_client.dense_results = [make_point(score=0.45)]
+
+        outcome = build(fake_client, fake_embedder).search(
+            "q",
+            settings=RetrievalSettings(hybrid_search=False, min_retrieval_score=0.4),
+        )
+
+        assert outcome
+        assert config.MIN_RETRIEVAL_SCORE == 0.5, "the call wrote the module config"
+
+    def test_the_settings_top_k_is_what_qdrant_is_asked_for(
+        self, fake_client, fake_embedder
+    ) -> None:
+        fake_client.dense_results = [make_point()]
+        build(fake_client, fake_embedder).search(
+            "q", settings=RetrievalSettings(retrieval_top_k=7)
+        )
+        assert fake_client.searches[0]["limit"] == 7
+
+    def test_turning_hybrid_off_for_one_call_skips_the_sparse_search(
+        self, fake_client, fake_embedder
+    ) -> None:
+        fake_client.dense_results = [make_point()]
+        build(fake_client, fake_embedder).search(
+            "q", settings=RetrievalSettings(hybrid_search=False)
+        )
+        assert len(fake_client.searches) == 1
+        assert config.HYBRID_SEARCH is True
+
+
+class TestSelectContext:
+    """The one implementation of floor, cap and context size.
+
+    The playground reports against this function rather than repeating its
+    rules, so a screen cannot describe a pipeline the chat path did not run.
+    """
+
+    def test_it_reports_which_candidates_cleared_the_floor(self) -> None:
+        settings = RetrievalSettings(min_retrieval_score=0.35, hybrid_search=False)
+        candidates = [
+            RetrievedChunk(chunk=_chunk("keep"), score=0.40),
+            RetrievedChunk(chunk=_chunk("drop"), score=0.34),
+        ]
+
+        selection = select_context(candidates, settings)
+
+        assert selection.passed_floor == frozenset({"keep"})
+
+    def test_a_chunk_cut_by_the_cap_cleared_the_floor_first(self) -> None:
+        settings = RetrievalSettings(
+            min_retrieval_score=0.1, max_chunks_per_source=1, hybrid_search=False
+        )
+        candidates = [
+            RetrievedChunk(chunk=_chunk("a1"), score=0.9),
+            RetrievedChunk(chunk=_chunk("a2"), score=0.8),
+        ]
+
+        selection = select_context(candidates, settings)
+
+        assert selection.passed_floor == frozenset({"a1", "a2"})
+        assert selection.survived_cap == frozenset({"a1"})
+
+
+def _chunk(chunk_id: str, source_id: str = "src-1"):
+    from heal.knowledge.models import Chunk
+    from heal.knowledge.models import SourceRef
+
+    return Chunk(
+        chunk_id=chunk_id,
+        text="text",
+        source=SourceRef(source_id=source_id, title="Guide"),
+    )
 
 
 class TestSources:

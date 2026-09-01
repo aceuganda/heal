@@ -25,7 +25,7 @@ import {
   processRawChatHistory,
   sendMessage,
 } from "./lib";
-import { ThreeDots } from "react-loader-spinner";
+import { AnswerProgress } from "./message/AnswerProgress";
 import { FeedbackModal } from "./modal/FeedbackModal";
 import { Persona } from "../admin/personas/interfaces";
 import { ChatPersonaSelector } from "./ChatPersonaSelector";
@@ -676,20 +676,7 @@ export const Chat = ({
                       <AIMessage
                         messageId={null}
                         handleTranslation={handleMessageTranslation}
-                        content={
-                          <div className="text-sm my-auto">
-                            <ThreeDots
-                              height="30"
-                              width="50"
-                              color="#0f766e"
-                              ariaLabel="grid-loading"
-                              radius="12.5"
-                              wrapperStyle={{}}
-                              wrapperClass=""
-                              visible={true}
-                            />
-                          </div>
-                        }
+                        content={<AnswerProgress className="my-auto" />}
                       />
                     </div>
                   )}

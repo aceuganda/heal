@@ -22,6 +22,40 @@ the first pilot release.
 
 ### Added
 
+- **A retrieval playground for administrators.** `MIN_RETRIEVAL_SCORE` decides
+  when Heal refuses to give a dose, and its current value is openly a
+  placeholder that has to be measured rather than reasoned about. The new
+  `/admin/playground` screen runs one question through the whole pipeline and
+  shows what happened: the rewritten query beside the original, every candidate
+  the store returned *before* the score floor and the diversity cap discarded
+  any of them — with the floor drawn through the list so a near-miss is visible
+  and its shortfall stated — the route the label selected, the answer with its
+  `[n]` markers resolved, and the time each stage took. The score floor, hybrid
+  weight, top-k values, per-source cap, and both the chat and classifier models
+  can be changed for the run. **The settings are per-request and die with the
+  request**: they never touch the running configuration, so an administrator
+  experimenting with a floor cannot change what a health worker is told at that
+  moment. The screen says so, and reports the settings the server says it used
+  rather than whatever the controls currently show. Behind the same gate as
+  user management.
+- **Admin playground.** A screen for trying different retrieval settings and
+  models against a real question and seeing every candidate, its dense, sparse
+  and fused scores, and whether it passed the score floor or was cut by the
+  per-source cap. Settings apply to that one run only and never change what
+  health workers receive.
+- **The question is understood before it is searched.** One structured call now
+  produces both the safety label and a cleaned, specific version of the question
+  for retrieval — spelling and grammar repaired, references from earlier turns
+  resolved, phrased the way a guideline would phrase it. The dense half of the
+  search embeds the rewrite; the lexical half also sees the user's own words, so
+  a drug code they typed still matches exactly even when the rewrite generalised
+  it. A failed or unusable rewrite falls back to the original text with a safe
+  label, which is how the system behaved before this existed.
+- **A loading state that says what is happening.** The wait between sending a
+  question and the first token is the longest silence in the product. It now
+  shows the African continent as a dot map with a pulse travelling across it,
+  beside a line of text naming the current step. Both honour
+  `prefers-reduced-motion`.
 - **Citations are real.** `[n]` markers in an answer are extracted from the
   finished text, mapped to the passage each one points at, and stored with the
   message. In the chat they render as links that open the cited passage; a
@@ -89,6 +123,28 @@ the first pilot release.
   mounted twice — once for the desktop panel, once for the mobile sheet, with
   only CSS deciding which is visible — so fetching inside it ran two model calls
   per opened citation.
+
+### To do
+
+Designed and documented in `docs/architecture-decisions.md`; not yet built.
+
+1. **Verify citations end to end** against a running stack. Nothing below is
+   worth layering on an unverified path.
+2. **Answer review + revision back-flow.** Score `addressed` and `readable`;
+   below `REVIEW_FLOOR` (0.4), one revision pass that edits the gaps. Never
+   regenerate, never revise a refusal, never add uncited clinical content,
+   never lose a fact to simplification.
+3. **Plain English by default.** Same facts, simpler sentences; match the
+   user's register when they write clinically.
+4. **Grounding visibility.** Citation coverage + lexical grounding, shown as
+   grounded / partly referenced / general knowledge. Weak answers still shown,
+   labelled honestly. Plain counts, no percentages.
+5. **Star feedback.** Five stars replacing thumbs, sigmoid aggregate, surfaced
+   to admins as a review signal — deliberately not wired into ranking.
+6. **UUIDs for chat session and message ids.** Needs a migration and touches
+   every `chatId` URL; do it as its own pass.
+7. **Clinician evaluation set.** Blocks tuning `MIN_RETRIEVAL_SCORE`,
+   `REVIEW_FLOOR`, and any reranker decision.
 
 ### Notes
 

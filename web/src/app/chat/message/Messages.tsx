@@ -14,7 +14,7 @@ import ReactMarkdown from "react-markdown";
 import { DanswerDocument } from "@/lib/search/interfaces";
 import { SearchSummary, ShowHideDocsButton } from "./SearchSummary";
 import { SourceIcon } from "@/components/SourceIcon";
-import { ThreeDots } from "react-loader-spinner";
+import { AnswerProgress } from "./AnswerProgress";
 import { citationKeyFromHref, linkifyCitations } from "./citationMarkers";
 
 export const Hoverable: React.FC<{
@@ -180,18 +180,10 @@ export const AIMessage = ({
                 )}
               </>
             ) : isComplete ? null : (
-              <div className="text-sm my-auto">
-                <ThreeDots
-                  height="30"
-                  width="50"
-                  color="#0f766e"
-                  ariaLabel="grid-loading"
-                  radius="12.5"
-                  wrapperStyle={{}}
-                  wrapperClass=""
-                  visible={true}
-                />
-              </div>
+              // An assistant message with no text yet: the answer is on its
+              // way but nothing has streamed, which is exactly the silence
+              // AnswerProgress exists to fill.
+              <AnswerProgress className="my-auto" />
             )}
             {citedDocuments && citedDocuments.length > 0 && (
               <div className="mt-2">
