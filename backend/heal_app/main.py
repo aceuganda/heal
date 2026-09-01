@@ -15,6 +15,7 @@ from heal.bootstrap import ensure_bootstrap_admin
 from heal.server.api_key import get_danswer_api_key
 from heal.knowledge.startup import prepare_knowledge_store_in_background
 from heal.server.knowledge_api import router as knowledge_router
+from heal.server.reference_api import router as reference_router
 from heal.server.users_api import router as users_admin_router
 from heal_app import __version__
 from heal_app.auth.schemas import UserCreate
@@ -119,6 +120,9 @@ def get_application() -> FastAPI:
     # Creating accounts and changing roles. Mounted after `user_router`, which
     # keeps the inherited read-only user routes.
     include_router_with_global_prefix_prepended(application, users_admin_router)
+    # Plain-language glosses for a cited passage. Any signed-in user, since it
+    # is a reading aid on the answer rather than an admin tool.
+    include_router_with_global_prefix_prepended(application, reference_router)
 
     if AUTH_TYPE == AuthType.DISABLED:
         # Server logs this during auth setup verification step

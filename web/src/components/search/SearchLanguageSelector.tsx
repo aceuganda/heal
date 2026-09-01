@@ -13,7 +13,7 @@ export const SearchLanguageSelector: React.FC<Props> = ({
     language
 }) => {
     return (
-        <div className="mt-3 mb-2 inline-flex w-fit items-center rounded-full border border-border bg-background p-1 text-xs shadow-sm">
+        <div className="inline-flex w-fit items-center rounded-full border border-border bg-background p-1 text-xs shadow-sm">
             <FiGlobe className="ml-2 mr-1 text-subtle" size={14} aria-hidden="true" />
             <button
                 type="button"
@@ -26,7 +26,8 @@ export const SearchLanguageSelector: React.FC<Props> = ({
                     setLanguage('english');
                 }}
             >
-                English
+                <span className="sm:hidden">EN</span>
+                <span className="max-sm:hidden">English</span>
             </button>
 
             <button
@@ -41,7 +42,8 @@ export const SearchLanguageSelector: React.FC<Props> = ({
                     setLanguage('luganda');
                 }}
             >
-                Luganda
+                <span className="sm:hidden">LG</span>
+                <span className="max-sm:hidden">Luganda</span>
             </button>
         </div>
     );

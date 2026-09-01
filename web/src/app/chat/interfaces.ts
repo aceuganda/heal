@@ -55,6 +55,17 @@ export interface BackendMessage {
   citations: CitationMap;
 }
 
+/** `GET /chat/reference/{id}/gloss` -- see `heal/server/reference_api.py`.
+ *  `gloss` is null when the passage could not be explained honestly; the
+ *  drawer then shows the passage alone, which is what it did before. */
+export interface ReferenceGloss {
+  search_doc_id: number;
+  gloss: string | null;
+  cached: boolean;
+  passage: string;
+  title: string;
+}
+
 export interface DocumentsResponse {
   top_documents: DanswerDocument[];
   rephrased_query: string | null;

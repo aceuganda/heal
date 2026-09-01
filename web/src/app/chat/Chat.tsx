@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { FiRefreshCcw, FiSend, FiStopCircle } from "react-icons/fi";
+import { FiBookOpen, FiRefreshCcw, FiSend, FiStopCircle } from "react-icons/fi";
 import { AIMessage, HumanMessage } from "./message/Messages";
 import { AnswerPiecePacket, DanswerDocument } from "@/lib/search/interfaces";
 import {
@@ -194,6 +194,12 @@ export const Chat = ({
   );
   const [selectedReference, setSelectedReference] =
     useState<SelectedReference | null>(null);
+  const latestAssistantMessage = [...messageHistory]
+    .reverse()
+    .find((chatMessage) => chatMessage.type === "assistant");
+  const recentReferences = latestAssistantMessage
+    ? getCitedDocumentsFromMessage(latestAssistantMessage)
+    : [];
 
   const [selectedPersona, setSelectedPersona] = useState<Persona | undefined>(
     existingChatSessionPersonaId !== undefined
@@ -689,7 +695,11 @@ export const Chat = ({
                   )}
 
                 {/* Some padding at the bottom so the search bar has space at the bottom to not cover the last message*/}
-                <div className="min-h-[170px] w-full" />
+                <div
+                  className={`w-full ${
+                    recentReferences.length > 0 ? "min-h-[138px]" : "min-h-[104px]"
+                  }`}
+                />
 
                 <div ref={endDivRef} />
               </div>
@@ -697,8 +707,16 @@ export const Chat = ({
 
             <div className="absolute bottom-0 max-sm:left-0 sm:z-10 w-full border-t border-border bg-background/95 backdrop-blur">
               <div className="w-full pb-4 pt-2">
-                <div className="flex">
-                  <div className="mx-auto flex w-full max-w-3xl px-4 pt-1 sm:px-6">
+                <div className="mx-auto flex w-full max-w-3xl items-end gap-2 px-4 py-2 sm:px-6">
+                  <div className="shrink-0">
+                    <SearchLanguageSelector
+                      language={language}
+                      setLanguage={(language: string) => {
+                        setLanguage(language)
+                      }}
+                    />
+                  </div>
+                  <div className="relative min-w-0 flex-1">
                     {/* {selectedDocuments.length > 0 ? (
                       <SelectedDocuments
                         selectedDocuments={selectedDocuments}
@@ -711,17 +729,6 @@ export const Chat = ({
                         availableTags={availableTags}
                       />
                     )} */}
-                    <SearchLanguageSelector
-                      language={language}
-                      setLanguage={(language: string) => {
-                        setLanguage(language)
-                      }}
-                    />
-                  </div>
-                </div>
-
-                <div className="mx-auto mb-2 flex w-full max-w-3xl justify-center py-2">
-                  <div className="relative w-full px-4 sm:px-6">
                     <textarea
                       ref={textareaRef}
                       autoFocus
@@ -769,7 +776,7 @@ export const Chat = ({
                       }}
                       suppressContentEditableWarning={true}
                     />
-                    <div className="absolute bottom-4 right-10">
+                    <div className="absolute bottom-2 right-3">
                       <button
                         type="button"
                         className="cursor-pointer"
@@ -805,6 +812,27 @@ export const Chat = ({
                     </div>
                   </div>
                 </div>
+
+                {recentReferences.length > 0 && (
+                  <div className="mx-auto flex w-full max-w-3xl items-center gap-2 overflow-x-auto px-4 pb-1 sm:px-6">
+                    <div className="flex shrink-0 items-center gap-1.5 text-xs font-medium text-subtle">
+                      <FiBookOpen size={14} aria-hidden="true" />
+                      Recent references
+                    </div>
+                    {recentReferences.slice(0, 2).map(([citationKey, document]) => (
+                      <button
+                        // See Messages.tsx: document_id is shared by every
+                        // passage from one guideline, the marker is not.
+                        key={citationKey}
+                        type="button"
+                        onClick={() => setSelectedReference({ citationKey, document })}
+                        className="max-w-[12rem] shrink-0 truncate rounded-full border border-border bg-background px-3 py-1.5 text-xs text-emphasis transition-colors hover:border-heal-teal-200 hover:bg-hover-light"
+                      >
+                        [{citationKey}] {document.semantic_identifier}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
           </div>

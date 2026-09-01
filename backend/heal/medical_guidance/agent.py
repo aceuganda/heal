@@ -18,6 +18,7 @@ from heal import config
 from heal.chat.prompt_builder import PromptBuilder
 from heal.chat.stream_processing import StreamProcessor
 from heal.knowledge.models import SearchOutcome
+from heal.knowledge.models import RetrievedChunk
 from heal.knowledge.models import SourceRef
 from heal.llm import get_llm
 from heal.llm import to_provider_messages
@@ -60,6 +61,10 @@ class AgentResponse:
     # Sources actually placed in the prompt, in citation order. The caller
     # renders these; the model is never trusted to name a source itself.
     sources: list[SourceRef] = field(default_factory=list)
+    # The same passages, with their text and scores. Index i is citation i+1,
+    # which is the mapping the whole reference UI depends on: the caller needs
+    # the passage itself to show what a citation marker actually points at.
+    chunks: list["RetrievedChunk"] = field(default_factory=list)
     # True when the answer was refused for lack of an approved source.
     refused_unsourced: bool = False
 
@@ -106,6 +111,7 @@ class MedicalGuidanceAgent:
             outcome = self._retrieve(request.message)
             response.retrieved = bool(outcome)
             response.sources = outcome.sources
+            response.chunks = outcome.chunks
 
         # The one place citing nothing beats citing weakly. A dose given under
         # a citation marker carries authority the text has not earned, so with

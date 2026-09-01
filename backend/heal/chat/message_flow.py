@@ -14,6 +14,8 @@ from collections.abc import Iterator
 
 from sqlalchemy.orm import Session
 
+from heal.chat.citations import build_citations
+from heal.chat.stream_processing import extract_citations
 from heal.language import get_language_service
 from heal.language import TranslationError
 from heal.logger import get_logger
@@ -172,6 +174,15 @@ def stream_chat_message(
             yield get_json_line(StreamingError(error=e.user_message).dict())
             error = e.user_message
 
+    # ---- citations -------------------------------------------------------
+    # Only the markers the answer actually wrote. `decision.chunks` is in
+    # citation order, so [1] is the first passage the prompt was given.
+    reference_docs, citations = build_citations(
+        db_session=db_session,
+        chunks=decision.chunks,
+        cited_numbers=extract_citations(english_answer),
+    )
+
     # ---- persist ---------------------------------------------------------
     gen_ai_response_message = create_new_chat_message(
         chat_session_id=new_msg_req.chat_session_id,
@@ -183,13 +194,16 @@ def stream_chat_message(
         token_count=len(llm_tokenizer(english_answer)),
         message_type=MessageType.ASSISTANT,
         error=error,
+        reference_docs=reference_docs,
+        citations=citations,
         db_session=db_session,
         commit=True,
     )
 
     logger.info(
         f"Answered session={new_msg_req.chat_session_id} "
-        f"intent={decision.intent.value} answered={decision.answered}"
+        f"intent={decision.intent.value} answered={decision.answered} "
+        f"citations={len(citations)}"
     )
 
     yield get_json_line(

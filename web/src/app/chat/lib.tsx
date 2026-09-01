@@ -11,6 +11,7 @@ import {
   ChatSession,
   DocumentsResponse,
   Message,
+  ReferenceGloss,
   RetrievalType,
   StreamingError,
 } from "./interfaces";
@@ -129,6 +130,33 @@ export async function handleChatFeedback(
     }),
   });
   return response;
+}
+
+/**
+ * A plain-language explanation of one cited passage.
+ *
+ * Fetched when the drawer opens rather than with the answer: most citations
+ * are never opened, and generating for all of them would make every answer
+ * wait on work nobody reads.
+ *
+ * Returns null on any failure. The gloss is a reading aid on top of the
+ * passage, never a replacement for it, so a drawer with no gloss is a degraded
+ * view rather than a broken one -- there is nothing here worth an error toast.
+ */
+export async function fetchReferenceGloss(
+  searchDocId: number
+): Promise<ReferenceGloss | null> {
+  try {
+    const response = await fetch(`/api/chat/reference/${searchDocId}/gloss`);
+    if (!response.ok) {
+      console.log(`Failed to fetch reference gloss - ${response.status}`);
+      return null;
+    }
+    return (await response.json()) as ReferenceGloss;
+  } catch (e) {
+    console.log(`Failed to fetch reference gloss - ${e}`);
+    return null;
+  }
 }
 
 export async function handleLugandaTranslation(

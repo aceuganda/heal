@@ -1,8 +1,5 @@
 # Heal: architecture decisions
 
-**Status:** decisions still binding; **the day-by-day schedule below is
-superseded.** Phase 1 and retrieval are both built. For what is actually
-left, read `docs/next-tasks.md` — not the Week 1 / Week 2 tables here.
 **Revised:** 2026-08-29
 **Read this document for:** the locked decisions (D1–D7), the deprecation
 policy, the Alembic procedure, and the ranking rationale. Those are current.
@@ -67,7 +64,7 @@ Day 8. The `KnowledgeStore` interface exists so this is a one-file change.
     backend/danswer/chat/process_message.py :: stream_chat_message   (543 lines)
     |
     |-- 1. is_luganda?  --> translate_to_english(text)
-    |                        utils/translation.py -> http://65.108.33.93:4002
+    |                        utils/translation.py -> luganda_url
     |                        plain HTTP, hard-coded IP, no auth, no timeout
     |
     |-- 2. persist user message                    -> PostgreSQL
@@ -96,7 +93,7 @@ Day 8. The `KnowledgeStore` interface exists so this is a one-file change.
     |-- 8. generate_ai_chat_response()             -> LiteLLM -> gpt-3.5-turbo
     |        extract_citations_from_stream()
     |
-    |-- 9. is_luganda? --> translate_to_luganda()  -> http://65.108.33.93:5000
+    |-- 9. is_luganda? --> translate_to_luganda()  -> luganda_url
     |
     '-- 10. persist assistant message + citations  -> PostgreSQL
     ==========================================================================

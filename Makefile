@@ -55,6 +55,10 @@ test: venv ## Run backend unit tests
 test-heal: venv ## Run only the heal/ tests (fast: no external deps)
 	cd $(BACKEND) && PYTHONPATH=. ../$(PY) -m pytest tests/unit/heal -q
 
+.PHONY: test-web
+test-web: ## Run the web unit tests (vitest; needs web/node_modules)
+	cd $(WEB) && npm test
+
 .PHONY: lint
 lint: venv ## Run ruff
 	cd $(BACKEND) && ../$(VENV)/bin/ruff .

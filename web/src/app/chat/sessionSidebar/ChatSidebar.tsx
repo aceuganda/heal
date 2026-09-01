@@ -81,8 +81,8 @@ export const ChatSidebar = ({
       <button
         type="button"
         onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-        className={`fixed top-[76px] z-50 flex h-9 w-9 items-center justify-center rounded-lg border border-border bg-background text-emphasis shadow-sm transition-all hover:bg-hover ${
-          isSidebarOpen ? "left-[17rem]" : "left-3"
+        className={`fixed top-3 z-50 flex h-9 w-9 items-center justify-center rounded-lg border border-border bg-background text-emphasis shadow-sm transition-all hover:bg-hover ${
+          isSidebarOpen ? "left-[17rem]" : "left-28"
         }`}
         aria-label={isSidebarOpen ? "Close chat history" : "Open chat history"}
       >

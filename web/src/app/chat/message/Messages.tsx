@@ -1,11 +1,12 @@
 import {
   FiCheck,
+  FiActivity,
   FiChevronRight,
   FiCopy,
+  FiMessageCircle,
   // FiCpu,
   FiThumbsDown,
   FiThumbsUp,
-  FiUser,
 } from "react-icons/fi";
 import { FeedbackType } from "../types";
 import { useState } from "react";
@@ -14,7 +15,7 @@ import { DanswerDocument } from "@/lib/search/interfaces";
 import { SearchSummary, ShowHideDocsButton } from "./SearchSummary";
 import { SourceIcon } from "@/components/SourceIcon";
 import { ThreeDots } from "react-loader-spinner";
-import Image from "next/image";
+import { citationKeyFromHref, linkifyCitations } from "./citationMarkers";
 
 export const Hoverable: React.FC<{
   children: JSX.Element;
@@ -29,6 +30,24 @@ export const Hoverable: React.FC<{
     </div>
   );
 };
+
+/** One `[1]` inside the answer, as a button that opens the cited passage. */
+const InlineCitation = ({
+  citationKey,
+  onClick,
+}: {
+  citationKey: string;
+  onClick: () => void;
+}) => (
+  <button
+    type="button"
+    onClick={onClick}
+    aria-label={`Open reference ${citationKey}`}
+    className="mx-0.5 align-super rounded text-[0.7em] font-semibold leading-none text-accent hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+  >
+    [{citationKey}]
+  </button>
+);
 
 export const AIMessage = ({
   messageId,
@@ -64,21 +83,24 @@ export const AIMessage = ({
   onCitationClick?: (citationKey: string, document: DanswerDocument) => void;
 }) => {
   const [copyClicked, setCopyClicked] = useState(false);
+
+  // Marker -> the passage it points at. Only markers with an entry here are
+  // made clickable, so an invented `[9]` stays plain text rather than becoming
+  // a link to nothing -- which is the same call the backend makes when it
+  // drops a marker past the passages it supplied.
+  const citationLookup = new Map(citedDocuments || []);
+  const renderedContent =
+    typeof content === "string"
+      ? linkifyCitations(content, new Set(citationLookup.keys()))
+      : content;
+
   return (
     <div className="flex w-full px-4 py-5 sm:px-6">
       <div className="mx-auto w-full max-w-3xl">
         <div>
           <div className="flex">
-            <div className="p-1 bg-ai rounded-lg h-fit my-auto">
-              <div className="text-inverted">
-                <Image
-                  width={16}
-                  height={16}
-                  alt="Heal"
-                  src="/logo.png"
-                  className="my-auto mx-auto"
-                />
-              </div>
+            <div className="flex h-8 w-8 items-center justify-center rounded-full border border-heal-teal-200 bg-heal-teal-50">
+              <FiActivity size={16} className="text-accent" aria-hidden="true" />
             </div>
 
             <div className="font-bold text-emphasis ml-2 my-auto">Heal</div>
@@ -99,7 +121,7 @@ export const AIMessage = ({
               )} */}
           </div>
 
-          <div className="mt-2 max-w-2xl break-words sm:ml-9">
+          <div className="mt-2 max-w-2xl break-words rounded-2xl rounded-tl-md border border-border bg-background p-4 text-emphasis shadow-sm sm:ml-9">
             {query !== undefined &&
               handleShowRetrieved !== undefined &&
               isCurrentlyShowingRetrieved !== undefined && (
@@ -117,21 +139,41 @@ export const AIMessage = ({
 
             {content ? (
               <>
-                {typeof content === "string" ? (
+                {typeof renderedContent === "string" ? (
                   <ReactMarkdown
                     className="prose max-w-full"
                     components={{
-                      a: ({ node, ...props }) => (
-                        <a
-                          {...props}
-                          className="text-link hover:text-accent-hover"
-                          target="_blank"
-                          rel="noopener noreferrer"
-                        />
-                      ),
+                      a: ({ node, href, children, ...props }) => {
+                        // A rewritten citation marker rather than a real link.
+                        const citationKey = citationKeyFromHref(href);
+                        if (citationKey) {
+                          const cited = citationLookup.get(citationKey);
+                          // Only rewritten when the source exists, so this is
+                          // belt and braces: show the marker, never a dead link.
+                          return cited ? (
+                            <InlineCitation
+                              citationKey={citationKey}
+                              onClick={() => onCitationClick?.(citationKey, cited)}
+                            />
+                          ) : (
+                            <span>[{citationKey}]</span>
+                          );
+                        }
+                        return (
+                          <a
+                            {...props}
+                            href={href}
+                            className="text-link hover:text-accent-hover"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                          >
+                            {children}
+                          </a>
+                        );
+                      },
                     }}
                   >
-                    {content}
+                    {renderedContent}
                   </ReactMarkdown>
                 ) : (
                   content
@@ -160,7 +202,10 @@ export const AIMessage = ({
                     .map(([citationKey, document], ind) => {
                       return (
                         <button
-                          key={document.document_id}
+                          // Keyed by marker, not document_id: that is
+                          // `source_id:version`, so two passages cited from one
+                          // guideline share it. Markers are unique per message.
+                          key={citationKey}
                           type="button"
                           onClick={() => onCitationClick?.(citationKey, document)}
                           className="group flex max-w-full items-center rounded-lg border border-border bg-background px-2.5 py-1.5 text-left text-xs text-emphasis transition-colors hover:border-heal-teal-200 hover:bg-hover-light"
@@ -233,16 +278,14 @@ export const HumanMessage = ({
       <div className="mx-auto w-full max-w-3xl">
         <div>
           <div className="flex">
-            <div className="p-1 bg-user rounded-lg h-fit">
-              <div className="text-inverted">
-                <FiUser size={16} className="my-auto mx-auto" />
-              </div>
+            <div className="flex h-8 w-8 items-center justify-center rounded-full border border-border bg-background-strong text-emphasis">
+              <FiMessageCircle size={16} aria-hidden="true" />
             </div>
 
             <div className="font-bold text-emphasis ml-2 my-auto">You</div>
           </div>
           <div className="mt-2 ml-9 flex flex-wrap">
-            <div className="max-w-2xl break-words">
+            <div className="max-w-2xl break-words rounded-2xl rounded-tl-md border border-heal-teal-100 bg-heal-teal-50/70 p-4 text-emphasis">
               {typeof content === "string" ? (
                 <ReactMarkdown
                   className="prose max-w-full"
