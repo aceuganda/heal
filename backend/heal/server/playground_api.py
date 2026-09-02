@@ -43,14 +43,21 @@ from heal.chat.prompt_builder import PromptBuilder
 from heal.chat.stream_processing import extract_citations
 from heal.knowledge.models import RetrievedChunk
 from heal.knowledge.settings import BOUNDS
+from heal.knowledge.settings import ENV_VARS as RETRIEVAL_ENV_VARS
 from heal.knowledge.settings import resolve
 from heal.knowledge.settings import RetrievalSettings
 from heal.knowledge.settings import SettingUsed
+from heal.llm.settings import BOUNDS as GENERATION_BOUNDS
+from heal.llm.settings import ENV_VARS as GENERATION_ENV_VARS
+from heal.llm.settings import GenerationSettings
+from heal.llm.settings import resolve as resolve_generation
+from heal.llm.settings import SettingUsed as GenerationSettingUsed
 from heal.knowledge.store import KnowledgeStore
 from heal.knowledge.store import QdrantKnowledgeStore
 from heal.knowledge.store import select_context
 from heal.llm import all_models
-from heal.llm import get_llm
+from heal.llm.registry import default_model
+from heal.llm.service import build_llm
 from heal.llm import get_model
 from heal.llm import to_provider_messages
 from heal.logger import get_logger
@@ -103,6 +110,14 @@ class PlaygroundRequest(BaseModel):
     retrieval_top_k: int | None = None
     context_top_k: int | None = None
     max_chunks_per_source: int | None = None
+
+    # How the answer is worded, as opposed to what it may say. Separate from
+    # the retrieval knobs above because they are a different kind of setting:
+    # the floor decides whether a dose may be quoted, these only decide how it
+    # reads. Ignored entirely when `retrieval_only` is set.
+    temperature: float | None = None
+    max_output_tokens: int | None = None
+    top_p: float | None = None
 
     # Retrieval only: skip generation entirely. Tuning a floor means running
     # the same question many times, and paying for an answer nobody reads is
@@ -172,6 +187,15 @@ class CitationView(BaseModel):
 
 class SettingView(BaseModel):
     name: str
+    # Which stage the knob belongs to: "retrieval" decides what the assistant
+    # may say, "generation" only how it reads. Sent so the screen can group
+    # them rather than implying a temperature slider and a score floor carry
+    # the same clinical weight.
+    stage: str = "retrieval"
+    # The environment variable that makes this value the default for every
+    # chat. A screen that lets you tune something without saying how to keep it
+    # is only half a tool.
+    env_var: str = ""
     # Typed `Any` deliberately. These carry a float, an int or a bool depending
     # on the knob, and a declared union would coerce every one of them to the
     # union's first member -- turning `hybrid_search: true` into `1.0` and a
@@ -223,6 +247,9 @@ class ModelView(BaseModel):
     display_name: str
     provider: str
     selectable: bool
+    # Runs on our own infrastructure. The screen needs this to offer "use the
+    # internal model" as a choice rather than as an opaque catalogue id.
+    self_hosted: bool = False
     # Whether this provider has a key in the environment. Offered anyway, since
     # a run that fails for a missing key is a clearer answer than an absence.
     configured: bool
@@ -276,10 +303,16 @@ def _understanding_view(result: Understanding) -> UnderstandingView:
     )
 
 
-def _settings_view(used: list[SettingUsed]) -> list[SettingView]:
+def _settings_view(
+    used: list[SettingUsed] | list[GenerationSettingUsed],
+    stage: str = "retrieval",
+) -> list[SettingView]:
+    env_vars = GENERATION_ENV_VARS if stage == "generation" else RETRIEVAL_ENV_VARS
     return [
         SettingView(
             name=item.name,
+            stage=stage,
+            env_var=env_vars.get(item.name, ""),
             value=item.value,
             default=item.default,
             overridden=item.overridden,
@@ -367,8 +400,9 @@ def _citation_views(
 def playground_options(
     _: User | None = Depends(current_super_admin_user),
 ) -> OptionsResponse:
-    """Model catalogue and the deployment's own retrieval defaults."""
+    """Model catalogue and the deployment's own defaults, retrieval and generation."""
     defaults = RetrievalSettings()
+    generation_defaults = GenerationSettings()
     return OptionsResponse(
         models=[
             ModelView(
@@ -376,7 +410,11 @@ def playground_options(
                 display_name=spec.display_name,
                 provider=spec.provider,
                 selectable=spec.selectable,
-                configured=bool(os.environ.get(spec.api_key_env))
+                self_hosted=spec.self_hosted,
+                # We host it, so there is no third-party key to hold. Whether
+                # it answers is a runtime question the run itself reports.
+                configured=spec.self_hosted
+                or bool(os.environ.get(spec.api_key_env))
                 or (
                     spec.provider == "openai" and bool(os.environ.get("GEN_AI_API_KEY"))
                 ),
@@ -387,6 +425,9 @@ def playground_options(
         chat_model=config.CHAT_MODEL,
         classifier_model=config.CLASSIFIER_MODEL,
         defaults={
+            "temperature": generation_defaults.temperature,
+            "max_output_tokens": generation_defaults.max_output_tokens,
+            "top_p": generation_defaults.top_p,
             "min_retrieval_score": defaults.min_retrieval_score,
             "hybrid_alpha": defaults.hybrid_alpha,
             "hybrid_search": defaults.hybrid_search,
@@ -394,7 +435,10 @@ def playground_options(
             "context_top_k": defaults.context_top_k,
             "max_chunks_per_source": defaults.max_chunks_per_source,
         },
-        bounds={name: [low, high] for name, (low, high) in BOUNDS.items()},
+        bounds={
+            name: [low, high]
+            for name, (low, high) in {**BOUNDS, **GENERATION_BOUNDS}.items()
+        },
         knowledge_enabled=config.KNOWLEDGE_ENABLED,
     )
 
@@ -433,6 +477,14 @@ async def run_query(
         }
     )
 
+    generation, generation_used = resolve_generation(
+        {
+            "temperature": request.temperature,
+            "max_output_tokens": request.max_output_tokens,
+            "top_p": request.top_p,
+        }
+    )
+
     return await run_in_threadpool(
         _run,
         question=question,
@@ -440,6 +492,8 @@ async def run_query(
         classifier_model=classifier_model,
         settings=settings,
         used=used,
+        generation=generation,
+        generation_used=generation_used,
         retrieval_only=request.retrieval_only,
     )
 
@@ -451,6 +505,8 @@ def _run(
     settings: RetrievalSettings,
     used: list[SettingUsed],
     retrieval_only: bool,
+    generation: GenerationSettings | None = None,
+    generation_used: list[GenerationSettingUsed] | None = None,
     store: KnowledgeStore | None = None,
 ) -> PlaygroundResponse:
     """The pipeline, instrumented. Synchronous; called in a worker thread.
@@ -475,7 +531,8 @@ def _run(
             answer=route.answer,
         ),
         candidates=[],
-        settings=_settings_view(used),
+        settings=_settings_view(used, "retrieval")
+        + _settings_view(generation_used or [], "generation"),
         timings=TimingsView(
             understand_ms=understand_ms, retrieve_ms=0, generate_ms=0, total_ms=0
         ),
@@ -529,7 +586,9 @@ def _run(
         return response
 
     mark = time.perf_counter()
-    answer, error = _generate(question, route, result, context, chat_model)
+    answer, error = _generate(
+        question, route, result, context, chat_model, generation
+    )
     response.timings.generate_ms = _elapsed_ms(mark)
     response.timings.total_ms = _elapsed_ms(started)
 
@@ -549,6 +608,7 @@ def _generate(
     result: Understanding,
     context: list[RetrievedChunk],
     chat_model: str,
+    generation: GenerationSettings | None = None,
 ) -> tuple[str, str | None]:
     """One non-streaming completion, built exactly as the chat path builds it.
 
@@ -566,7 +626,8 @@ def _generate(
     prefix = emergency_preamble() if result.intent is MedicalIntent.EMERGENCY else ""
 
     try:
-        llm = get_llm(chat_model or None)
+        spec = get_model(chat_model) if chat_model else default_model()
+        llm = build_llm(spec, generation=generation)
         text = "".join(llm.stream(to_provider_messages(builder.build(question))))
     except Exception as exc:  # noqa: BLE001 -- the report carries the failure
         logger.error("Playground generation failed: %s", exc)

@@ -49,24 +49,62 @@ _CATALOGUE: dict[str, ModelSpec] = {
     ]
 }
 
+# The id the self-hosted endpoint is registered under. Stable regardless of
+# which model is actually being served, so HEAL_CHAT_MODEL=self-hosted keeps
+# working when the internal box is re-pointed at a different checkpoint.
+SELF_HOSTED_ID = "self-hosted"
+
+
+def _self_hosted_spec() -> ModelSpec | None:
+    """The internal endpoint as a catalogue entry, if one is configured."""
+    if not config.self_hosted_configured():
+        return None
+    return ModelSpec(
+        id=SELF_HOSTED_ID,
+        display_name="Internal model",
+        # OpenAI-compatible wire format; the base_url is what makes it ours.
+        provider="openai",
+        model_name=config.SELF_HOSTED_MODEL,
+        context_tokens=config.SELF_HOSTED_CONTEXT_TOKENS,
+        notes="Runs on our own infrastructure. Falls back to the cloud model "
+        "when unreachable.",
+        base_url=config.SELF_HOSTED_URL,
+    )
+
+
+def _catalogue() -> dict[str, ModelSpec]:
+    """The static catalogue plus the self-hosted entry when configured.
+
+    Built per call rather than at import: the endpoint is read from the
+    environment, and tests set it after this module is already imported.
+    """
+    spec = _self_hosted_spec()
+    return {**_CATALOGUE, SELF_HOSTED_ID: spec} if spec else dict(_CATALOGUE)
+
 
 def all_models() -> list[ModelSpec]:
     """Every catalogue entry, including ones not offered to users."""
-    return list(_CATALOGUE.values())
+    return list(_catalogue().values())
 
 
 def get_model(model_id: str) -> ModelSpec:
     """Look up one model, failing with the ids that do exist."""
+    catalogue = _catalogue()
     try:
-        return _CATALOGUE[model_id]
+        return catalogue[model_id]
     except KeyError:
         raise ValueError(
-            f"Unknown model '{model_id}'. Known: {', '.join(sorted(_CATALOGUE))}"
+            f"Unknown model '{model_id}'. Known: {', '.join(sorted(catalogue))}"
         ) from None
 
 
 def _provider_configured(spec: ModelSpec) -> bool:
     """A model is only offerable if its provider has a key in the environment."""
+    # We host it; there is no third-party key to hold. Whether it can actually
+    # be reached is a runtime question, answered by the failover, not here --
+    # hiding it from the list when the box is briefly down would be worse.
+    if spec.self_hosted:
+        return True
     if os.environ.get(spec.api_key_env):
         return True
     # The inherited config keeps the OpenAI key under its own name.
@@ -82,7 +120,7 @@ def available_models() -> list[ModelSpec]:
     allowlist = {m.strip() for m in config.ENABLED_CHAT_MODELS.split(",") if m.strip()}
     return [
         spec
-        for spec in _CATALOGUE.values()
+        for spec in _catalogue().values()
         if spec.selectable
         and (not allowlist or spec.id in allowlist)
         and _provider_configured(spec)

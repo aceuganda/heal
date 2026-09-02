@@ -166,6 +166,50 @@ the first pilot release.
   mounted twice — once for the desktop panel, once for the mobile sheet, with
   only CSS deciding which is visible — so fetching inside it ran two model calls
   per opened citation.
+- **The reference panel could not be closed on desktop.** `ChatLayout`'s header
+  is `absolute top-0` and overlays the panel, so the close button sat underneath
+  it. The panel now clears the header the way the chat sidebar already did.
+- **The chat sidebar could only be collapsed from the header.** Its click-outside
+  overlay is mobile-only; it now carries its own close button at any width.
+- **The language switch floated away from the input on wide screens.** Its
+  wrapper's `self-start` overrode the row's `items-end` at every breakpoint
+  rather than only in the stacked mobile layout.
+- **Three 404s on every chat page load.** The chat page still fetched
+  `/manage/connector`, `/manage/document-set` and `/query/valid-tags`, whose
+  routers went with the connector fleet. The values were already empty; only the
+  failed requests and their log lines are gone.
+- **`build-web`, `build-api`, `restart-web` and `restart-api` never worked.** The
+  retry macro put the service name before the subcommand — `docker compose
+  web_server build` — which docker rejects. `build` and `up` were unaffected
+  because they pass no service name.
+
+### Changed
+
+- Reference excerpts render one size smaller, so a long passage fits without
+  being truncated.
+
+### Added
+
+- **A self-hosted model can serve chat, with the cloud model as a fallback.**
+  Set `HEAL_SELF_HOSTED_URL` (an OpenAI-compatible vLLM endpoint, including
+  `/v1`), `HEAL_SELF_HOSTED_MODEL`, `HEAL_SELF_HOSTED_CONTEXT_TOKENS` and
+  `HEAL_SELF_HOSTED_API_KEY` and it joins the catalogue as the model id
+  `self-hosted`. See `deployment/docker_compose/env.self-hosted.template`.
+
+  **The URL is operator configuration and nothing else.** It is never read from
+  a request and cannot be set through the UI: a server that fetches an address
+  a caller chose is a server that will read the cloud metadata endpoint on their
+  behalf. It is also never sent to the browser.
+
+  When the endpoint does not answer, the message is retried once and then served
+  by the configured cloud model, which needs a real `GEN_AI_API_KEY` — without
+  one an unreachable internal box means no answer. The chat says *"Internal model
+  unreachable — using the cloud model"* and offers to retry. The fallback can
+  only happen before the first token; once text is on screen, swapping models
+  would splice two models' words into one clinical answer.
+
+  `RoutingEvent.chat_model` now records the model that **answered** rather than
+  the one that was requested, alongside a new `model_failed_over` flag.
 
 ### To do
 

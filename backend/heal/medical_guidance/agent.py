@@ -20,8 +20,7 @@ from heal.chat.stream_processing import StreamProcessor
 from heal.knowledge.models import SearchOutcome
 from heal.knowledge.models import RetrievedChunk
 from heal.knowledge.models import SourceRef
-from heal.llm import get_llm
-from heal.llm import to_provider_messages
+from heal.llm.service import stream_with_failover
 from heal.logger import get_logger
 from heal.medical_guidance import audit
 from heal.medical_guidance.routes import emergency_preamble
@@ -71,6 +70,11 @@ class AgentResponse:
     search_query: str = ""
     # True when the answer was refused for lack of an approved source.
     refused_unsourced: bool = False
+    # The model that actually produced the text, and whether reaching it meant
+    # leaving the internal endpoint. Recorded rather than assumed: the model
+    # that was asked for and the model that answered are not always the same.
+    answering_model: str = ""
+    model_failed_over: bool = False
 
 
 class MedicalGuidanceAgent:
@@ -154,11 +158,15 @@ class MedicalGuidanceAgent:
         processor = StreamProcessor(prefix=prefix)
 
         def stream() -> Iterator[str]:
+            tokens, generation = stream_with_failover(request.model_id, prompt)
             try:
-                llm = get_llm(request.model_id)
-                yield from processor.process(llm.stream(to_provider_messages(prompt)))
+                yield from processor.process(tokens)
             finally:
+                # Read after the stream is consumed: which model answered is
+                # only settled once it has.
                 response.text = processor.text
+                response.answering_model = generation.model_id
+                response.model_failed_over = generation.failed_over
                 self._audit(request, result, response)
 
         return stream(), response
@@ -214,7 +222,12 @@ class MedicalGuidanceAgent:
                 refused_unsourced=response.refused_unsourced,
                 rewritten=result.rewritten,
                 classifier_model=result.model_id,
-                chat_model=request.model_id or config.CHAT_MODEL,
+                # The model that answered, falling back to the one requested
+                # for the paths that never reached a model at all.
+                chat_model=response.answering_model
+                or request.model_id
+                or config.CHAT_MODEL,
+                model_failed_over=response.model_failed_over,
                 safety_version=safety_version(),
                 knowledge_enabled=self.knowledge_enabled,
                 error=result.error,

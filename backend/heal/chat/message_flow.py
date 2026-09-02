@@ -174,6 +174,12 @@ def stream_chat_message(
             yield get_json_line(StreamingError(error=e.user_message).dict())
             error = e.user_message
 
+    # The answer stands, but it did not come from the model that was asked for.
+    # Said plainly and without naming the internal host, which is not something
+    # a health worker's browser needs to know about.
+    if decision.model_failed_over:
+        yield get_json_line({"model_notice": "self_hosted_unreachable"})
+
     # ---- citations -------------------------------------------------------
     # Only the markers the answer actually wrote. `decision.chunks` is in
     # citation order, so [1] is the first passage the prompt was given.

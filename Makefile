@@ -102,13 +102,14 @@ check: format-check lint typecheck test deprecated-gate ## Everything CI runs
 RETRIES ?= 5
 
 # Retry a compose build, resuming from the cache each time.
-# $(1) is any extra compose arguments (profiles, service names).
+# $(1) is the service to build, or empty for all. It goes AFTER `build`:
+# `compose web_server build` reads the service name as the subcommand.
 define build_with_retry
 @set -e; \
 for i in $$(seq 1 $(RETRIES)); do \
 	echo ""; \
 	echo "==> build attempt $$i of $(RETRIES)"; \
-	if $(COMPOSE) $(1) build; then \
+	if $(COMPOSE) build $(1); then \
 		echo "==> build succeeded"; \
 		exit 0; \
 	fi; \

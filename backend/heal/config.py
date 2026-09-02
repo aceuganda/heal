@@ -84,6 +84,49 @@ ENABLED_CHAT_MODELS = _env_str("HEAL_ENABLED_CHAT_MODELS")
 # Seconds before an LLM call is abandoned.
 LLM_TIMEOUT = _env_int("HEAL_LLM_TIMEOUT", 60)
 
+# How an answer is worded, as opposed to what it is allowed to say. Defaults to
+# 0.0: a dosage answer should be the same answer every time it is asked, and
+# sampling variety is not a feature when the output is clinical.
+TEMPERATURE = _env_float("HEAL_TEMPERATURE", 0.0)
+
+# Reply length cap. The practical "verbosity" knob -- a health worker reading on
+# a phone at the point of care is not helped by six paragraphs.
+MAX_OUTPUT_TOKENS = _env_int("HEAL_MAX_OUTPUT_TOKENS", 1024)
+
+# Nucleus sampling. 1.0 disables it; with TEMPERATURE at 0 it has no effect
+# either way, and it exists so the playground can measure that claim.
+TOP_P = _env_float("HEAL_TOP_P", 1.0)
+
+
+#####
+# Self-hosted model
+#
+# An OpenAI-compatible endpoint (vLLM) on our own infrastructure. Configured
+# here and nowhere else: the address is internal, so it must never be a literal
+# in source, and it must never be settable by a user -- a server that fetches a
+# URL a caller chose will happily read the cloud metadata endpoint for them.
+#
+# Set SELF_HOSTED_URL and the model joins the catalogue as `self-hosted`. Leave
+# it empty and nothing changes.
+#####
+
+# Base URL including the /v1 suffix, e.g. http://host:8000/v1
+SELF_HOSTED_URL = _env_str("HEAL_SELF_HOSTED_URL")
+
+# Model id as the server reports it at GET {SELF_HOSTED_URL}/models.
+SELF_HOSTED_MODEL = _env_str("HEAL_SELF_HOSTED_MODEL")
+
+# Prompt + reply budget, from `max_model_len` in that same response.
+SELF_HOSTED_CONTEXT_TOKENS = _env_int("HEAL_SELF_HOSTED_CONTEXT_TOKENS", 131_072)
+
+# vLLM does not check this, but the OpenAI client requires a non-empty string.
+SELF_HOSTED_API_KEY = _env_str("HEAL_SELF_HOSTED_API_KEY", "not-needed")
+
+
+def self_hosted_configured() -> bool:
+    """True when there is an internal endpoint to try at all."""
+    return bool(SELF_HOSTED_URL and SELF_HOSTED_MODEL)
+
 
 #####
 # Knowledge / retrieval

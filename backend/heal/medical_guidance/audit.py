@@ -50,6 +50,10 @@ class RoutingEvent:
     # means the search ran on the user's raw text, which is the fallback path
     # and a different thing to debug.
     rewritten: bool = False
+    # True when `chat_model` is not the model that was asked for, because the
+    # internal endpoint could not be reached. Counting these is how you tell a
+    # flaky internal box from a healthy one.
+    model_failed_over: bool = False
     error: str | None = None
     occurred_at: str = field(
         default_factory=lambda: datetime.now(timezone.utc).isoformat()

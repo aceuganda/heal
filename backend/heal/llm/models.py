@@ -24,8 +24,17 @@ class ModelSpec:
     # False for models kept for comparison but not offered to users.
     selectable: bool = True
     notes: str = ""
+    # Set for an OpenAI-compatible endpoint we host ourselves. When present the
+    # client talks to this address instead of the provider's own, and the
+    # provider name only decides which wire format is spoken.
+    base_url: str | None = None
 
     @property
     def api_key_env(self) -> str:
         """Environment variable that must be set for this provider to work."""
         return f"{self.provider.upper()}_API_KEY"
+
+    @property
+    def self_hosted(self) -> bool:
+        """Whether this model runs on our own infrastructure."""
+        return self.base_url is not None

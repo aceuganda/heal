@@ -68,6 +68,17 @@ BOUNDS: dict[str, tuple[float, float]] = {
     "max_chunks_per_source": (1, 50),
 }
 
+# The environment variable each knob is set from, so the playground can say how
+# to make a value that worked the default for every chat.
+ENV_VARS: dict[str, str] = {
+    "min_retrieval_score": "HEAL_MIN_RETRIEVAL_SCORE",
+    "hybrid_alpha": "HEAL_HYBRID_ALPHA",
+    "hybrid_search": "HEAL_HYBRID_SEARCH",
+    "retrieval_top_k": "HEAL_RETRIEVAL_TOP_K",
+    "context_top_k": "HEAL_CONTEXT_TOP_K",
+    "max_chunks_per_source": "HEAL_MAX_CHUNKS_PER_SOURCE",
+}
+
 
 @dataclass(frozen=True)
 class SettingUsed:
