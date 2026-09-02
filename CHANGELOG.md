@@ -20,6 +20,49 @@ the first pilot release.
 
 ## [Unreleased]
 
+### Changed
+
+- **The lexical half of retrieval now weights rare terms by how rare they are.**
+  Until now the sparse vector was raw term frequency: a term counted only by how
+  often it appeared in its own chunk, with no corpus statistics. `TDF/3TC/DTG` —
+  the most discriminating token in an ART question — was weighted no more
+  heavily than `patient`, which appears in nearly every chunk. The lexical stage
+  exists specifically to catch drug codes and abbreviations, and it was
+  systematically under-weighting them. Qdrant computes inverse document
+  frequency inside the engine, so the fix is a collection setting plus the raw
+  term frequencies we already write. Controlled by `HEAL_SPARSE_IDF`, default
+  on. **This was not a limitation of the architecture.** The running Qdrant has
+  supported engine-side IDF since 1.10 and the deployment is on 1.19; the client
+  was pinned at 1.9.0, which predates it. The architecture document had recorded
+  corpus statistics as something given up when Vespa was removed. That was
+  wrong, and the correction is written up as *The IDF gap*.
+
+  **This change requires a re-ingest, and it moves the score floor.** Two things
+  an operator has to know:
+
+  1. The IDF modifier can only be set when a collection is created. An existing
+     collection keeps scoring without corpus statistics no matter what the
+     configuration says. `ensure_collection` now detects that mismatch and logs
+     it, `/knowledge/status` reports `sparse_idf_configured` and
+     `sparse_idf_active` separately, and `sparse_idf_needs_reingest` says which
+     state the deployment is in. Recreating the collection and re-ingesting the
+     corpus is what actually applies it. Qdrant holds derived data only — it is
+     rebuildable from the approved sources, and no relational table is touched.
+  2. IDF changes the scale of the sparse score, so `HYBRID_ALPHA` (0.6) and
+     `MIN_RETRIEVAL_SCORE` (0.35) no longer mean quite what they meant when they
+     were chosen. The fusion normalises the sparse half per result set to keep
+     the weight meaningful, but the floor is a clinical-safety parameter that
+     decides when Heal refuses to give a dose, and it must be re-derived on the
+     clinician evaluation set. `/knowledge/status` now carries
+     `min_retrieval_score_unvalidated` so this is visible rather than assumed.
+
+- **`qdrant-client` 1.9.0 → 1.19.0**, matching the server already deployed. The
+  1.19 client removed `search()`, so both halves of the hybrid query moved to
+  `query_points()`. That is also the endpoint that performs fusion server-side,
+  which is what makes Reciprocal Rank Fusion available later without rewriting
+  the query path a second time. **Requires reinstalling backend dependencies**;
+  the code will not run against 1.9.0.
+
 ### Added
 
 - **A retrieval playground for administrators.** `MIN_RETRIEVAL_SCORE` decides
@@ -127,24 +170,115 @@ the first pilot release.
 ### To do
 
 Designed and documented in `docs/architecture-decisions.md`; not yet built.
+**Ordered smallest to biggest, and done one at a time.** Dependencies are noted
+on the items that have them rather than driving the order.
 
-1. **Verify citations end to end** against a running stack. Nothing below is
-   worth layering on an unverified path.
-2. **Answer review + revision back-flow.** Score `addressed` and `readable`;
-   below `REVIEW_FLOOR` (0.4), one revision pass that edits the gaps. Never
-   regenerate, never revise a refusal, never add uncited clinical content,
-   never lose a fact to simplification.
-3. **Plain English by default.** Same facts, simpler sentences; match the
-   user's register when they write clinically.
-4. **Grounding visibility.** Citation coverage + lexical grounding, shown as
-   grounded / partly referenced / general knowledge. Weak answers still shown,
-   labelled honestly. Plain counts, no percentages.
-5. **Star feedback.** Five stars replacing thumbs, sigmoid aggregate, surfaced
-   to admins as a review signal — deliberately not wired into ranking.
-6. **UUIDs for chat session and message ids.** Needs a migration and touches
-   every `chatId` URL; do it as its own pass.
-7. **Clinician evaluation set.** Blocks tuning `MIN_RETRIEVAL_SCORE`,
-   `REVIEW_FLOOR`, and any reranker decision.
+**Follow-ups the IDF change created** — these are not optional extras; the
+change is inert or unvalidated without them:
+
+- **Rebuild the Qdrant collection and re-ingest the corpus.** The IDF modifier
+  is fixed at creation, so until this happens the setting is on and doing
+  nothing. `/knowledge/status` reports `sparse_idf_needs_reingest` while that is
+  the case.
+- **Re-derive `HYBRID_ALPHA` and `MIN_RETRIEVAL_SCORE` against IDF scoring.**
+  Blocked on the clinician evaluation set (item 19). Until then the floor is
+  being applied to a score distribution it was not chosen for, in a direction
+  that admits lexical-only matches slightly more readily than before.
+- **Consider server-side RRF fusion.** `query_points` can fuse ranks rather than
+  magnitudes, which removes the scale mismatch between dense cosine and
+  IDF-weighted sparse entirely. Do it after there is something to measure it
+  with, not before — it moves the floor again.
+
+1. **Hide the translate button when nothing is behind it.** `TRANSLATION_EN_URL`
+   / `TRANSLATION_LUG_URL` default to empty, and the button is offered anyway.
+   Report configured-ness to the frontend and render accordingly.
+2. **Newer models in the catalogue.** Lines in `_CATALOGUE`
+   (`heal/llm/registry.py`); `available_models()` already gates on provider keys
+   and the `HEAL_ENABLED_CHAT_MODELS` allowlist.
+3. **Corpus stats card content.** The sources-page card states values without
+   saying what they mean. Score floor especially: `0.35` alone tells an admin
+   nothing about what raising or lowering it does to refusals.
+4. **Living idle mark on the new-chat screen.** Reuse `AfricaPulseLoader` on the
+   "How can Heal help today?" intro as a resting state rather than a loader:
+   much slower, no pulse, no heartbeat — a slow travelling drift like a flag in
+   light wind. Same component, second motion mode; keep the
+   `prefers-reduced-motion` fallback.
+5. **References by title.** Drawer and reference chips lead with the document's
+   own title, not a filename or a `source_id:version` slug. `semantic_id`
+   already carries `source.label()`; the gap is what `label()` produces and how
+   it renders. A gloss-style model call can clean a title as it cleans a
+   passage.
+6. **Verify citations end to end** against a running stack. Small in code,
+   ~25 min in wall clock for the web image. **Items 5, 7 and 9 touch this path
+   and should not ship before it passes.**
+7. **Star feedback, with comments, minimised.** Five stars replacing thumbs,
+   sigmoid aggregate, surfaced to admins as a review signal — deliberately not
+   wired into ranking. Optional short comment on the rating. Design target is
+   the smallest thing that works: inline, no modal, no card, no heading — it
+   must not compete with the answer.
+8. **Chat search.** Across a user's own sessions and messages.
+9. **Citation provenance — where in the document.** A citation should say where
+   the text sits: page, section heading, or at minimum chunk position within
+   the source. `chunk_ind` is already stored on the row and shown nowhere.
+   Needs ingest to carry section/page into the chunk, so it implies a re-ingest.
+10. **Playground generation settings that actually take effect.** Temperature,
+    verbosity/length and the rest, plumbed through the same frozen-settings seam
+    `RetrievalSettings` uses so nothing mutates global state.
+11. **Lock the parameters, and show the standing.** A lock control pinning the
+    current parameter set across runs so successive queries are comparable, and
+    a summary stating what is in force and how it differs from live defaults.
+    Sits on 10.
+12. **Self-hosted model base URL.** An admin input for an internal
+    OpenAI-compatible endpoint (vLLM), stored as a secret and never rendered
+    back. The registry seam exists; this is the config, the storage, and the
+    "GPT means the configured model" promise made real.
+13. **Answer review + revision back-flow.** Score `addressed` and `readable`;
+    below `REVIEW_FLOOR` (0.4), one revision pass that edits the gaps. Never
+    regenerate, never revise a refusal, never add uncited clinical content,
+    never lose a fact to simplification.
+14. **Plain English by default.** Shares the review call with 13, so build them
+    together. Same facts, simpler sentences; match the user's register when they
+    write clinically. The model is allowed its own words to bridge and explain —
+    the rule is that no dose, unit, qualifier or contraindication may be lost,
+    not that every sentence must be quoted. An answer that is faithful but
+    unreadable has failed a health worker as surely as one that is wrong.
+15. **Grounding visibility.** Citation coverage + lexical grounding, shown as
+    grounded / partly referenced / general knowledge. Weak answers still shown,
+    labelled honestly. Plain counts, no percentages. **Below 5% referenced is a
+    defect, not a label**: an answer whose claims are essentially unsupported
+    should be flagged to the reader and raised to admins, not quietly badged
+    "general knowledge" and shipped.
+16. **Luganda translation as a first-class UI surface.** Two explicit entries,
+    English→Luganda and Luganda→English, rather than translation existing only
+    as a per-message button. Expose the parameters a super admin used to set by
+    environment (`TRANSLATION_*`: URLs, timeouts, retries, backoff, stream
+    delay) in the admin UI. Extends 1.
+17. **Guardrails tracking.** `guardrails-ai` core is Apache-2.0 and, since the
+    Aug 2026 hub sunset, validators install straight from public PyPI with no
+    account, token or hosted call — so it is usable. Wire selected validators as
+    observers on input and output, record every hit as an audit event, surface
+    hits in the admin UI. Deterministic validators first; most ML-backed ones
+    pull `torch`/`transformers` and break the one-machine, no-GPU constraint.
+18. **UUIDs for chat session and message ids.** Needs a migration and touches
+    every `chatId` URL; its own pass.
+19. **Clinician evaluation set.** Blocks tuning `MIN_RETRIEVAL_SCORE`,
+    `REVIEW_FLOOR`, the 5% grounding threshold, and any reranker decision.
+
+**Open, not queued**
+
+- **`docs/architecture-decisions.md` "Advantages" overclaims.** The section
+  presents the removed worker fleet, broker, scheduler and search engine as a
+  hard-won simplification. Several of those services were unused on this
+  workload or were merely optimised, and describing their removal as an
+  achievement flatters the decision. The retrieval half of that argument has
+  now been corrected in *The IDF gap*; the *Advantages* section itself has not
+  been touched, including the line claiming the remaining system "can be held
+  in one person's head", which is an argument about our convenience rather than
+  about clinical quality.
+- **A guardrails framework** for flagging responses that trip a validator.
+  Assessed and deliberately deferred as a study exercise — the reasoning, the
+  licensing position, what is ruled out and why, is recorded under *Safety
+  model*. Presidio for PII detection is the piece worth revisiting first.
 
 ### Notes
 

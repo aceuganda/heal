@@ -145,7 +145,27 @@ HYBRID_SEARCH = _env_str("HEAL_HYBRID_SEARCH", "true").lower() == "true"
 
 # Weight of the dense score when fusing dense and sparse results. 1.0 is
 # dense-only; 0.0 is lexical-only.
+#
+# NOTE: this constant was derived when the sparse half was raw term frequency.
+# With SPARSE_IDF on, the sparse score changes scale, and the fusion normalises
+# it per result set to keep this weight meaningful. See `_normalise_sparse`.
 HYBRID_ALPHA = _env_float("HEAL_HYBRID_ALPHA", 0.6)
+
+# Inverse document frequency for the sparse half, computed by Qdrant itself.
+#
+# Without it, a term is weighted only by how often it appears in ITS OWN chunk.
+# `TDF/3TC/DTG` -- rare, and therefore the most discriminating token in an ART
+# question -- is then weighted no more heavily than `patient`, which is in
+# nearly every chunk. The lexical stage exists to catch drug codes and was
+# quietly under-weighting exactly those. See "The IDF gap" in
+# docs/architecture-decisions.md.
+#
+# The modifier is fixed at COLLECTION CREATION. Turning this on for a
+# collection that was built without it changes nothing except the log line
+# `ensure_collection` writes to say so: the collection must be rebuilt and the
+# corpus re-ingested. That is why this is a config flag and not a silent
+# default -- the operator has to know a re-ingest is part of the change.
+SPARSE_IDF = _env_str("HEAL_SPARSE_IDF", "true").lower() == "true"
 
 # Chunking. Characters, not tokens: the boundary only has to be stable and
 # explainable, and a character window needs no tokenizer at ingest time.
