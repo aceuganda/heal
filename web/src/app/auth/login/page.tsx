@@ -12,7 +12,9 @@ import { SignInButton } from "./SignInButton";
 import { EmailPasswordForm } from "./EmailPasswordForm";
 import { Card, Title, Text } from "@tremor/react";
 import Link from "next/link";
-import AddToHomeScreen from '../../../components/AddToHomeScreen'
+// Install prompt commented out, not removed — see CHANGELOG. The component
+// and its per-browser instructions stay in the tree.
+// import AddToHomeScreen from '../../../components/AddToHomeScreen'
 
 // `searchParams` is a promise as of Next 15.
 const Page = async (props: {
@@ -105,7 +107,9 @@ const Page = async (props: {
           )}
         </div>
       </div>
-      <AddToHomeScreen/>
+      {/* Install prompt paused. Restore by uncommenting this and the import
+          above. */}
+      {/* <AddToHomeScreen/> */}
     </main>
   );
 };

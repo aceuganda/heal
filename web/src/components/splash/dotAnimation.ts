@@ -68,10 +68,16 @@ export const COLOR_EDGE_DITHER = 0.035;
 
 /** Fraction of a palette stop's dwell spent holding that colour outright
  *  before easing into the next one. Below this, a dot is simply red (or
- *  black, or...); above it, it is blending. Keeping the hold well over half
- *  is what makes the shift read as occasional drift rather than a
- *  continuous colour wash. */
-export const HOLD_FRACTION = 0.55;
+ *  black, or...); above it, it is blending.
+ *
+ *  Deliberately high, and it has to rise as the accent weights fall. The
+ *  blend is a fraction of the stop being LEFT, so a near-zero accent stop
+ *  with a low hold would never once show its own colour — it would be a
+ *  smear from red to red by way of something muddy. At 0.78 an accent that
+ *  dwells for 4% of the cycle is still itself for three-quarters of that,
+ *  which is what makes it read as a fast flicker of colour rather than as
+ *  dirt on the red. */
+export const HOLD_FRACTION = 0.78;
 
 export function clamp01(t: number): number {
   return Math.min(1, Math.max(0, t));
@@ -201,24 +207,27 @@ interface PaletteStop {
   readonly weight: number;
 }
 
-// Weight is dwell time in the loop, not a one-off pick: red spends most of
-// the cycle held and the other three pass through briefly, so the mark reads
-// as "red, with accents" rather than four equal colours. Red leads the array
-// as well as dominating it — the first stop is what a dot shows at the top of
-// its cycle, so the mark resolves into the logo's own red and only drifts
+// Weight is dwell time in the loop, not a one-off pick. Red holds 85% of the
+// cycle; the other three share the remaining 15% and are gone almost as soon
+// as they arrive. The mark is red, crossed now and then by a fast band of
+// something else — not four colours taking turns. Red leads the array as well
+// as dominating it: the first stop is what a dot shows at the top of its
+// cycle, so the mark resolves into the logo's own red and only ever flickers
 // away from it.
 //
-// Teal is down to a passing accent. It was the dominant colour here and is
-// still the brand teal under the wordmark (`.heal-splash__line`), but a teal
-// map above a teal rule read as one flat block of it; the mark carries the
-// logo's red now and the rule carries the teal. Yellow is the briefest stop
-// of the four: at this dot size it goes muddy against the warm background
-// long before it goes unnoticed.
+// Teal was the dominant colour here. It is still the brand teal under the
+// wordmark (`.heal-splash__line`), but a teal map above a teal rule read as
+// one flat block of it — the mark carries the logo's red now and the rule
+// carries the teal.
+//
+// These weights and HOLD_FRACTION move together. Shrinking a stop shortens
+// its blend as well as its hold, so dropping one much further without raising
+// the hold turns it from a flicker into a smudge.
 export const PALETTE: readonly PaletteStop[] = [
-  { color: RED, weight: 0.62 },
-  { color: BLACK, weight: 0.18 },
-  { color: TEAL, weight: 0.14 },
-  { color: YELLOW, weight: 0.06 },
+  { color: RED, weight: 0.85 },
+  { color: BLACK, weight: 0.06 },
+  { color: TEAL, weight: 0.05 },
+  { color: YELLOW, weight: 0.04 },
 ];
 
 const TOTAL_WEIGHT = PALETTE.reduce((sum, stop) => sum + stop.weight, 0);

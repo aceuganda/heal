@@ -290,37 +290,6 @@ export function getCitedDocumentsFromMessage(message: Message) {
   return documentsWithCitationKey;
 }
 
-export function groupSessionsByDateRange(chatSessions: ChatSession[]) {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0); // Set to start of today for accurate comparison
-
-  const groups: Record<string, ChatSession[]> = {
-    Today: [],
-    "Previous 7 Days": [],
-    "Previous 30 Days": [],
-    "Over 30 days ago": [],
-  };
-
-  chatSessions.forEach((chatSession) => {
-    const chatSessionDate = new Date(chatSession.time_created);
-
-    const diffTime = today.getTime() - chatSessionDate.getTime();
-    const diffDays = diffTime / (1000 * 3600 * 24); // Convert time difference to days
-
-    if (diffDays < 1) {
-      groups["Today"].push(chatSession);
-    } else if (diffDays <= 7) {
-      groups["Previous 7 Days"].push(chatSession);
-    } else if (diffDays <= 30) {
-      groups["Previous 30 Days"].push(chatSession);
-    } else {
-      groups["Over 30 days ago"].push(chatSession);
-    }
-  });
-
-  return groups;
-}
-
 export function getLastSuccessfulMessageId(messageHistory: Message[]) {
   const lastSuccessfulMessage = messageHistory
     .slice()

@@ -42,6 +42,13 @@ import { ReferenceDrawer, SelectedReference } from "./reference/ReferenceDrawer"
 
 const MAX_INPUT_HEIGHT = 200;
 
+/** Empty space kept below the last message, on top of the composer's own
+ *  measured height. Enough that the end of an answer can be scrolled clear of
+ *  the input and read with room under it, rather than sitting exactly on the
+ *  line where the composer begins. The `min-h` fallbacks on the spacer are
+ *  this plus a default composer, for the frame before it is measured. */
+const SCROLL_PAST_END = 72;
+
 export const Chat = ({
   existingChatSessionId,
   existingChatSessionPersonaId,
@@ -147,6 +154,9 @@ export const Chat = ({
     existingChatSessionId
   );
   const [message, setMessage] = useState("");
+  // Whitespace is not a question. One derived value so the Enter key, the
+  // send button's enabled state and its colour cannot drift apart.
+  const canSend = message.trim().length > 0;
   const [messageHistory, setMessageHistory] = useState<Message[]>([]);
   const [isStreaming, setIsStreaming] = useState(false);
   const [messageIdTranslating, setMessageIdTranslating] = useState<number | null>(null);
@@ -331,6 +341,15 @@ export const Chat = ({
     messageIdToResend,
     queryOverride,
   }: { messageIdToResend?: number; queryOverride?: string } = {}) => {
+    // Nothing to ask, so nothing happens — and, importantly, no chat session
+    // is created. Pressing Enter on an empty composer used to fall through to
+    // the textarea's own handling and insert a newline; `message` was then
+    // truthy, so the next Enter sent "\n" and opened a conversation with it.
+    // A resend carries its own text and is not subject to this.
+    if (messageIdToResend === undefined && !message.trim()) {
+      return;
+    }
+
     let currChatSessionId: string;
     let isNewSession = chatSessionId === null;
     if (isNewSession) {
@@ -355,7 +374,11 @@ export const Chat = ({
       return;
     }
 
-    const currMessage = messageToResend ? messageToResend.message : message;
+    // Trimmed: trailing newlines from the composer are not part of the
+    // question, and they are what the model sees.
+    const currMessage = messageToResend
+      ? messageToResend.message
+      : message.trim();
     const currMessageHistory =
       messageToResendIndex !== null
         ? messageHistory.slice(0, messageToResendIndex)
@@ -717,15 +740,19 @@ export const Chat = ({
                     </div>
                   )}
 
-                {/* Exactly as tall as the composer that overlays this list, so
-                    the last answer is never partly underneath it. The class is
-                    the first-paint fallback, before the observer has measured
+                {/* As tall as the composer that overlays this list, plus some
+                    slack, so the last answer clears it and the list can be
+                    scrolled a little past its final line rather than stopping
+                    with that line jammed against the input. The class is the
+                    first-paint fallback, before the observer has measured
                     anything; after that the measured height wins. */}
                 <div
-                  className="w-full min-h-[140px] sm:min-h-[104px]"
+                  className="w-full min-h-[196px] sm:min-h-[160px]"
                   style={
                     composerHeight
-                      ? { minHeight: `${Math.ceil(composerHeight) + 16}px` }
+                      ? {
+                          minHeight: `${Math.ceil(composerHeight) + SCROLL_PAST_END}px`,
+                        }
                       : undefined
                   }
                 />
@@ -783,7 +810,7 @@ export const Chat = ({
                         focus-within is also the only focus indicator this
                         composer has ever had; the textarea itself is
                         outline-none. */}
-                    <div className="relative rounded-2xl border border-border bg-background shadow-sm transition-shadow duration-150 focus-within:border-heal-teal-200 focus-within:shadow-md focus-within:ring-2 focus-within:ring-accent/15">
+                    <div className="relative rounded-2xl border border-border bg-background shadow-sm transition-shadow duration-150 focus-within:border-heal-teal-400 focus-within:shadow-md focus-within:ring-2 focus-within:ring-accent/25">
                       <div className="px-2 pt-2">
                         <SearchLanguageSelector
                           language={language}
@@ -811,6 +838,7 @@ export const Chat = ({
                       // the field. min-h is now one comfortable line rather
                       // than the 80px that was reserving room for the pills.
                       className={`
+                    heal-composer-input
                     w-full
                     shrink
                     border-0
@@ -840,13 +868,16 @@ export const Chat = ({
                       value={message}
                       onChange={(e) => setMessage(e.target.value)}
                       onKeyDown={(event) => {
-                        if (
-                          event.key === "Enter" &&
-                          !event.shiftKey &&
-                          message
-                        ) {
-                          onSubmit();
+                        // Enter always means "send" here, so it never reaches
+                        // the textarea — including on an empty field, where
+                        // letting it through inserted the newline that made
+                        // the next Enter send a blank message. Shift+Enter is
+                        // still how a line break is typed.
+                        if (event.key === "Enter" && !event.shiftKey) {
                           event.preventDefault();
+                          if (canSend) {
+                            onSubmit();
+                          }
                         }
                       }}
                       suppressContentEditableWarning={true}
@@ -860,18 +891,18 @@ export const Chat = ({
                           aria-label={
                             isStreaming ? "Stop generating" : "Send message"
                           }
-                          disabled={!isStreaming && !message}
+                          disabled={!isStreaming && !canSend}
                           className={
                             "flex h-9 w-9 items-center justify-center rounded-xl transition-colors " +
                             (isStreaming
                               ? "text-emphasis hover:bg-hover"
-                              : message
+                              : canSend
                                 ? "bg-accent text-white hover:bg-accent-hover"
                                 : "cursor-not-allowed bg-background-strong text-subtle")
                           }
                           onClick={() => {
                             if (!isStreaming) {
-                              if (message) {
+                              if (canSend) {
                                 onSubmit();
                               }
                             } else {

@@ -200,8 +200,33 @@ describe("colorAt", () => {
     expect(colorAt(0.3, 777)).toEqual(colorAt(0.3, 777 + COLOR_CYCLE_MS));
   });
 
-  it("gives two different seeds different phases at the same instant", () => {
-    expect(colorAt(0, 0)).not.toEqual(colorAt(0.5, 0));
+  it("shifts a dot's place in the cycle by exactly its phase offset", () => {
+    // The invariant behind the travelling band: a dot's phase is a head start
+    // through the same loop, not a separate palette. Asserted directly rather
+    // than as "two phases differ" — with red holding most of the cycle, two
+    // arbitrary phases land on red and that weaker test now passes for the
+    // wrong reason.
+    for (const phase of [0.1, 0.42, 0.87]) {
+      expect(colorAt(phase, 0)).toEqual(colorAt(0, phase * COLOR_CYCLE_MS));
+    }
+  });
+
+  it("separates phases that fall in different stops", () => {
+    expect(colorAt(0, 0)).not.toEqual(colorAt(0.93, 0));
+  });
+
+  it("is red for most of the cycle", () => {
+    // The design decision, pinned: the mark is red, crossed by fast accents.
+    // A reweight that quietly turned it back into four colours taking turns
+    // should fail here rather than be noticed on a phone.
+    let red = 0;
+    const samples = 400;
+    for (let i = 0; i < samples; i++) {
+      if (colorAt(0, (i / samples) * COLOR_CYCLE_MS) === PALETTE[0].color) {
+        red++;
+      }
+    }
+    expect(red / samples).toBeGreaterThan(0.6);
   });
 
   it("never produces a channel outside any palette colour's range", () => {

@@ -104,6 +104,27 @@ the first pilot release.
 
 ### Fixed
 
+- **Enter on an empty composer sent a blank message and opened a chat with
+  it.** The keydown handler only acted when the field had text, so on an empty
+  field Enter fell through to the textarea and inserted a newline. `message`
+  was then `"\n"` — truthy — so the next Enter sent it: a blank turn to the
+  model, and on a fresh page a whole chat session created to hold it.
+
+  Enter now always means "send" and never reaches the textarea, and what
+  counts as sendable is `message.trim()`, so a field holding only spaces or
+  newlines is empty. One derived value drives the Enter key, the send button's
+  disabled state and its colour, so they cannot drift apart. `onSubmit` refuses
+  an empty message on its own account too — the session is created *after*
+  that check, not before. Shift+Enter still types a line break, and what is
+  sent to the model is trimmed.
+
+- **The end of an answer sat jammed against the composer.** The spacer under
+  the last message was exactly the composer's height plus 16px, so the final
+  line of a clinical answer could be scrolled clear of the input and no
+  further. There is 72px of slack now (`SCROLL_PAST_END`), so the list scrolls
+  a little past its last line and the end of an answer can be read with room
+  under it.
+
 - **Every admin action button crashed the page on the click that started the
   work.** "Upload and index" threw `findDOMNode is not a function` and the
   screen went blank — and so did test search, the playground's Run, **Save as
@@ -152,6 +173,49 @@ the first pilot release.
 
 ### Changed
 
+- **Chat history is grouped by calendar day, and every chat says when it was
+  started.** The sidebar divided a raw millisecond span by 86,400,000 and
+  called anything under 1 "Today" — so a chat started at 23:50 last night sat
+  under **Today** for the whole of the next morning, next to one started after
+  breakfast, with nothing on either row to tell them apart. Sessions are now
+  bucketed by calendar date (**Today**, **Yesterday**, Previous 7 days,
+  Previous 30 days, Older), sorted newest-first inside each bucket rather than
+  in whatever order the API returned them, and each row carries its start
+  time: the clock for today, "Yesterday 23:50" for yesterday, a date beyond
+  that, and the year only once it is in doubt. The full timestamp is on hover.
+
+  The time is a caption *under* the row rather than a second line inside it —
+  small, italic, and outside the fill that the hover and selected states
+  paint. Inside that fill it read as part of the chat's name: two lines of
+  equally weighted text in one grey box, which is not what a person scanning
+  for a conversation by title wants to read past.
+
+  The grouping moved out of `chat/lib.tsx` into `sessionGrouping.ts` and takes
+  `now` as an argument, so the day boundary can be stood on in a test — it
+  could not be before, which is why this shipped. The start time is formatted
+  in an effect rather than during render: the server and the reader's device
+  are in different time zones often enough that an SSR-formatted time would
+  hydrate into a different string.
+
+  Also fixed while in there: rename and delete sit inside the link that opens
+  the chat, and neither stopped the click, so pressing the bin **navigated to
+  that conversation and opened the delete confirmation at once**. And an empty
+  sidebar now says so instead of rendering nothing at all.
+
+- **The menu button lines up with the wordmark on a phone.** The header row is
+  a 64px flex row with default stretch alignment, and the toggle carries an
+  explicit `h-9` — which pins a stretched item to the top of the row rather
+  than centring it, leaving the hamburger and close icons sitting well above
+  the "Heal" wordmark beside them. It is centred below `sm` and stretches to
+  the full row height above it, as it did before.
+
+- **The "add to home screen" prompt is switched off for now.** It is commented
+  out at both call sites (sign-in and sign-up) rather than deleted, and the
+  component with its per-browser instructions stays in the tree. Uncomment the
+  import and the element to bring it back. Offline support went with the PWA
+  plugin (below), so what the prompt installs is currently a shortcut to an
+  app that still needs a connection.
+
 - **The admin is closed on small screens and says why.** Below 1024px, every
   admin screen now shows "Open the admin on a computer" and a way back to
   chat, instead of a 320px sidebar folded on top of a content column built for
@@ -181,7 +245,18 @@ the first pilot release.
   belong to a wrapper the pills sit inside, so the textarea is transparent and
   the reserved 80px of empty height is gone. **The field also has a focus
   indicator for the first time:** it was `outline-none` with nothing put back,
-  so a keyboard user had no way to see where they were. The send button gained
+  so a keyboard user had no way to see where they were. The whole card lights
+  up now, which is the shape a user actually sees.
+
+  That last part needs a CSS rule rather than a utility class. `globals.css`
+  sets a `:focus-visible` outline for the whole app and is emitted after
+  `@tailwind utilities`, so it beats an `outline-none` on the element at equal
+  specificity. On a transparent, square-cornered textarea sitting inside a
+  rounded card, that outline lands as a hard dark rectangle drawn inside the
+  field's own corners. `.heal-composer-input:focus-visible` turns it off for
+  that one element — and only because the card around it now carries the
+  indicator. **Anything else that suppresses that outline has to put a
+  replacement somewhere visible first.** The send button gained
   an accessible name ("Send message" / "Stop generating"), a real 36px hit
   area instead of an svg wearing the styling, and a disabled state that
   matches the greyed-out look it already had.
@@ -195,11 +270,18 @@ the first pilot release.
 - **The splash mark is red now, not teal, and it holds for a second longer.**
   The dot map's palette was 55% teal by dwell time, sitting directly above a
   teal rule under the wordmark — one flat block of the colour, with the logo's
-  own red reduced to a passing accent. The weights are inverted: red leads the
-  cycle and holds 62% of it, black follows, teal is down to an accent, and
-  yellow is the briefest stop of the four (at this dot size it goes muddy
-  against the warm background long before it goes unnoticed). The mark carries
-  the red; the rule under the wordmark still carries the brand teal.
+  own red reduced to a passing accent. The weights are inverted: **red now
+  holds 85% of the cycle** and black, teal and yellow share the remaining 15%,
+  each gone almost as soon as it arrives. The mark is red, crossed now and
+  then by a fast band of something else, rather than four colours taking
+  turns. The rule under the wordmark still carries the brand teal.
+
+  The hold fraction had to rise with it (0.55 → 0.78). A stop's blend is a
+  fraction of the stop being left, so an accent that dwells for 4% of the
+  cycle at the old hold would never once show its own colour — it would be a
+  smear from red to red by way of something muddy. The two numbers move
+  together; a test now pins "red for most of the cycle" so a later reweight
+  cannot quietly undo it.
 
   The splash also holds for 2150ms rather than 1150ms before fading. The
   dot-draw finishes at 780ms, so the previous timing started the fade over a

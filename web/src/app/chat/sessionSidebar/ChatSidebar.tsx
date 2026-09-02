@@ -17,7 +17,7 @@ import { logout } from "@/lib/user";
 import { BasicClickable, BasicSelectable } from "@/components/BasicClickable";
 import { ChatSessionDisplay } from "./SessionDisplay";
 import { ChatSession } from "../interfaces";
-import { groupSessionsByDateRange } from "../lib";
+import { groupSessionsByDateRange, SESSION_GROUPS } from "./sessionGrouping";
 
 
 interface ChatSidebarProps {
@@ -112,38 +112,35 @@ export const ChatSidebar = ({
           </BasicClickable>
         </Link>
         <div className="mt-1 pb-1 mb-1 ml-3 overflow-y-auto h-full">
-          {Object.entries(groupedChatSessions).map(
-            ([dateRange, chatSessions]) => {
-              if (chatSessions.length > 0) {
-                return (
-                  <div key={dateRange}>
-                    <div className="text-xs text-subtle flex pb-0.5 mb-1.5 mt-5 font-bold">
-                      {dateRange}
-                    </div>
-                    {chatSessions.map((chat) => {
-                      const isSelected = currentChatId === chat.id;
-                      return (
-                        <div key={chat.id} className="mr-3">
-                          <ChatSessionDisplay
-                            chatSession={chat}
-                            isSelected={isSelected}
-                          />
-                        </div>
-                      );
-                    })}
-                  </div>
-                );
-              }
+          {/* Walked in SESSION_GROUPS order rather than the record's own, so
+              the headings are Today-first by definition and not by however
+              the grouping happened to build its object. */}
+          {SESSION_GROUPS.map((dateRange) => {
+            const chatSessions = groupedChatSessions[dateRange];
+            if (chatSessions.length === 0) {
+              return null;
             }
+            return (
+              <div key={dateRange}>
+                <div className="text-xs text-subtle flex pb-0.5 mb-1.5 mt-5 font-bold">
+                  {dateRange}
+                </div>
+                {chatSessions.map((chat) => (
+                  <div key={chat.id} className="mr-3">
+                    <ChatSessionDisplay
+                      chatSession={chat}
+                      isSelected={currentChatId === chat.id}
+                    />
+                  </div>
+                ))}
+              </div>
+            );
+          })}
+          {existingChats.length === 0 && (
+            <p className="mr-3 mt-6 text-xs leading-5 text-subtle">
+              No chats yet. Ask a clinical question and it will be saved here.
+            </p>
           )}
-          {/* {existingChats.map((chat) => {
-          const isSelected = currentChatId === chat.id;
-          return (
-            <div key={chat.id} className="mr-3">
-              <ChatSessionDisplay chatSession={chat} isSelected={isSelected} />
-            </div>
-          );
-        })} */}
         </div>
 
         <div

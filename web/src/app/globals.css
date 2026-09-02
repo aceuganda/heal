@@ -19,6 +19,20 @@ body {
   outline-offset: 2px;
 }
 
+/* The chat composer is the exception, and it needs a rule rather than a
+   utility class: this file is emitted after `@tailwind utilities`, so the
+   outline above wins against an `outline-none` on the element at equal
+   specificity.
+
+   The textarea is a transparent, square-cornered element sitting inside the
+   rounded card that draws the field. An outline on it lands as a hard
+   rectangle *inside* those rounded corners, which reads as a black box around
+   the text. The focus indicator is not lost: the card carries it with
+   focus-within (see Chat.tsx), which is the shape the user actually sees. */
+.heal-composer-input:focus-visible {
+  outline: none;
+}
+
 /* Scrollbars are brand teal and meant to be seen as teal.
 
    They were already this colour at 25% opacity, which on the near-white app

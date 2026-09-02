@@ -82,7 +82,13 @@ export const Header: React.FC<HeaderProps> = ({ user }) => {
           <button
             type="button"
             onClick={() => window.dispatchEvent(new Event("toggle-chat-sidebar"))}
-            className="ml-1 flex h-9 w-9 items-center justify-center rounded-lg text-emphasis hover:bg-hover sm:ml-3 sm:h-full sm:w-auto sm:gap-2 sm:rounded-none sm:px-3"
+            // self-center is what was missing: the header row is `flex h-16`
+            // with the default stretch alignment, and an explicit h-9 on a
+            // stretched item pins it to the TOP of the 64px row. On a phone
+            // the menu/close button sat a good 14px above the wordmark it is
+            // meant to line up with. At sm the button goes back to filling
+            // the row's height, so it stretches again there.
+            className="ml-2 flex h-9 w-9 shrink-0 self-center items-center justify-center rounded-lg text-emphasis hover:bg-hover sm:ml-3 sm:h-full sm:w-auto sm:gap-2 sm:self-stretch sm:rounded-none sm:px-3"
             aria-label={chatSidebarOpen ? "Close chat history" : "Open chat history"}
             aria-pressed={chatSidebarOpen}
           >
