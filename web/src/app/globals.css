@@ -14,30 +14,185 @@ body {
   outline-offset: 2px;
 }
 
-/* Scrollbars stay deliberately quiet so they do not compete with content. */
+/* Scrollbars stay deliberately quiet so they do not compete with content:
+   a muted teal at rest, a stronger teal on hover. Firefox ignores the
+   ::-webkit- rules, hence the scrollbar-color/-width fallback below. */
+* {
+  scrollbar-color: rgb(15 118 110 / 0.25) #f8fafb; /* heal.teal.700 @ 25% */
+  scrollbar-width: thin;
+}
+
 ::-webkit-scrollbar-track {
   background: #f8fafb;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #e2e8eb; /* heal.ink.200 */
+  background: rgb(15 118 110 / 0.25); /* heal.teal.700 @ 25% */
   border-radius: 10px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #cbd5da; /* heal.ink.300 */
+  background: rgb(15 118 110 / 0.45); /* heal.teal.700 @ 45% */
+}
+
+.dark-scrollbar {
+  scrollbar-color: rgb(15 118 110 / 0.4) #f8fafb;
 }
 
 .dark-scrollbar::-webkit-scrollbar-thumb {
-  background: #cbd5da; /* heal.ink.300 */
+  background: rgb(15 118 110 / 0.4); /* heal.teal.700 @ 40% */
   border-radius: 10px;
 }
 
 .dark-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: #94a3ab; /* heal.ink.400 */
+  background: rgb(15 118 110 / 0.6); /* heal.teal.700 @ 60% */
 }
 
 ::-webkit-scrollbar {
   width: 8px; /* Vertical scrollbar width */
   height: 8px; /* Horizontal scrollbar height */
+}
+
+
+
+/* The app splash is intentionally independent from auth routes. The soft
+   warm canvas connects it visually to the conversation experience. */
+.heal-splash {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  background: rgb(245 244 240);
+  transition: opacity 350ms ease, visibility 350ms ease;
+}
+
+.heal-splash--leaving {
+  opacity: 0;
+  visibility: hidden;
+}
+
+.heal-splash__halo {
+  position: absolute;
+  border-radius: 9999px;
+  filter: blur(2px);
+  opacity: 0.36;
+}
+
+.heal-splash__halo--one {
+  width: min(78vw, 42rem);
+  aspect-ratio: 1;
+  top: -32%;
+  left: -14%;
+  background: radial-gradient(circle, rgb(246 204 196 / 0.52), rgb(246 204 196 / 0));
+}
+
+.heal-splash__halo--two {
+  width: min(62vw, 34rem);
+  aspect-ratio: 1;
+  right: -18%;
+  bottom: -30%;
+  background: radial-gradient(circle, rgb(225 237 225 / 0.58), rgb(225 237 225 / 0));
+}
+
+.heal-splash__brand {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  color: #3d4a53;
+  text-align: center;
+  animation: heal-splash-enter 650ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.heal-splash__mark {
+  width: 5.75rem;
+  filter: drop-shadow(0 14px 20px rgb(31 41 51 / 0.12));
+  animation: heal-splash-mark-colors 8s ease-in-out infinite;
+  will-change: filter;
+}
+
+.heal-splash__mark img {
+  width: 100%;
+  height: auto;
+}
+
+.heal-splash__name {
+  margin-top: 0.9rem;
+  color: #1f2933;
+  font-size: 2rem;
+  font-weight: 700;
+  letter-spacing: -0.055em;
+  line-height: 1;
+}
+
+.heal-splash__line {
+  width: 2rem;
+  height: 2px;
+  margin: 1rem 0 0.8rem;
+  border-radius: 99px;
+  background: #0f766e;
+}
+
+.heal-splash__tagline {
+  color: #64727c;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+}
+
+@keyframes heal-splash-enter {
+  from {
+    opacity: 0;
+    transform: translateY(0.8rem) scale(0.96);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* A deliberately unhurried colour cycle gives the mark a sense of life while
+   someone waits, without turning the splash into a distracting spinner. */
+@keyframes heal-splash-mark-colors {
+  0%,
+  100% {
+    filter: hue-rotate(0deg) drop-shadow(0 14px 20px rgb(31 41 51 / 0.12));
+  }
+
+  14% {
+    filter: hue-rotate(-14deg) saturate(1.12) brightness(1.03) drop-shadow(0 14px 20px rgb(180 35 55 / 0.16));
+  }
+
+  28% {
+    filter: hue-rotate(18deg) saturate(1.08) brightness(1.04) drop-shadow(0 14px 20px rgb(217 88 61 / 0.16));
+  }
+
+  46% {
+    filter: hue-rotate(105deg) drop-shadow(0 14px 20px rgb(15 118 110 / 0.16));
+  }
+
+  63% {
+    filter: hue-rotate(175deg) drop-shadow(0 14px 20px rgb(30 116 172 / 0.16));
+  }
+
+  78% {
+    filter: hue-rotate(275deg) drop-shadow(0 14px 20px rgb(146 64 122 / 0.14));
+  }
+
+  90% {
+    filter: hue-rotate(-22deg) saturate(1.15) brightness(0.96) drop-shadow(0 14px 20px rgb(151 35 52 / 0.17));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .heal-splash,
+  .heal-splash__brand,
+  .heal-splash__mark {
+    animation: none;
+    transition-duration: 1ms;
+  }
 }

@@ -47,7 +47,7 @@ export function ChatLayout({
       <ApiKeyModal />
       <InstantSSRAutoRefresh />
 
-      <div className="flex relative bg-background text-default overflow-x-hidden">
+      <div className="relative flex min-h-screen overflow-x-hidden bg-[#f5f4f0] text-default">
         <ChatSidebar
           existingChats={chatSessions}
           currentChatId={chatId}

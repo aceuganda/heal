@@ -8,6 +8,7 @@ import json
 import pytest
 
 from heal import config
+from heal.llm.service import Generation
 from heal.medical_guidance import agent as agent_mod
 from heal.medical_guidance import audit as audit_mod
 from heal.medical_guidance import understanding as understanding_mod
@@ -47,8 +48,15 @@ def wire(monkeypatch: pytest.MonkeyPatch):
     def install(label: str, answer: list[str] | None = None) -> tuple[FakeLLM, list]:
         llm = FakeLLM(label, answer if answer is not None else ["an ", "answer"])
         monkeypatch.setattr(understanding_mod, "get_classifier_llm", lambda *_: llm)
-        monkeypatch.setattr(agent_mod, "get_llm", lambda model_id=None: llm)
-        monkeypatch.setattr(agent_mod, "to_provider_messages", lambda m: m)
+
+        # Stands in for the failover wrapper: streams the fake model and
+        # reports it as the model that answered, which is what the audit reads.
+        def fake_stream(model_id=None, messages=None, timeout=None):
+            return llm.stream(messages), Generation(
+                model_id=model_id or config.CHAT_MODEL, attempts=1
+            )
+
+        monkeypatch.setattr(agent_mod, "stream_with_failover", fake_stream)
         return llm, events
 
     return install

@@ -1,5 +1,6 @@
 import { Metadata } from "next";
 import "./globals.css";
+import { AppSplashScreen } from "@/components/AppSplashScreen";
 
 
 import { Inter } from "next/font/google";
@@ -28,6 +29,7 @@ export default async function RootLayout({
       <body
         className={`${inter.variable} font-sans text-default bg-background`}
       >
+        <AppSplashScreen />
         {children}
       </body>
     </html>

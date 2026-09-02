@@ -194,6 +194,10 @@ export const Chat = ({
   );
   const [selectedReference, setSelectedReference] =
     useState<SelectedReference | null>(null);
+  // Set when an answer came from the cloud model because the internal one was
+  // unreachable. Sticky until dismissed: it is the explanation for a change in
+  // the answers, so it should outlast the turn that caused it.
+  const [modelNotice, setModelNotice] = useState(false);
   const latestAssistantMessage = [...messageHistory]
     .reverse()
     .find((chatMessage) => chatMessage.type === "assistant");
@@ -236,6 +240,11 @@ export const Chat = ({
   const [currentFeedback, setCurrentFeedback] = useState<
     [FeedbackType, number] | null
   >(null);
+  // Tracks which messages have been rated, keyed by messageId, so the thumb
+  // UI can show the user their click registered.
+  const [givenFeedback, setGivenFeedback] = useState<
+    Record<number, FeedbackType>
+  >({});
 
   // auto scroll as message comes out
   const scrollableDivRef = useRef<HTMLDivElement>(null);
@@ -389,6 +398,10 @@ export const Chat = ({
               // we have to use -1)
               setSelectedMessageForDocDisplay(-1);
             }
+          } else if (Object.hasOwn(packet, "model_notice")) {
+            // The answer is fine; it just came from the cloud model because
+            // the internal one did not respond. Shown once, above the input.
+            setModelNotice(true);
           } else if (Object.hasOwn(packet, "error")) {
             error = (packet as StreamingError).error;
           } else if (Object.hasOwn(packet, "message_id")) {
@@ -476,6 +489,7 @@ export const Chat = ({
     );
 
     if (response.ok) {
+      setGivenFeedback((prev) => ({ ...prev, [messageId]: feedbackType }));
       setPopup({
         message: "Thanks for your feedback!",
         type: "success",
@@ -508,7 +522,6 @@ export const Chat = ({
         <>
 
           <div className="relative min-w-0 flex-1">
-            <div className="pointer-events-none absolute bottom-0 left-0 top-16 z-10 w-px bg-heal-teal-300/80" />
             <div
               className={`w-full h-screen ${HEADER_PADDING} flex flex-col overflow-y-auto relative`}
               ref={scrollableDivRef}
@@ -596,6 +609,11 @@ export const Chat = ({
                           hasDocs={
                             (message.documents &&
                               message.documents.length > 0) === true
+                          }
+                          feedbackGiven={
+                            message.messageId !== null
+                              ? givenFeedback[message.messageId]
+                              : undefined
                           }
                           handleFeedback={
                             i === messageHistory.length - 1 && isStreaming
@@ -696,17 +714,39 @@ export const Chat = ({
             </div>
 
             <div className="absolute bottom-0 max-sm:left-0 sm:z-10 w-full border-t border-border bg-background/95 backdrop-blur">
+              {modelNotice && (
+                <div className="mx-auto flex w-full max-w-3xl flex-wrap items-center gap-x-3 gap-y-1 px-4 pt-2 text-xs text-subtle sm:px-6">
+                  <span>Internal model unreachable — using the cloud model.</span>
+                  <button
+                    type="button"
+                    onClick={() => setModelNotice(false)}
+                    className="font-medium text-accent hover:underline"
+                  >
+                    Keep using it
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setModelNotice(false);
+                      router.refresh();
+                    }}
+                    className="font-medium text-accent hover:underline"
+                  >
+                    Retry the internal model
+                  </button>
+                </div>
+              )}
               <div className="w-full pb-4 pt-2">
-                <div className="mx-auto flex w-full max-w-3xl flex-col items-stretch gap-1 px-4 py-2 sm:flex-row sm:items-end sm:gap-2 sm:px-6">
-                  <div className="self-start shrink-0">
-                    <SearchLanguageSelector
-                      language={language}
-                      setLanguage={(language: string) => {
-                        setLanguage(language)
-                      }}
-                    />
-                  </div>
+                <div className="mx-auto flex w-full max-w-3xl items-end px-4 py-2 sm:px-6">
                   <div className="relative min-w-0 flex-1">
+                    <div className="absolute left-2 top-2 z-10">
+                      <SearchLanguageSelector
+                        language={language}
+                        setLanguage={(language: string) => {
+                          setLanguage(language)
+                        }}
+                      />
+                    </div>
                     {/* {selectedDocuments.length > 0 ? (
                       <SelectedDocuments
                         selectedDocuments={selectedDocuments}
@@ -734,10 +774,11 @@ export const Chat = ({
                     bg-background
                     shadow-sm
                     pl-4
-                    pr-12 
-                    py-4 
+                    pr-12
+                    pt-14
+                    pb-4
                     overflow-hidden
-                    h-14
+                    min-h-[96px]
                     ${(textareaRef?.current?.scrollHeight || 0) >
                           MAX_INPUT_HEIGHT
                           ? "overflow-y-auto"

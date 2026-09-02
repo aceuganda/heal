@@ -5,7 +5,7 @@ import {
 } from "@/lib/userSS";
 import { redirect } from "next/navigation";
 import { fetchSS } from "@/lib/utilsSS";
-import { Connector, DocumentSet, Tag, User, ValidSources } from "@/lib/types";
+import { DocumentSet, Tag, User, ValidSources } from "@/lib/types";
 import {
   BackendMessage,
   ChatSession,
@@ -31,20 +31,14 @@ export default async function Page({
   const tasks = [
     getAuthTypeMetadataSS(),
     getCurrentUserSS(),
-    fetchSS("/manage/connector"),
-    fetchSS("/manage/document-set"),
     fetchSS("/persona?include_default=true"),
     fetchSS("/chat/get-user-chat-sessions"),
-    fetchSS("/query/valid-tags"),
   ];
 
   // catch cases where the backend is completely unreachable here
   // without try / catch, will just raise an exception and the page
   // will not render
   let results: (User | Response | AuthTypeMetadata | null)[] = [
-    null,
-    null,
-    null,
     null,
     null,
     null,
@@ -57,11 +51,8 @@ export default async function Page({
   }
   const authTypeMetadata = results[0] as AuthTypeMetadata | null;
   const user = results[1] as User | null;
-  const connectorsResponse = results[2] as Response | null;
-  const documentSetsResponse = results[3] as Response | null;
-  const personasResponse = results[4] as Response | null;
-  const chatSessionsResponse = results[5] as Response | null;
-  const tagsResponse = results[6] as Response | null;
+  const personasResponse = results[2] as Response | null;
+  const chatSessionsResponse = results[3] as Response | null;
 
   const authDisabled = authTypeMetadata?.authType === "disabled";
   if (!authDisabled && !user) {
@@ -72,18 +63,13 @@ export default async function Page({
     return redirect("/auth/waiting-on-verification");
   }
 
-  let connectors: Connector<any>[] = [];
-  if (connectorsResponse?.ok) {
-    connectors = await connectorsResponse.json();
-  } else {
-    console.log(`Failed to fetch connectors - ${connectorsResponse?.status}`);
-  }
+  // The connector fleet is retired, so /manage/connector, /manage/document-set
+  // and /query/valid-tags have no routers -- fetching them was three 404s per
+  // page load. Passed empty rather than unpicked: the consumers already handle
+  // it, and the filter UI that used them is commented out in Chat.tsx.
   const availableSources: ValidSources[] = [];
-  connectors.forEach((connector) => {
-    if (!availableSources.includes(connector.source)) {
-      availableSources.push(connector.source);
-    }
-  });
+  const documentSets: DocumentSet[] = [];
+  const tags: Tag[] = [];
 
   let chatSessions: ChatSession[] = [];
   if (chatSessionsResponse?.ok) {
@@ -96,15 +82,6 @@ export default async function Page({
   // Larger ID -> created later
   chatSessions.sort((a, b) => (a.id > b.id ? -1 : 1));
 
-  let documentSets: DocumentSet[] = [];
-  if (documentSetsResponse?.ok) {
-    documentSets = await documentSetsResponse.json();
-  } else {
-    console.log(
-      `Failed to fetch document sets - ${documentSetsResponse?.status}`
-    );
-  }
-
   let personas: Persona[] = [];
   if (personasResponse?.ok) {
     personas = await personasResponse.json();
@@ -115,13 +92,6 @@ export default async function Page({
   personas = personas.filter((persona) => persona.is_visible);
   // sort them in priority order
   personas.sort(personaComparator);
-
-  let tags: Tag[] = [];
-  if (tagsResponse?.ok) {
-    tags = (await tagsResponse.json()).tags;
-  } else {
-    console.log(`Failed to fetch tags - ${tagsResponse?.status}`);
-  }
 
   const defaultPersonaIdRaw = searchParams["personaId"];
   const defaultPersonaId = defaultPersonaIdRaw
