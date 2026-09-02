@@ -1,3 +1,4 @@
+from uuid import UUID
 from datetime import datetime
 from enum import Enum
 from typing import Any
@@ -138,11 +139,13 @@ class SearchDoc(BaseModel):
 
 
 class SavedSearchDoc(SearchDoc):
-    db_doc_id: int
+    # None when the passage was never persisted. Was `int = 0`, which silently
+    # coerced a UUID into a 128-bit integer once search_doc.id became one.
+    db_doc_id: UUID | None = None
 
     @classmethod
     def from_search_doc(
-        cls, search_doc: SearchDoc, db_doc_id: int = 0
+        cls, search_doc: SearchDoc, db_doc_id: UUID | None = None
     ) -> "SavedSearchDoc":
         """IMPORTANT: careful using this and not providing a db_doc_id"""
         return cls(**search_doc.dict(), db_doc_id=db_doc_id)

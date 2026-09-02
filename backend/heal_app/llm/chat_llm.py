@@ -115,11 +115,22 @@ class DefaultMultiLLM(LangChainChatLLM):
         custom_llm_provider: str | None = GEN_AI_LLM_PROVIDER_TYPE,
         max_output_tokens: int = GEN_AI_MAX_OUTPUT_TOKENS,
         temperature: float = GEN_AI_TEMPERATURE,
+        top_p: float | None = None,
     ):
         # Litellm Langchain integration currently doesn't take in the api key param
         # Can place this in the call below once integration is in
         litellm.api_key = api_key or "dummy-key"
         litellm.api_version = api_version
+
+        # Passed through `model_kwargs` rather than as a constructor field.
+        # ChatLiteLLM declares a `top_p` attribute but does not put it in
+        # `_default_params`, so setting the field alone stores a number that
+        # never reaches the provider -- which is how the playground came to
+        # report a top-p that did nothing. Everything in `model_kwargs` is
+        # spread into the call, so this is the version that is actually sent.
+        model_params: dict[str, float] = dict(DefaultMultiLLM.DEFAULT_MODEL_PARAMS)
+        if top_p is not None:
+            model_params["top_p"] = top_p
 
         self._llm = ChatLiteLLM(  # type: ignore
             model=model_version
@@ -130,7 +141,7 @@ class DefaultMultiLLM(LangChainChatLLM):
             max_tokens=max_output_tokens,
             temperature=temperature,
             request_timeout=timeout,
-            model_kwargs=DefaultMultiLLM.DEFAULT_MODEL_PARAMS,
+            model_kwargs=model_params,
             verbose=should_be_verbose(),
             max_retries=0,  # retries are handled outside of langchain
         )

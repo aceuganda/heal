@@ -79,8 +79,12 @@ export default async function Page({
       `Failed to fetch chat sessions - ${chatSessionsResponse?.text()}`
     );
   }
-  // Larger ID -> created later
-  chatSessions.sort((a, b) => (a.id > b.id ? -1 : 1));
+  // By time, not by id: ids are UUIDs now and carry no ordering at all, so
+  // sorting on them shuffled the sidebar into a random order.
+  chatSessions.sort(
+    (a, b) =>
+      new Date(b.time_created).getTime() - new Date(a.time_created).getTime()
+  );
 
   let personas: Persona[] = [];
   if (personasResponse?.ok) {

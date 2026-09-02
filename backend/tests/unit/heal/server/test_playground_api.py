@@ -8,6 +8,8 @@ override reaches the store as an argument -- and about honesty second: what the
 screen is shown must be what actually happened, including the near-misses the
 floor discarded and the fact that a value was pulled into range.
 """
+from uuid import uuid4
+
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -78,6 +80,9 @@ class FakeUser:
         self.role = role
         self.email = f"{role.value}@example.org"
         self.is_verified = True
+        # Recorded on a saved settings change, so the row and the audit line
+        # can both name who made it.
+        self.id = uuid4()
 
 
 @pytest.fixture(autouse=True)
@@ -450,3 +455,118 @@ class TestOptions:
         # Temperature stops at 1.0, not the 2.0 some providers allow: above 1.0
         # a model paraphrases numbers, and this one quotes doses.
         assert body["bounds"]["temperature"] == [0.0, 1.0]
+
+
+class TestSavedDefaults:
+    """The one endpoint here that outlives its request.
+
+    Everything else on this screen is per-run by design. This is not: a
+    temperature saved here is the temperature the next health worker's answer
+    is written at, so the tests are about who may write it, what is refused,
+    and the difference between "clear this" and "I did not touch it".
+    """
+
+    @pytest.fixture
+    def writes(self, monkeypatch: pytest.MonkeyPatch) -> list[dict]:
+        """Capture saves instead of reaching a database."""
+        captured: list[dict] = []
+
+        def fake_save(values, actor_id=None):
+            captured.append(dict(values))
+            return {**playground_api.saved_defaults.env_defaults(), **values}
+
+        monkeypatch.setattr(playground_api.saved_defaults, "save", fake_save)
+        return captured
+
+    def put(self, client: TestClient, **body):
+        return client.put("/manage/playground/defaults", json=body)
+
+    def test_a_member_cannot_change_what_everyone_runs_on(self, writes) -> None:
+        response = self.put(client_as(UserRole.BASIC), temperature=0.9)
+        assert response.status_code == 403
+        assert writes == []
+
+    def test_an_admin_can_save_a_wording_knob(self, writes) -> None:
+        response = self.put(client_as(UserRole.ADMIN), temperature=0.4)
+        assert response.status_code == 200, response.text
+        assert writes == [{"temperature": 0.4}]
+
+    def test_only_what_was_sent_is_written(self, writes) -> None:
+        # An absent key means "leave it alone". Saving every knob would pin
+        # ones the admin never touched, and those would stop following the
+        # environment for good.
+        self.put(client_as(UserRole.ADMIN), verbosity="brief")
+        assert writes == [{"verbosity": "brief"}]
+
+    def test_an_explicit_null_clears_a_knob_back_to_the_environment(
+        self, writes
+    ) -> None:
+        response = client_as(UserRole.ADMIN).put(
+            "/manage/playground/defaults", json={"temperature": None}
+        )
+        assert response.status_code == 200, response.text
+        assert writes == [{"temperature": None}]
+
+    def test_an_empty_body_is_refused(self, writes) -> None:
+        response = client_as(UserRole.ADMIN).put("/manage/playground/defaults", json={})
+        assert response.status_code == 422
+        assert writes == []
+
+    def test_an_out_of_range_value_is_clamped_not_rejected(self, writes) -> None:
+        # Same rule as a per-run override: a slider at its end is a legitimate
+        # request, and the honest answer is the value that was used.
+        self.put(client_as(UserRole.ADMIN), temperature=5)
+        assert writes == [{"temperature": 1.0}]
+
+    def test_an_unknown_model_is_refused_rather_than_substituted(self, writes) -> None:
+        # A silent fall back would save a model the admin did not choose, and
+        # every subsequent clinical answer would come from it.
+        response = self.put(client_as(UserRole.ADMIN), chat_model="gpt-9")
+        assert response.status_code == 422
+        assert writes == []
+
+    def test_an_unknown_verbosity_level_is_refused(self, writes) -> None:
+        response = self.put(client_as(UserRole.ADMIN), verbosity="enormous")
+        assert response.status_code == 422
+        assert writes == []
+
+    def test_a_retrieval_knob_cannot_be_saved_here(self, writes) -> None:
+        # The score floor decides whether a dose may be quoted at all. It is
+        # set from measured results on the eval set, in the deployment's
+        # environment, not from a slider and a save button.
+        response = self.put(client_as(UserRole.ADMIN), min_retrieval_score=0.1)
+        assert response.status_code == 422
+        assert writes == []
+
+    def test_the_change_is_audited(self, monkeypatch, writes) -> None:
+        events: list = []
+        monkeypatch.setattr(playground_api.audit, "emit", events.append)
+
+        self.put(client_as(UserRole.ADMIN), temperature=0.4)
+
+        assert len(events) == 1
+        assert events[0].changed == {"temperature": 0.4}
+
+    def test_the_options_say_where_each_value_came_from(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(
+            playground_api.saved_defaults,
+            "stored",
+            lambda refresh=False: {"temperature": 0.4},
+        )
+        body = client_as(UserRole.ADMIN).get("/manage/playground/options").json()
+        assert body["sources"]["temperature"] == "saved"
+        assert body["sources"]["top_p"] == "environment"
+        # The baseline the screen marks "changed" against is what the
+        # deployment runs on, not what the environment alone says.
+        assert body["defaults"]["temperature"] == 0.4
+        assert body["env_defaults"]["temperature"] == config.TEMPERATURE
+
+    def test_the_verbosity_levels_are_offered_to_the_screen(self) -> None:
+        body = client_as(UserRole.ADMIN).get("/manage/playground/options").json()
+        assert [level["name"] for level in body["verbosity_levels"]] == [
+            "brief",
+            "standard",
+            "detailed",
+        ]

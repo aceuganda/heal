@@ -51,7 +51,9 @@ def wire(monkeypatch: pytest.MonkeyPatch):
 
         # Stands in for the failover wrapper: streams the fake model and
         # reports it as the model that answered, which is what the audit reads.
-        def fake_stream(model_id=None, messages=None, timeout=None):
+        def fake_stream(
+            model_id=None, messages=None, timeout=None, generation_settings=None
+        ):
             return llm.stream(messages), Generation(
                 model_id=model_id or config.CHAT_MODEL, attempts=1
             )

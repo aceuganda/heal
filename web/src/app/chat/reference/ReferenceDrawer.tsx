@@ -18,12 +18,14 @@ export interface SelectedReference {
  * wrong explanation next to a dose, which is the one thing this whole path
  * exists to avoid.
  */
-function useReferenceGloss(searchDocId: number | undefined) {
+function useReferenceGloss(searchDocId: string | undefined) {
   const [gloss, setGloss] = useState<string | null>(null);
+  const [isExternal, setIsExternal] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
     setGloss(null);
+    setIsExternal(false);
     if (searchDocId === undefined || searchDocId === null) {
       // A reference with no stored row -- nothing to explain, and the panel
       // must not sit on a loading state that will never resolve.
@@ -38,6 +40,7 @@ function useReferenceGloss(searchDocId: number | undefined) {
         return;
       }
       setGloss(result?.gloss ?? null);
+      setIsExternal(result?.external ?? false);
       setIsLoading(false);
     });
 
@@ -46,13 +49,14 @@ function useReferenceGloss(searchDocId: number | undefined) {
     };
   }, [searchDocId]);
 
-  return { gloss, isLoading };
+  return { gloss, isExternal, isLoading };
 }
 
 function ReferenceContent({
   reference,
   onClose,
   gloss,
+  isExternal,
   isLoading,
 }: {
   reference: SelectedReference;
@@ -61,10 +65,15 @@ function ReferenceContent({
   // for the desktop panel and once for the mobile sheet, and only CSS decides
   // which is visible. Fetching inside it would generate every gloss twice.
   gloss: string | null;
+  isExternal: boolean;
   isLoading: boolean;
 }) {
   const { citationKey, document } = reference;
-  const excerpt = document.match_highlights?.[0] || document.blurb;
+  // Never for an external reference: there is no passage behind it, and a
+  // stored blurb that looked like one would be text nobody retrieved.
+  const excerpt = isExternal
+    ? null
+    : document.match_highlights?.[0] || document.blurb;
 
   return (
     <div className="flex h-full flex-col">
@@ -93,8 +102,29 @@ function ReferenceContent({
       <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5">
         <div className="flex items-center gap-2 text-xs text-subtle">
           <FiFileText size={14} aria-hidden="true" />
-          <span>{document.source_type.replace(/_/g, " ")}</span>
+          <span>
+            {isExternal
+              ? "Suggested reference"
+              : document.source_type.replace(/_/g, " ")}
+          </span>
         </div>
+
+        {/* The one thing a reader must not get wrong about this panel: whether
+            they are looking at words from an approved document or at the name
+            of somewhere to go and check. Said plainly, at the top, in place of
+            the excerpt rather than under it. */}
+        {isExternal && (
+          <div className="mt-5 rounded-xl border border-amber-200 bg-amber-50 p-4">
+            <p className="text-xs font-medium uppercase tracking-wide text-amber-800">
+              Not from the approved library
+            </p>
+            <p className="mt-2 text-xs leading-5 text-amber-900">
+              The assistant named this from general knowledge. Nothing was
+              retrieved and no wording from it was checked, so there is no
+              excerpt to show. Look it up before acting on the answer.
+            </p>
+          </div>
+        )}
 
         {excerpt && (
           <div className="mt-5 rounded-xl border border-border bg-background-emphasis p-4">
@@ -162,7 +192,9 @@ export function ReferenceDrawer({
   reference: SelectedReference;
   onClose: () => void;
 }) {
-  const { gloss, isLoading } = useReferenceGloss(reference.document.db_doc_id);
+  const { gloss, isExternal, isLoading } = useReferenceGloss(
+    reference.document.db_doc_id
+  );
 
   return (
     <>
@@ -174,6 +206,7 @@ export function ReferenceDrawer({
           reference={reference}
           onClose={onClose}
           gloss={gloss}
+          isExternal={isExternal}
           isLoading={isLoading}
         />
       </aside>
@@ -191,6 +224,7 @@ export function ReferenceDrawer({
             reference={reference}
             onClose={onClose}
             gloss={gloss}
+            isExternal={isExternal}
             isLoading={isLoading}
           />
         </div>

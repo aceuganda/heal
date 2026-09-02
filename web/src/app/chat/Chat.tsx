@@ -53,7 +53,7 @@ export const Chat = ({
   documentSidebarInitialWidth,
   shouldhideBeforeScroll,
 }: {
-  existingChatSessionId: number | null;
+  existingChatSessionId: string | null;
   existingChatSessionPersonaId: number | undefined;
   availableSources: ValidSources[];
   availableDocumentSets: DocumentSet[];
@@ -143,7 +143,7 @@ export const Chat = ({
   }
 
 
-  const [chatSessionId, setChatSessionId] = useState<number | null>(
+  const [chatSessionId, setChatSessionId] = useState<string | null>(
     existingChatSessionId
   );
   const [message, setMessage] = useState("");
@@ -248,6 +248,31 @@ export const Chat = ({
     }
   });
 
+  /**
+   * The composer overlays the message list, so the list needs a spacer exactly
+   * as tall as it is or the last answer ends up underneath it.
+   *
+   * Measured rather than guessed. The composer's height is not one number: the
+   * textarea grows with a long question, the failover notice adds a line, and
+   * the recent-references row appears and disappears with the answer. The
+   * fixed min-heights that used to stand in for it were right for one of those
+   * states and short for the rest — and the text it hid was the end of a
+   * clinical answer.
+   */
+  const composerRef = useRef<HTMLDivElement>(null);
+  const [composerHeight, setComposerHeight] = useState(0);
+  useEffect(() => {
+    const node = composerRef.current;
+    if (!node || typeof ResizeObserver === "undefined") {
+      return;
+    }
+    const observer = new ResizeObserver(([entry]) =>
+      setComposerHeight(entry.target.getBoundingClientRect().height)
+    );
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, []);
+
   // scroll to bottom initially
   const [hasPerformedInitialScroll, setHasPerformedInitialScroll] = useState(
     shouldhideBeforeScroll !== true
@@ -306,12 +331,12 @@ export const Chat = ({
     messageIdToResend,
     queryOverride,
   }: { messageIdToResend?: number; queryOverride?: string } = {}) => {
-    let currChatSessionId: number;
+    let currChatSessionId: string;
     let isNewSession = chatSessionId === null;
     if (isNewSession) {
       currChatSessionId = await createChatSession(livePersona?.id || 0);
     } else {
-      currChatSessionId = chatSessionId as number;
+      currChatSessionId = chatSessionId as string;
     }
     setChatSessionId(currChatSessionId);
 
@@ -376,7 +401,7 @@ export const Chat = ({
             (document) =>
               document.db_doc_id !== undefined && document.db_doc_id !== null
           )
-          .map((document) => document.db_doc_id as number),
+          .map((document) => document.db_doc_id as string),
         queryOverride,
       })) {
         for (const packet of packetBunch) {
@@ -692,20 +717,27 @@ export const Chat = ({
                     </div>
                   )}
 
-                {/* Some padding at the bottom so the search bar has space at the bottom to not cover the last message*/}
+                {/* Exactly as tall as the composer that overlays this list, so
+                    the last answer is never partly underneath it. The class is
+                    the first-paint fallback, before the observer has measured
+                    anything; after that the measured height wins. */}
                 <div
-                  className={`w-full ${
-                    recentReferences.length > 0
-                      ? "min-h-[174px] sm:min-h-[138px]"
-                      : "min-h-[140px] sm:min-h-[104px]"
-                  }`}
+                  className="w-full min-h-[140px] sm:min-h-[104px]"
+                  style={
+                    composerHeight
+                      ? { minHeight: `${Math.ceil(composerHeight) + 16}px` }
+                      : undefined
+                  }
                 />
 
                 <div ref={endDivRef} />
               </div>
             </div>
 
-            <div className="absolute bottom-0 max-sm:left-0 sm:z-10 w-full border-t border-border bg-background/95 backdrop-blur">
+            <div
+              ref={composerRef}
+              className="absolute bottom-0 max-sm:left-0 sm:z-10 w-full border-t border-border bg-background/95 backdrop-blur"
+            >
               {modelNotice && (
                 <div className="mx-auto flex w-full max-w-3xl flex-wrap items-center gap-x-3 gap-y-1 px-4 pt-2 text-xs text-subtle sm:px-6">
                   <span>Internal model unreachable — using the cloud model.</span>

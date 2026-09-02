@@ -68,6 +68,8 @@ def build_llm(
     seconds = timeout if timeout is not None else config.LLM_TIMEOUT
     gen = generation or GenerationSettings()
 
+    # `token_cap`, not `max_output_tokens`: the verbosity level may lower the
+    # ceiling, and it may never raise it above what the deployment configured.
     if spec.self_hosted:
         # `custom_llm_provider` is what stops LiteLLM prefixing the model name
         # and routing to OpenAI's own servers instead of ours. The key is a
@@ -80,7 +82,8 @@ def build_llm(
             api_base=spec.base_url,
             custom_llm_provider="openai",
             temperature=gen.temperature,
-            max_output_tokens=gen.max_output_tokens,
+            max_output_tokens=gen.token_cap,
+            top_p=gen.top_p,
         )
 
     return get_default_llm(
@@ -88,7 +91,8 @@ def build_llm(
         timeout=seconds,
         gen_ai_model_version_override=spec.model_name,
         temperature=gen.temperature,
-        max_output_tokens=gen.max_output_tokens,
+        max_output_tokens=gen.token_cap,
+        top_p=gen.top_p,
     )
 
 
@@ -111,8 +115,14 @@ def stream_with_failover(
     model_id: str | None = None,
     messages: Sequence[tuple[str, str]] | None = None,
     timeout: int | None = None,
+    generation_settings: "GenerationSettings | None" = None,
 ) -> tuple[Iterator[str], Generation]:
     """Stream from the requested model, falling back to the cloud model.
+
+    `generation_settings` is passed by a caller that has already resolved them
+    -- the agent does, because the same verbosity level that sets the token cap
+    also writes a line into the prompt, and reading them twice could produce
+    two different answers to one question if a save landed in between.
 
     The internal endpoint gets SELF_HOSTED_ATTEMPTS tries. If none of them
     produce a first token, the configured cloud model answers instead and the
@@ -131,7 +141,9 @@ def stream_with_failover(
             for attempt in range(1, SELF_HOSTED_ATTEMPTS + 1):
                 generation.attempts = attempt
                 try:
-                    yield from _stream_once(spec, provider_messages, timeout)
+                    yield from _stream_once(
+                        spec, provider_messages, timeout, generation_settings
+                    )
                     return
                 except Exception as exc:  # noqa: BLE001 -- any failure falls back
                     logger.warning(
@@ -149,17 +161,22 @@ def stream_with_failover(
             )
             generation.model_id = fallback.id
             generation.failed_over = True
-            yield from _stream_once(fallback, provider_messages, timeout)
+            yield from _stream_once(
+                fallback, provider_messages, timeout, generation_settings
+            )
             return
 
         generation.attempts = 1
-        yield from _stream_once(spec, provider_messages, timeout)
+        yield from _stream_once(spec, provider_messages, timeout, generation_settings)
 
     return run(), generation
 
 
 def _stream_once(
-    spec: ModelSpec, provider_messages: list[Any], timeout: int | None
+    spec: ModelSpec,
+    provider_messages: list[Any],
+    timeout: int | None,
+    generation_settings: "GenerationSettings | None" = None,
 ) -> Iterator[str]:
     """One streaming attempt against one model.
 
@@ -167,8 +184,8 @@ def _stream_once(
     surfaces here, where the caller can still choose another model, rather than
     part-way through a half-written answer.
     """
-    stream = build_llm(spec, timeout=timeout).stream(provider_messages)
-    yield from stream
+    llm = build_llm(spec, timeout=timeout, generation=generation_settings)
+    yield from llm.stream(provider_messages)
 
 
 def _fallback_spec(failed: ModelSpec) -> ModelSpec:

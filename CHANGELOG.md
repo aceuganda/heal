@@ -20,6 +20,85 @@ the first pilot release.
 
 ## [Unreleased]
 
+### Added
+
+- **Model settings can now be saved from the admin playground instead of living
+  only in environment variables.** Temperature, top-p, the token ceiling, the
+  new verbosity level, and the default chat and classifier models can be tuned
+  on the playground and then kept with **Save as deployment default** — no
+  redeploy, no restart. What an admin saves is what every chat user gets from
+  the next message onwards; a health worker does not choose a model, and now an
+  operator can.
+
+  **The environment stays the default.** The new `model_settings` table holds
+  only the knobs somebody deliberately changed, one nullable column each, and
+  a null means "still following the environment". So a deployment can still be
+  re-pointed by changing `HEAL_TEMPERATURE` or `HEAL_CHAT_MODEL` without a
+  saved value silently overriding it, and clearing a knob on the screen is a
+  real operation rather than a guess. The playground shows, per knob, whether
+  the value came from the environment or was saved here, who saved it and when.
+  A settings change is written to the audit trail: these are not per-request
+  values, and "why did the answers get shorter last Tuesday" has to be
+  answerable.
+
+  **The retrieval knobs are deliberately not saveable.** The score floor
+  decides whether a dose may be quoted at all. It is a clinical-safety
+  parameter set from measured results on the eval set, so it stays in the
+  deployment's environment where changing it is a reviewed act; the playground
+  still tunes it per-run and still prints the env line that would make it
+  permanent. Requires a migration (`f3b6d20c47a1`).
+
+- **Verbosity: brief, standard or detailed.** A named answer length rather than
+  a token number. Each level puts a length instruction in the prompt, so the
+  model writes short instead of being cut off — a token cap does not make a
+  model concise, it makes it stop, and the sentence it stops in the middle of
+  may be a dose. `HEAL_MAX_OUTPUT_TOKENS` is now what it always really was: a
+  hard ceiling. A level may lower it and can never raise it, so an admin who
+  capped tokens to control cost has not agreed to more by choosing "detailed".
+  Set with `HEAL_VERBOSITY`, default `standard`, overridable from the
+  playground.
+
+- **Answers with no approved passage now carry references again.** When the
+  library holds nothing on a question, the model closes its answer with the
+  standard references a health worker could check — WHO, CDC, the Uganda
+  Clinical Guidelines — numbered like any other citation, and each number opens
+  the reference drawer.
+
+  **They are marked as what they are, and they are read-only.** An external
+  reference is a *name* the model produced, not a passage anybody retrieved, so
+  the drawer says "Not from the approved library", shows no excerpt (there is
+  no text behind it), offers no link (a URL nobody fetched is a claim about
+  what is at the other end), and is never sent for a plain-language gloss —
+  summarising a document nobody opened would be invention printed under a
+  citation number. The two kinds never share a numbering: when an answer *has*
+  approved passages, marker N means passage N and the external block is not
+  read at all.
+
+### Fixed
+
+- **The safety prompt was talking the assistant out of naming any source.**
+  "Do not invent a source, a citation, a guideline name or a statistic" was
+  being read as "never name a source", producing answers like *"I cannot
+  provide a specific reference or source. However, you can verify… through WHO
+  or CDC"* — a refusal and a suggestion in the same breath, and nothing the
+  reader could open. The rule now says what it always meant: naming a
+  well-known guideline is not inventing one; manufacturing an edition, a page,
+  a quotation or a statistic is. Safety prompt version `2026-09-02.1`.
+
+- **The message list is now spaced by the composer's measured height.** The
+  spacer under the last message was a pair of fixed min-heights, right for one
+  composer state and short for the rest — a grown textarea, the failover
+  notice, or the recent-references row put the end of an answer underneath the
+  input box. It is measured with a `ResizeObserver` now, so the last line of a
+  clinical answer is always readable.
+
+- **Top-p was reported by the playground but never sent to the model.** It was
+  resolved, clamped and displayed in the settings panel, and then dropped:
+  `build_llm` passed only temperature and the token cap, and the underlying
+  client declares a `top_p` attribute that it does not put in the parameters it
+  sends. It now travels with the request. Any tuning done against the old
+  top-p slider measured nothing.
+
 ### Changed
 
 - **The lexical half of retrieval now weights rare terms by how rare they are.**
@@ -159,6 +238,40 @@ the first pilot release.
 - **Super admins were locked out of admin screens.** `current_admin_user` tested
   `role != ADMIN`, which denied every super admin. The same equality bug existed
   in `Layout.tsx`, `Header.tsx` and `ChatSidebar.tsx`. All now use a rank check.
+- **Cited-passage ids are UUIDs.** `search_doc.id` reaches the browser in a
+  message's citation map and is taken off the URL by
+  `GET /chat/reference/{id}/gloss`. That handler authenticates the caller but
+  does not check the row belongs to them, so a sequential id could be walked to
+  read every cited guideline passage in the deployment. Migration `d4a2b8e15f97`
+  makes the id unguessable. **The missing ownership check remains open** — a
+  UUID stops enumeration, it does not make the handler authorise. What is
+  reachable is approved guideline text, never patient data, questions or answers.
+
+  **Citation maps on existing messages are cleared.** They hold integer ids that
+  no longer resolve. Rewriting them meant a correlated join through
+  `jsonb_each_text`, which fails outright on any row whose `citations` is a JSON
+  scalar or `null` rather than an object — and real rows are. Clearing is one
+  statement that cannot fail on malformed JSON; the cost is that markers in old
+  answers render as plain text, which is already what the UI does with a
+  citation it cannot resolve. New answers are unaffected.
+
+- **Chat session ids are UUIDs.** The session id is the one identifier that
+  reaches a URL (`/chat?chatId=...`), and a sequential one told anyone who saw
+  it how much the deployment was being used and let them probe for sessions that
+  exist. It matters most where auth is disabled: ownership is then
+  `user_id IS NULL` for everyone, so a guessable id was the only thing between
+  one anonymous visitor and another's conversation.
+
+  Message ids stay sequential — they never appear in a URL and are only reached
+  through a session whose ownership has already been checked.
+
+  Migration `c8f1a24b7e63` mints a UUID per session and carries it into
+  `chat_message.chat_session_id` through a join on the old integer, so existing
+  conversations keep their messages. The old integer is not preserved: a stale
+  sequential id lying around is what this removes. **The downgrade re-numbers
+  sessions from a fresh sequence, so every existing UUID URL dies** — it exists
+  to unblock a local rollback, not for data anybody cares about.
+
 - **Feedback is a four-star rating, not a thumbs pair.** 1 is worst, 4 best.
   Four rather than five because there is no neutral middle to hide in: a health
   worker has to come down on one side of "was this usable", and a five-point
@@ -298,27 +411,32 @@ change is inert or unvalidated without them:
 6. **Verify citations end to end** against a running stack. Small in code,
    ~25 min in wall clock for the web image. **Items 5, 7 and 9 touch this path
    and should not ship before it passes.**
-7. **Star feedback, with comments, minimised.** Five stars replacing thumbs,
-   sigmoid aggregate, surfaced to admins as a review signal — deliberately not
-   wired into ranking. Optional short comment on the rating. Design target is
-   the smallest thing that works: inline, no modal, no card, no heading — it
-   must not compete with the answer.
+7. ~~**Star feedback, with comments, minimised.**~~ **Done** — shipped as a
+   four-point rating rather than five (an even scale has no neutral middle to
+   hide in). Aggregate, admin endpoints and the inline control are in; the
+   remaining piece is an admin *screen* over `/manage/feedback/answers` and
+   `/manage/feedback/sources`, which currently return JSON only.
 8. **Chat search.** Across a user's own sessions and messages.
 9. **Citation provenance — where in the document.** A citation should say where
    the text sits: page, section heading, or at minimum chunk position within
    the source. `chunk_ind` is already stored on the row and shown nowhere.
    Needs ingest to carry section/page into the chunk, so it implies a re-ingest.
-10. **Playground generation settings that actually take effect.** Temperature,
-    verbosity/length and the rest, plumbed through the same frozen-settings seam
-    `RetrievalSettings` uses so nothing mutates global state.
+10. ~~**Playground generation settings that actually take effect.**~~ **Done** —
+    temperature, reply length and top-p travel as a `GenerationSettings` value
+    through the same frozen-settings seam `RetrievalSettings` uses, and each
+    overridden knob shows the environment line that would make it the default.
 11. **Lock the parameters, and show the standing.** A lock control pinning the
     current parameter set across runs so successive queries are comparable, and
     a summary stating what is in force and how it differs from live defaults.
     Sits on 10.
-12. **Self-hosted model base URL.** An admin input for an internal
-    OpenAI-compatible endpoint (vLLM), stored as a secret and never rendered
-    back. The registry seam exists; this is the config, the storage, and the
-    "GPT means the configured model" promise made real.
+12. ~~**Self-hosted model base URL.**~~ **Done, with the design changed.** The
+    endpoint is operator configuration (`HEAL_SELF_HOSTED_URL` and three
+    siblings), **not** an admin input. A server that fetches a URL a caller
+    supplied is server-side request forgery: it will read the cloud metadata
+    endpoint or port-scan the internal network on the caller's behalf, and hand
+    back the results. The URL is never accepted from a request and never sent to
+    the browser. Unreachable after two tries, the cloud model answers and the
+    audit records which model actually did.
 13. **Answer review + revision back-flow.** Score `addressed` and `readable`;
     below `REVIEW_FLOOR` (0.4), one revision pass that edits the gaps. Never
     regenerate, never revise a refusal, never add uncited clinical content,

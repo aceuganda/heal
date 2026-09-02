@@ -47,7 +47,7 @@ export interface DanswerDocument {
   match_highlights: string[];
   metadata: { [key: string]: string };
   updated_at: string | null;
-  db_doc_id?: number;
+  db_doc_id?: string;
 }
 
 export interface DocumentInfoPacket {

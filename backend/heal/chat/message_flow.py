@@ -14,6 +14,7 @@ from collections.abc import Iterator
 
 from sqlalchemy.orm import Session
 
+from heal.chat import external_refs
 from heal.chat.citations import build_citations
 from heal.chat.stream_processing import extract_citations
 from heal.language import get_language_service
@@ -139,6 +140,10 @@ def stream_chat_message(
             language=new_msg_req.language,
             chat_session_id=new_msg_req.chat_session_id,
             message_id=new_user_message.id,
+            # None means "whatever the deployment answers with" -- the model an
+            # admin saved in the playground, or the environment's behind it.
+            # A health worker does not choose a model: which one answers a
+            # dosage question is an operator's decision, not a per-chat one.
             model_id=None,
         )
     )
@@ -181,12 +186,20 @@ def stream_chat_message(
         yield get_json_line({"model_notice": "self_hosted_unreachable"})
 
     # ---- citations -------------------------------------------------------
+    # When the library gave the answer nothing, the model closes with the
+    # standard references a health worker could check. Read here so each number
+    # also gets a drawer entry -- the answer text itself is left exactly as it
+    # was streamed. Only in that case: with passages in hand, marker N means
+    # passage N and nothing may renumber it. See heal/chat/external_refs.py.
+    external = external_refs.parse(english_answer, has_passages=bool(decision.chunks))
+
     # Only the markers the answer actually wrote. `decision.chunks` is in
     # citation order, so [1] is the first passage the prompt was given.
     reference_docs, citations = build_citations(
         db_session=db_session,
         chunks=decision.chunks,
         cited_numbers=extract_citations(english_answer),
+        external=external,
     )
 
     # ---- persist ---------------------------------------------------------

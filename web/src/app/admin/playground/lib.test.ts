@@ -16,7 +16,9 @@ import {
   formatMs,
   formatScore,
   isOverridden,
+  isSaveable,
   overridesFor,
+  savePayload,
   PlaygroundResult,
   shortfall,
   TunableValues,
@@ -32,6 +34,7 @@ const defaults: TunableValues = {
   temperature: 0,
   max_output_tokens: 1024,
   top_p: 1,
+  verbosity: "standard",
 };
 
 const candidate = (over: Partial<Candidate> = {}): Candidate => ({
@@ -186,5 +189,65 @@ describe("formatting", () => {
 
   it("switches to seconds once a stage is slow enough to notice", () => {
     expect(formatMs(2400)).toBe("2.4 s");
+  });
+});
+
+describe("savePayload", () => {
+  it("sends nothing when nothing was moved", () => {
+    // An empty save would still write a row and pin every knob, which is how
+    // a deployment stops following its own environment by accident.
+    expect(savePayload(defaults, defaults, "", "")).toEqual({});
+  });
+
+  it("sends only the wording knobs that changed", () => {
+    const body = savePayload(
+      { ...defaults, temperature: 0.4, min_retrieval_score: 0.9 },
+      defaults,
+      "",
+      ""
+    );
+    expect(body).toEqual({ temperature: 0.4 });
+  });
+
+  it("never offers to save a retrieval knob", () => {
+    // The score floor decides whether a dose may be quoted at all. It is set
+    // from measured results, in the environment, not from a save button.
+    const body = savePayload(
+      { ...defaults, min_retrieval_score: 0.9, context_top_k: 9 },
+      defaults,
+      "",
+      ""
+    );
+    expect(body).toEqual({});
+  });
+
+  it("carries a chosen model", () => {
+    expect(savePayload(defaults, defaults, "gpt-4o", "")).toEqual({
+      chat_model: "gpt-4o",
+    });
+  });
+
+  it("treats the empty model picker as 'leave it alone'", () => {
+    expect(savePayload(defaults, defaults, "", "")).not.toHaveProperty(
+      "chat_model"
+    );
+  });
+
+  it("carries a verbosity level", () => {
+    expect(
+      savePayload({ ...defaults, verbosity: "brief" }, defaults, "", "")
+    ).toEqual({ verbosity: "brief" });
+  });
+});
+
+describe("isSaveable", () => {
+  it("allows the wording knobs", () => {
+    expect(isSaveable("temperature")).toBe(true);
+    expect(isSaveable("verbosity")).toBe(true);
+  });
+
+  it("refuses the retrieval knobs", () => {
+    expect(isSaveable("min_retrieval_score")).toBe(false);
+    expect(isSaveable("hybrid_alpha")).toBe(false);
   });
 });

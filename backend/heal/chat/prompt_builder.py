@@ -32,6 +32,12 @@ class PromptBuilder:
     knowledge_enabled: bool = False
     # Extra instruction from the route table for this intent.
     route_instruction: str = ""
+    # How long the answer should be, from the deployment's verbosity level.
+    # An instruction rather than a token cap because a cap does not make a
+    # model concise, it makes it stop -- and the sentence it stops in the
+    # middle of may be a dose. Empty at the standard level. See
+    # heal/llm/settings.py.
+    length_instruction: str = ""
     # Prior turns as (is_user, text), oldest first.
     history: list[tuple[bool, str]] = field(default_factory=list)
     # Approved context passages, in citation order. Index in this list is the
@@ -43,9 +49,22 @@ class PromptBuilder:
     max_history_messages: int = 10
 
     def system_message(self) -> Message:
-        parts = [build_safety_instruction(self.knowledge_enabled)]
+        # `context` decides which reference rule applies: with passages the
+        # model cites their numbers, without them it closes with the standard
+        # references a reader can go and check. Derived here rather than passed
+        # by every caller, so the two can never disagree.
+        parts = [
+            build_safety_instruction(
+                self.knowledge_enabled, has_passages=bool(self.context)
+            )
+        ]
         if self.route_instruction:
             parts.append(f"\nFor this message specifically:\n{self.route_instruction}")
+        # After the route instruction, before the passages: length is a
+        # preference, and it must never read as permission to leave out
+        # something the route or the safety rules require.
+        if self.length_instruction:
+            parts.append(f"\nLength:\n{self.length_instruction}")
         if self.context:
             parts.append(self._context_block())
         return ("system", "".join(parts))

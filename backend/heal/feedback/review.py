@@ -32,7 +32,7 @@ class RatedAnswer:
     """One assistant message and how health workers rated it."""
 
     message_id: int
-    chat_session_id: int
+    chat_session_id: str
     rating: Aggregate
     # Comments left on this answer, newest first. Free text written by a user,
     # so a caller rendering these must escape them.
@@ -96,7 +96,7 @@ def rated_answers(
     answers = [
         RatedAnswer(
             message_id=message_id,
-            chat_session_id=sessions.get(message_id, 0),
+            chat_session_id=str(sessions.get(message_id, "")),
             rating=aggregate(ratings),
             comments=comments.get(message_id, []),
         )

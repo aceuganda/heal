@@ -19,6 +19,7 @@ on, which is worse than showing none.
 from typing import Any
 from typing import TYPE_CHECKING
 
+from heal.chat.external_refs import ExternalRef
 from heal.knowledge.models import RetrievedChunk
 from heal.logger import get_logger
 
@@ -32,6 +33,13 @@ logger = get_logger(__name__)
 # How much of a passage to keep as the preview shown in the reference drawer.
 # The full chunk is still in Qdrant; this is what renders without scrolling.
 BLURB_CHARS = 400
+
+# Metadata key marking a reference the model named rather than one retrieved
+# from the approved library. Read by the drawer, which says so in as many
+# words, and by the gloss endpoint, which refuses to summarise a source nobody
+# fetched. A citation the reader cannot tell apart from an approved one is the
+# failure this whole flag exists to prevent.
+EXTERNAL_FLAG = "external_reference"
 
 
 def select_cited(
@@ -65,24 +73,47 @@ def build_citations(
     db_session: "Session",
     chunks: list[RetrievedChunk],
     cited_numbers: list[int],
-) -> tuple[list["SearchDoc"], dict[int, int]]:
+    external: dict[int, "ExternalRef"] | None = None,
+) -> tuple[list["SearchDoc"], dict[int, str]]:
     """Store the cited passages and return them with a `{marker: id}` map.
 
     The rows are flushed, not committed. `create_new_chat_message` links them
     to the message and commits, so the answer and its citations land in one
     transaction -- an answer saved without them would cite nothing forever.
+
+    `external` carries references the model NAMED when the library had no
+    passage to give it (see heal/chat/external_refs.py). They are stored as
+    rows so the same marker, the same drawer and the same map serve both kinds,
+    but they are marked as what they are and carry no passage -- there is
+    nothing behind them but a name. The two are mutually exclusive by
+    construction: `external_refs.parse()` returns nothing when there were
+    passages, because marker N would then already mean passage N.
     """
     from heal_app.db.models import SearchDoc
 
     docs: list[SearchDoc] = []
-    citations: dict[int, int] = {}
+    citations: dict[int, str] = {}
 
     for number, chunk in select_cited(chunks, cited_numbers):
         search_doc = SearchDoc(**search_doc_fields(chunk))
         db_session.add(search_doc)
         db_session.flush()  # assigns the id the citation map points at
         docs.append(search_doc)
-        citations[number] = search_doc.id
+        # Stringified: the map is serialised to JSON, which has no UUID type.
+        citations[number] = str(search_doc.id)
+
+    for number in cited_numbers:
+        ref = (external or {}).get(number)
+        # `number in citations` cannot happen while the two kinds are exclusive,
+        # but a library citation must win if that ever changes: it points at
+        # words we hold, and the external one only at a name.
+        if ref is None or number in citations:
+            continue
+        search_doc = SearchDoc(**external_doc_fields(ref))
+        db_session.add(search_doc)
+        db_session.flush()
+        docs.append(search_doc)
+        citations[number] = str(search_doc.id)
 
     return docs, citations
 
@@ -110,6 +141,41 @@ def search_doc_fields(chunk: RetrievedChunk) -> dict[str, Any]:
         # The passage itself, which is what the drawer shows and what the
         # plain-language gloss is generated from.
         "match_highlights": [chunk.text],
+        "updated_at": None,
+        "primary_owners": None,
+        "secondary_owners": None,
+    }
+
+
+def external_doc_fields(ref: "ExternalRef") -> dict[str, Any]:
+    """Map a model-named reference onto the same columns, marked as external.
+
+    Deliberately empty where a library citation has substance. `blurb` and
+    `match_highlights` are blank because there IS no passage: nothing was
+    retrieved, nothing was read, and a "relevant excerpt" here would be text
+    the model wrote about a document it did not open. `link` is null for the
+    same reason -- a URL nobody fetched is a claim about what is at the other
+    end of it.
+
+    `EXTERNAL_FLAG` in the metadata is what the drawer reads to say so, and
+    what `/chat/reference/{id}/gloss` reads to refuse to summarise it.
+    """
+    return {
+        "document_id": f"external:{ref.name.lower()[:120]}",
+        "chunk_ind": 0,
+        "semantic_id": ref.name,
+        "link": None,
+        "blurb": "",
+        "boost": 0,
+        "source_type": _file_source(),
+        "hidden": False,
+        "doc_metadata": {EXTERNAL_FLAG: "true"},
+        # Zero, because the column is NOT NULL and there is no honest number to
+        # put here: this was never ranked against anything. The drawer reads
+        # the external flag, not the score, so nothing displays it as a
+        # relevance of nil.
+        "score": 0.0,
+        "match_highlights": [],
         "updated_at": None,
         "primary_owners": None,
         "secondary_owners": None,

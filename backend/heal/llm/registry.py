@@ -9,6 +9,9 @@ import os
 
 from heal import config
 from heal.llm.models import ModelSpec
+from heal.logger import get_logger
+
+logger = get_logger(__name__)
 
 _CATALOGUE: dict[str, ModelSpec] = {
     spec.id: spec
@@ -127,11 +130,48 @@ def available_models() -> list[ModelSpec]:
     ]
 
 
+def _configured(name: str, fallback: str) -> str:
+    """A model id from the deployment's settings, environment behind it.
+
+    Imported inside the function rather than at module scope: `heal.llm.defaults`
+    reaches the database, and nothing that merely names a model should load the
+    ORM to do it. A lookup that fails there returns the environment's value, so
+    an unreachable database never costs a health worker an answer.
+    """
+    from heal.llm import defaults
+
+    return str(defaults.effective().get(name) or fallback)
+
+
 def default_model() -> ModelSpec:
-    """The configured chat model."""
-    return get_model(config.CHAT_MODEL)
+    """The chat model this deployment answers with.
+
+    Falls back to the environment's model if the saved id no longer resolves --
+    a model removed from the catalogue must not take the chat path down with
+    it, and answering on the configured model is the safe reading of "the saved
+    choice is no longer available".
+    """
+    chosen = _configured("chat_model", config.CHAT_MODEL)
+    try:
+        return get_model(chosen)
+    except ValueError:
+        logger.error(
+            "Saved chat model '%s' is not in the catalogue; using %s",
+            chosen,
+            config.CHAT_MODEL,
+        )
+        return get_model(config.CHAT_MODEL)
 
 
 def classifier_model() -> ModelSpec:
     """The model used for intent classification and other short internal calls."""
-    return get_model(config.CLASSIFIER_MODEL)
+    chosen = _configured("classifier_model", config.CLASSIFIER_MODEL)
+    try:
+        return get_model(chosen)
+    except ValueError:
+        logger.error(
+            "Saved classifier model '%s' is not in the catalogue; using %s",
+            chosen,
+            config.CLASSIFIER_MODEL,
+        )
+        return get_model(config.CLASSIFIER_MODEL)

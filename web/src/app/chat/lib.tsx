@@ -16,7 +16,7 @@ import {
   StreamingError,
 } from "./interfaces";
 
-export async function createChatSession(personaId: number): Promise<number> {
+export async function createChatSession(personaId: number): Promise<string> {
   const createChatSessionResponse = await fetch(
     "/api/chat/create-chat-session",
     {
@@ -42,10 +42,10 @@ export async function createChatSession(personaId: number): Promise<number> {
 export interface SendMessageRequest {
   message: string;
   parentMessageId: number | null;
-  chatSessionId: number;
+  chatSessionId: string;
   promptId: number | null | undefined;
   filters: Filters | null;
-  selectedDocumentIds: number[] | null;
+  selectedDocumentIds: string[] | null;
   queryOverride?: string;
   language?: string;
 }
@@ -98,7 +98,7 @@ export async function* sendMessage({
   >(sendMessageResponse);
 }
 
-export async function nameChatSession(chatSessionId: number, message: string) {
+export async function nameChatSession(chatSessionId: string, message: string) {
   const response = await fetch("/api/chat/rename-chat-session", {
     method: "PUT",
     headers: {
@@ -146,7 +146,7 @@ export async function handleChatFeedback(
  * view rather than a broken one -- there is nothing here worth an error toast.
  */
 export async function fetchReferenceGloss(
-  searchDocId: number
+  searchDocId: string
 ): Promise<ReferenceGloss | null> {
   try {
     const response = await fetch(`/api/chat/reference/${searchDocId}/gloss`);
@@ -177,7 +177,7 @@ export async function handleLugandaTranslation(
 }
 
 export async function renameChatSession(
-  chatSessionId: number,
+  chatSessionId: string,
   newName: string
 ) {
   const response = await fetch(`/api/chat/rename-chat-session`, {
@@ -194,7 +194,7 @@ export async function renameChatSession(
   return response;
 }
 
-export async function deleteChatSession(chatSessionId: number) {
+export async function deleteChatSession(chatSessionId: string) {
   const response = await fetch(
     `/api/chat/delete-chat-session/${chatSessionId}`,
     {

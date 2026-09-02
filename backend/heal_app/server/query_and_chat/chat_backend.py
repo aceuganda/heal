@@ -1,3 +1,5 @@
+from uuid import UUID
+
 from fastapi import APIRouter
 from fastapi import Depends
 from fastapi import HTTPException
@@ -68,7 +70,7 @@ def get_user_chat_sessions(
 
 @router.get("/get-chat-session/{session_id}")
 def get_chat_session(
-    session_id: int,
+    session_id: UUID,
     user: User | None = Depends(current_user),
     db_session: Session = Depends(get_session),
 ) -> ChatSessionDetailResponse:
@@ -146,7 +148,7 @@ def rename_chat_session(
 
 @router.delete("/delete-chat-session/{session_id}")
 def delete_chat_session_by_id(
-    session_id: int,
+    session_id: UUID,
     user: User | None = Depends(current_user),
     db_session: Session = Depends(get_session),
 ) -> None:

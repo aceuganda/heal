@@ -67,7 +67,11 @@ class TestFailover:
     def _patch_builds(
         self, monkeypatch: pytest.MonkeyPatch, by_id: dict[str, FakeLLM]
     ) -> None:
-        def build(spec: ModelSpec, timeout: int | None = None) -> FakeLLM:
+        def build(
+            spec: ModelSpec,
+            timeout: int | None = None,
+            generation: object | None = None,
+        ) -> FakeLLM:
             return by_id[spec.id]
 
         monkeypatch.setattr(service, "build_llm", build)

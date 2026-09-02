@@ -20,6 +20,8 @@ Three rules make this safe to put next to a dose:
 Generated on demand and cached on the row: most citations are never opened, so
 generating at answer time would pay for -- and wait for -- work nobody reads.
 """
+from uuid import UUID
+
 from fastapi import APIRouter
 from fastapi import Depends
 from fastapi import HTTPException
@@ -27,6 +29,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from heal import config
+from heal.chat.citations import EXTERNAL_FLAG
 from heal.logger import get_logger
 from heal_app.auth.users import current_user
 from heal_app.db.engine import get_session
@@ -64,18 +67,23 @@ _UNCLEAR = "UNCLEAR"
 
 
 class ReferenceGloss(BaseModel):
-    search_doc_id: int
+    search_doc_id: UUID
     gloss: str | None = None
     cached: bool = False
     # The passage is always returned so the caller can render the drawer from
     # one request, and so it can show the original when there is no gloss.
     passage: str = ""
     title: str = ""
+    # True when this is a reference the model NAMED rather than a passage the
+    # library returned. There is no text behind it, so there is nothing to
+    # gloss and nothing to quote -- the drawer shows the name and says where it
+    # came from. See heal/chat/external_refs.py.
+    external: bool = False
 
 
 @router.get("/{search_doc_id}/gloss")
 def get_reference_gloss(
-    search_doc_id: int,
+    search_doc_id: UUID,
     _: User | None = Depends(current_user),
     db_session: Session = Depends(get_session),
 ) -> ReferenceGloss:
@@ -90,6 +98,21 @@ def get_reference_gloss(
 
     passage = (doc.match_highlights or [doc.blurb or ""])[0]
     metadata = dict(doc.doc_metadata or {})
+
+    # A reference the model named. Read-only in the strongest sense: nothing
+    # was retrieved, so there is no text to explain, and a "plain language
+    # summary" of a document nobody fetched would be invention printed under a
+    # citation number. The drawer shows the name and says where it came from.
+    if str(metadata.get(EXTERNAL_FLAG, "")).lower() == "true":
+        return ReferenceGloss(
+            search_doc_id=search_doc_id,
+            gloss=None,
+            cached=False,
+            passage="",
+            title=doc.semantic_id or "",
+            external=True,
+        )
+
     cached = metadata.get(GLOSS_KEY)
     if cached:
         return ReferenceGloss(

@@ -89,13 +89,25 @@ LLM_TIMEOUT = _env_int("HEAL_LLM_TIMEOUT", 60)
 # sampling variety is not a feature when the output is clinical.
 TEMPERATURE = _env_float("HEAL_TEMPERATURE", 0.0)
 
-# Reply length cap. The practical "verbosity" knob -- a health worker reading on
-# a phone at the point of care is not helped by six paragraphs.
+# Hard ceiling on a reply, in tokens. A cap, not a length control: a model that
+# hits it stops mid-sentence, and the sentence it stops in the middle of may be
+# a dose. Length is asked for with VERBOSITY below; this is what stops a
+# runaway generation costing a fortune.
 MAX_OUTPUT_TOKENS = _env_int("HEAL_MAX_OUTPUT_TOKENS", 1024)
 
 # Nucleus sampling. 1.0 disables it; with TEMPERATURE at 0 it has no effect
 # either way, and it exists so the playground can measure that claim.
 TOP_P = _env_float("HEAL_TOP_P", 1.0)
+
+# How long an answer should be: "brief", "standard" or "detailed". Applied as
+# an instruction in the prompt, so the model writes to length rather than being
+# truncated at it. See heal/llm/settings.py for what each level asks for.
+VERBOSITY = _env_str("HEAL_VERBOSITY", "standard")
+
+# Every knob above is a DEFAULT. An admin can override any of them from the
+# playground, which stores the change in the `model_settings` table; nothing
+# writes back here. Read `heal.llm.defaults.effective()` for what the
+# deployment is actually running on.
 
 
 #####
@@ -292,7 +304,7 @@ def _logger():  # type: ignore[no-untyped-def]
 # Bumped whenever the safety instruction text changes. Written to the audit
 # event on every classification so an answer can be traced to the rules that
 # produced it.
-SAFETY_PROMPT_VERSION = _env_str("HEAL_SAFETY_PROMPT_VERSION", "2026-08-28.1")
+SAFETY_PROMPT_VERSION = _env_str("HEAL_SAFETY_PROMPT_VERSION", "2026-09-02.1")
 
 # Emergency escalation number shown ahead of any emergency answer.
 EMERGENCY_CONTACT = _env_str("HEAL_EMERGENCY_CONTACT", "912")

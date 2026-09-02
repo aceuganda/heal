@@ -13,10 +13,11 @@ export interface RetrievalDetails {
   enable_auto_detect_filters?: boolean | null;
 }
 
-type CitationMap = { [key: string]: number };
+// Citation number -> search_doc id. The id is a UUID, carried as a string.
+type CitationMap = { [key: string]: string };
 
 export interface ChatSession {
-  id: number;
+  id: string;
   name: string;
   persona_id: number;
   time_created: string;
@@ -35,7 +36,7 @@ export interface Message {
 }
 
 export interface BackendChatSession {
-  chat_session_id: number;
+  chat_session_id: string;
   description: string;
   persona_id: number;
   messages: BackendMessage[];
@@ -59,11 +60,17 @@ export interface BackendMessage {
  *  `gloss` is null when the passage could not be explained honestly; the
  *  drawer then shows the passage alone, which is what it did before. */
 export interface ReferenceGloss {
-  search_doc_id: number;
+  search_doc_id: string;
   gloss: string | null;
   cached: boolean;
   passage: string;
   title: string;
+  /**
+   * True when the model named this reference rather than the library
+   * returning it. There is no passage behind it and it is never glossed — the
+   * drawer shows the name and says where it came from.
+   */
+  external: boolean;
 }
 
 export interface DocumentsResponse {

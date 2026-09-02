@@ -42,16 +42,19 @@ import {
   formatMs,
   formatScore,
   isOverridden,
+  isSaveable,
   NUMERIC_TUNABLES,
   overridesFor,
   PlaygroundOptions,
   PlaygroundResult,
+  savePayload,
   shortfall,
   TunableValues,
 } from "./lib";
 
 const OPTIONS_URL = "/api/manage/playground/options";
 const QUERY_URL = "/api/manage/playground/query";
+const DEFAULTS_URL = "/api/manage/playground/defaults";
 
 /**
  * FastAPI puts the message in `detail`, a string for a raised HTTPException
@@ -197,6 +200,71 @@ function NumberKnob({
   );
 }
 
+/**
+ * Answer length as a named level rather than a token number.
+ *
+ * The distinction is the whole point of the control: a token cap does not make
+ * a model concise, it makes it stop — and the sentence it stops in the middle
+ * of may be a dose. The level puts an instruction in the prompt, so the model
+ * writes to length instead of being cut off at one.
+ */
+function VerbosityPicker({
+  value,
+  fallback,
+  levels,
+  cap,
+  onChange,
+}: {
+  value: string;
+  fallback: string;
+  levels: PlaygroundOptions["verbosity_levels"];
+  /** The configured hard ceiling, so the screen can say when it, not the
+   * level, is what will end the answer. */
+  cap: number;
+  onChange: (next: string) => void;
+}) {
+  const moved = isOverridden(value, fallback);
+  const chosen = levels.find((l) => l.name === value);
+  return (
+    <div>
+      <div className="flex items-baseline gap-2">
+        <span className="text-sm font-medium text-heal-ink-900">Verbosity</span>
+        {moved && <OverriddenTag />}
+        <span className="ml-auto text-xs text-heal-ink-500">
+          default {fallback}
+        </span>
+      </div>
+      <div className="mt-1 flex gap-2">
+        {levels.map((level) => (
+          <button
+            key={level.name}
+            type="button"
+            onClick={() => onChange(level.name)}
+            className={`flex-1 rounded border px-2 py-1.5 text-sm ${
+              level.name === value
+                ? "border-heal-teal-700 bg-heal-teal-700/10 font-semibold text-heal-teal-900"
+                : "border-border text-heal-ink-700"
+            }`}
+          >
+            {level.label}
+          </button>
+        ))}
+      </div>
+      <p className="mt-1 text-xs text-heal-ink-500">
+        {chosen?.hint ?? "How long an answer should be."}
+      </p>
+      {chosen && chosen.budget > cap && (
+        // Otherwise an admin picks "detailed", gets a short answer, and has no
+        // way to see that the ceiling — not the level — is what ended it.
+        <p className="mt-1 text-xs text-amber-700">
+          The hard ceiling of {cap} tokens is lower than this level&rsquo;s{" "}
+          {chosen.budget}, so the ceiling is what will stop the answer.
+        </p>
+      )}
+    </div>
+  );
+}
+
 function ModelPicker({
   label,
   value,
@@ -246,14 +314,125 @@ function ModelPicker({
 function ScopeNotice() {
   return (
     <Card className="mb-6 border-l-4 border-l-heal-teal-700">
-      <Title>These settings apply to this run only</Title>
+      <Title>Runs are private; saving is not</Title>
       <Text className="mt-2">
-        Nothing on this page changes what health workers receive. The values
-        below travel with the one request you send and are discarded when it
-        finishes — concurrent conversations keep using the deployment&rsquo;s
-        own configuration, and the live score floor is unchanged. To change what
-        the assistant actually runs on, change the environment and restart.
+        Every value below travels with the one request you send and is discarded
+        when it finishes. Concurrent conversations keep using the
+        deployment&rsquo;s own configuration, and the live score floor is
+        unchanged by anything you try here.
       </Text>
+      <Text className="mt-2">
+        The exception is <b>Save as deployment default</b>, which is the one
+        action on this page that outlives its request: it changes how every
+        subsequent answer is worded, immediately, for everybody. Only the
+        wording settings and the model choice can be saved. The retrieval
+        settings stay per-run — the score floor decides whether a dose may be
+        quoted at all, so it is changed in the deployment&rsquo;s environment
+        against measured results, not from a slider.
+      </Text>
+    </Card>
+  );
+}
+
+/** What the deployment is running on right now, and where each value came from. */
+function DeploymentDefaults({
+  options,
+  onRevert,
+  busy,
+}: {
+  options: PlaygroundOptions;
+  onRevert: () => void;
+  busy: boolean;
+}) {
+  const rows: { name: string; label: string; value: string }[] = [
+    { name: "chat_model", label: "Chat model", value: options.chat_model },
+    {
+      name: "classifier_model",
+      label: "Classifier",
+      value: options.classifier_model,
+    },
+    {
+      name: "verbosity",
+      label: "Verbosity",
+      value: String(options.defaults.verbosity),
+    },
+    {
+      name: "temperature",
+      label: "Temperature",
+      value: String(options.defaults.temperature),
+    },
+    { name: "top_p", label: "Top-p", value: String(options.defaults.top_p) },
+    {
+      name: "max_output_tokens",
+      label: "Token ceiling",
+      value: String(options.defaults.max_output_tokens),
+    },
+  ];
+  const saved = rows.filter((r) => options.sources[r.name] === "saved");
+
+  return (
+    <Card className="mb-6">
+      <div className="flex items-baseline gap-3">
+        <Title>What every chat runs on now</Title>
+        {saved.length > 0 && (
+          <span className="rounded bg-heal-teal-700/10 px-2 py-0.5 text-xs font-semibold text-heal-teal-900">
+            {saved.length} saved here
+          </span>
+        )}
+      </div>
+      <Text className="mt-1">
+        {saved.length === 0
+          ? "Every value is the deployment’s environment. Nothing has been overridden from this screen."
+          : `Saved values override the environment until they are cleared${
+              options.updated_by ? `. Last changed by ${options.updated_by}` : ""
+            }${
+              options.updated_at
+                ? ` on ${new Date(options.updated_at).toLocaleString()}`
+                : ""
+            }.`}
+      </Text>
+      <div className="mt-3 flex flex-wrap gap-x-8 gap-y-3">
+        {rows.map((row) => {
+          const isSaved = options.sources[row.name] === "saved";
+          return (
+            <div key={row.name}>
+              <div className="text-xs uppercase tracking-wide text-heal-ink-500">
+                {row.label}
+              </div>
+              <div className="text-sm font-semibold text-heal-ink-900">
+                {row.value}{" "}
+                {isSaved ? (
+                  <span className="text-xs font-normal text-heal-teal-800">
+                    saved
+                  </span>
+                ) : (
+                  <span className="text-xs font-normal text-heal-ink-500">
+                    from the environment
+                  </span>
+                )}
+              </div>
+              {isSaved && (
+                // The environment is still the default underneath. Showing what
+                // it says is what makes "clear this" a decision rather than a
+                // leap.
+                <div className="text-xs text-heal-ink-500">
+                  environment says {String(options.env_defaults[row.name])}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+      {saved.length > 0 && (
+        <button
+          type="button"
+          disabled={busy}
+          onClick={onRevert}
+          className="mt-4 text-xs text-link underline disabled:opacity-50"
+        >
+          Clear all saved values and follow the environment again
+        </button>
+      )}
     </Card>
   );
 }
@@ -569,7 +748,10 @@ function TimingsPanel({ result }: { result: PlaygroundResult }) {
 
 export default function Page() {
   const { popup, setPopup } = usePopup();
-  const { data: options } = useSWR<PlaygroundOptions>(OPTIONS_URL, fetcher);
+  const { data: options, mutate: reloadOptions } = useSWR<PlaygroundOptions>(
+    OPTIONS_URL,
+    fetcher
+  );
 
   const [question, setQuestion] = useState("");
   const [values, setValues] = useState<TunableValues | null>(null);
@@ -578,6 +760,7 @@ export default function Page() {
   const [retrievalOnly, setRetrievalOnly] = useState(false);
   const [result, setResult] = useState<PlaygroundResult | null>(null);
   const [busy, setBusy] = useState(false);
+  const [saving, setSaving] = useState(false);
 
   // The controls start on the server's defaults rather than on a copy compiled
   // into the bundle, so "default" on this screen always means the value this
@@ -621,6 +804,82 @@ export default function Page() {
     }
   };
 
+  /**
+   * Write settings the whole deployment will run on.
+   *
+   * The one action here that leaves the page. `body` carries only the keys
+   * being changed: an absent key means "leave it alone" and a null one means
+   * "clear it back to the environment", and conflating the two would quietly
+   * pin knobs the admin never touched.
+   */
+  const persist = async (
+    body: Record<string, number | string | null>,
+    message: string
+  ) => {
+    setSaving(true);
+    try {
+      const res = await fetch(DEFAULTS_URL, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        setPopup({ message: await errorMessage(res, "Save failed"), type: "error" });
+        return;
+      }
+      // Re-read rather than patching local state: the server clamps, and the
+      // screen must show the value it stored, not the one that was sent.
+      await reloadOptions();
+      // The controls now sit on the new deployment defaults, so nothing is
+      // marked "changed" straight after saving it.
+      setValues(null);
+      setChatModel("");
+      setClassifierModel("");
+      setPopup({ message, type: "success" });
+    } catch (e) {
+      setPopup({ message: `Save failed: ${e}`, type: "error" });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const saveDefaults = () => {
+    if (!options || !current) return;
+    const body = savePayload(current, options.defaults, chatModel, classifierModel);
+    const names = Object.keys(body);
+    if (names.length === 0) return;
+    if (
+      !window.confirm(
+        `Save ${names.join(", ")} as the deployment default?\n\n` +
+          "This changes how every answer is worded, for every user, from the " +
+          "next message onwards."
+      )
+    ) {
+      return;
+    }
+    void persist(body, `Saved ${names.length} setting(s) for every chat.`);
+  };
+
+  const revertDefaults = () => {
+    if (!options) return;
+    const saved = Object.entries(options.sources)
+      .filter(([, source]) => source === "saved")
+      .map(([name]) => name);
+    if (saved.length === 0) return;
+    if (
+      !window.confirm(
+        `Clear ${saved.join(", ")} and follow the environment again?`
+      )
+    ) {
+      return;
+    }
+    // Explicit nulls: this is a reset, not an omission.
+    void persist(
+      Object.fromEntries(saved.map((name) => [name, null])),
+      "Cleared. Every value follows the environment again."
+    );
+  };
+
   return (
     <div className="container mx-auto">
       {popup}
@@ -629,6 +888,14 @@ export default function Page() {
         title="Retrieval playground"
       />
       <ScopeNotice />
+
+      {options && (
+        <DeploymentDefaults
+          options={options}
+          onRevert={revertDefaults}
+          busy={saving}
+        />
+      )}
 
       {options && !options.knowledge_enabled && (
         <Card className="mb-6 border-error">
@@ -703,6 +970,15 @@ export default function Page() {
                         : "Decides only how the answer reads, not what it may claim."}
                     </p>
                   </div>
+                  {stage === "generation" && (
+                    <VerbosityPicker
+                      value={String(current.verbosity)}
+                      fallback={String(options.defaults.verbosity)}
+                      levels={options.verbosity_levels}
+                      cap={current.max_output_tokens}
+                      onChange={(next) => set({ verbosity: next })}
+                    />
+                  )}
                   {NUMERIC_TUNABLES.filter((t) => t.stage === stage).map(
                     (tunable) => (
                       <NumberKnob
@@ -726,37 +1002,81 @@ export default function Page() {
           </div>
         )}
 
-        {changed.length > 0 && (
+        {(changed.length > 0 || chatModel || classifierModel) && (
           <div className="mt-5 rounded border-l-4 border-l-amber-500 bg-amber-50 px-4 py-3">
             <div className="text-sm font-semibold text-amber-900">
-              This run will use {changed.length} non-default setting
-              {changed.length === 1 ? "" : "s"}
+              {changed.length > 0
+                ? `This run will use ${changed.length} non-default setting${
+                    changed.length === 1 ? "" : "s"
+                  }`
+                : "This run will use a different model"}
             </div>
             <div className="mt-1 text-xs text-amber-800">
-              {changed.map((name) => name.replace(/_/g, " ")).join(", ")} — for
-              this request only. Health workers are unaffected.
+              {[
+                ...changed.map((name) => name.replace(/_/g, " ")),
+                ...(chatModel ? [`chat model ${chatModel}`] : []),
+                ...(classifierModel
+                  ? [`classifier model ${classifierModel}`]
+                  : []),
+              ].join(", ")}{" "}
+              — for this request only. Health workers are unaffected.
             </div>
             {/* The tuning is worthless if you cannot keep the value you liked.
-                These are the exact lines to put in the environment. */}
-            <div className="mt-2 rounded bg-amber-100/70 px-3 py-2">
-              <div className="text-xs font-semibold text-amber-900">
-                To make this the default for every chat, set:
+                The wording knobs can be saved from here; the retrieval ones
+                are shown as the environment lines that would set them, which
+                is deliberate — see ScopeNotice. */}
+            {(changed.some((name) => isSaveable(name)) ||
+              chatModel ||
+              classifierModel) && (
+              <div className="mt-3 rounded bg-white/70 px-3 py-2">
+                <div className="text-xs font-semibold text-amber-900">
+                  Keep{" "}
+                  {changed
+                    .filter((name) => isSaveable(name))
+                    .map((name) => name.replace(/_/g, " "))
+                    .join(", ")}
+                  {chatModel || classifierModel ? " and the model choice" : ""}?
+                </div>
+                <Button
+                  size="xs"
+                  className="mt-2"
+                  loading={saving}
+                  disabled={saving}
+                  onClick={saveDefaults}
+                >
+                  Save as deployment default
+                </Button>
+                <div className="mt-1 text-xs text-amber-800">
+                  Applies to every chat from the next message. No restart.
+                </div>
               </div>
-              <pre className="mt-1 overflow-x-auto font-mono text-xs text-amber-900">
-                {changed
-                  .map((name) => {
-                    const tunable = NUMERIC_TUNABLES.find((t) => t.name === name);
-                    const envVar =
-                      tunable?.envVar ?? `HEAL_${name.toUpperCase()}`;
-                    return `${envVar}=${current ? current[name] : ""}`;
-                  })
-                  .join("\n")}
-              </pre>
-              <div className="mt-1 text-xs text-amber-800">
-                Then restart the API. Until you do, this is a playground result
-                and nothing else.
+            )}
+            {changed.some((name) => !isSaveable(name)) && (
+              <div className="mt-2 rounded bg-amber-100/70 px-3 py-2">
+                <div className="text-xs font-semibold text-amber-900">
+                  The retrieval settings are not saveable from here. To make
+                  them the default, set:
+                </div>
+                <pre className="mt-1 overflow-x-auto font-mono text-xs text-amber-900">
+                  {changed
+                    .filter((name) => !isSaveable(name))
+                    .map((name) => {
+                      const tunable = NUMERIC_TUNABLES.find(
+                        (t) => t.name === name
+                      );
+                      const envVar =
+                        tunable?.envVar ?? `HEAL_${name.toUpperCase()}`;
+                      return `${envVar}=${current ? current[name] : ""}`;
+                    })
+                    .join("\n")}
+                </pre>
+                <div className="mt-1 text-xs text-amber-800">
+                  Then restart the API. The score floor decides whether a dose
+                  may be quoted at all, so it is changed against measured
+                  results rather than from this screen.
+                </div>
               </div>
-            </div>
+            )}
             <button
               type="button"
               className="mt-2 text-xs text-amber-900 underline"

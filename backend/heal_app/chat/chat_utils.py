@@ -1,3 +1,4 @@
+from uuid import UUID
 import re
 from collections.abc import Callable
 from collections.abc import Iterator
@@ -286,7 +287,7 @@ def get_chunks_for_qa(
 
 
 def create_chat_chain(
-    chat_session_id: int,
+    chat_session_id: UUID,
     db_session: Session,
 ) -> tuple[ChatMessage, list[ChatMessage]]:
     """Build the linear chain of messages without including the root message"""

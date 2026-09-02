@@ -1038,17 +1038,56 @@ inference from the English scores. It is listed as such under *Limitations*.
 Feedback is the only signal that says whether any of this works in the field, so
 it is collected on the answer itself rather than buried in an admin export.
 
-**A five-star rating, not a thumbs pair.** Thumbs up/down forces a binary
+**A four-point rating, not a thumbs pair.** Thumbs up/down forces a binary
 judgement on a thing that is rarely binary: an answer can be correct but
-incomplete, or well-sourced but hard to act on. Five points give a health worker
-somewhere to put "useful but not quite", which is the most common real reaction
-and the one a binary control throws away. An optional comment stays available
-for the cases where the number is not enough.
+incomplete, or well-sourced but hard to act on. A graded scale gives a health
+worker somewhere to put "useful but not quite", which is the most common real
+reaction and the one a binary control throws away.
 
-Ratings aggregate per source and per answer through a **sigmoid**, so that the
-first few ratings move the score meaningfully and later ones move it less. A
-linear average lets a single early rating dominate, and lets a popular source
-accumulate an unbounded score; a bounded curve does neither.
+Four points rather than five, revised from the original five-point decision:
+an even scale has **no neutral middle to hide in**. A five-point midpoint is
+where undecided answers go to be uncounted, and the whole purpose of the signal
+is to know whether an answer was usable. Four also fits a phone screen at the
+point of care without the stars shrinking. 1 is worst, 4 is best.
+
+**The rating and the comment are separate actions.** The rating posts on the
+click; the comment box only appears if the user asks for it. The common case is
+someone confirming an answer was fine, and a dialog demanding prose for that is
+how feedback stops being given at all. The control is inline under the answer —
+no modal, no card, no heading — so it never competes with the answer itself.
+
+Ratings aggregate per source and per answer through a bounded,
+confidence-weighted curve:
+
+```text
+  score = 0.5 + (normalised_mean - 0.5) * n / (n + SMOOTHING)
+```
+
+so that the first few ratings move the score meaningfully and later ones move it
+less. A linear average lets a single early rating dominate, and lets a popular
+source accumulate an unbounded score; a bounded curve does neither. `SMOOTHING`
+is 5 — small enough that a genuinely bad source surfaces within a morning's use,
+large enough that one irritated afternoon does not condemn a guideline.
+
+At `n = 0` the score is exactly neutral, so **"nobody has said" and "opinion is
+evenly split" are the same number**. The count is therefore always reported
+beside the score, and no caller may read one without the other.
+
+Off-scale values are dropped rather than clamped. A 7 in the list is a bug
+upstream, and clamping it to 4 would launder that bug into a glowing review.
+
+**Per-source attribution goes through the citations actually stored on the
+message**, not through everything retrieved. A guideline is credited only with
+ratings for answers that really cited it; attributing every rating in a session
+to every retrieved source would punish a guideline for an answer it had no part
+in. Ratings aggregate across versions of a source, because "this guideline gets
+bad answers" is the question and a version bump should not reset the evidence.
+
+**Rows predating the rating are counted as thumbs, never converted.** The
+`is_positive` column is kept rather than dropped: a thumbs-up is somewhere in
+3..4 and a thumbs-down somewhere in 1..2, and inventing which would put
+fabricated numbers into a clinical review signal. Those rows carry a null
+rating and the aggregate skips them.
 
 **What the aggregate is allowed to do — and what it is not.** It is a *review
 signal*: it surfaces in the admin screens as "these are the answers and sources
@@ -1064,6 +1103,13 @@ users disliked answers built from it — with no audit trail, and no clinician i
 the loop. If reweighting is ever needed here it will be admin-set, versioned,
 recorded against a named actor, and visible. The curve is kept; the automatic
 authority over what a health worker gets told is not.
+
+Implemented in `heal/feedback/aggregate.py` (the pure curve, with tests),
+`heal/feedback/review.py` (the database side), and `heal/server/feedback_api.py`
+(`/manage/feedback/answers`, `/manage/feedback/sources`, worst first). The
+rating column arrives in migration `b7e3c9a41d52` with a range check in the
+database as well as the request model — the API is not the only writer, and one
+`psql` typo would otherwise skew every aggregate reading it.
 
 ---
 

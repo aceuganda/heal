@@ -13,6 +13,7 @@ from collections.abc import Iterator
 from dataclasses import dataclass
 from dataclasses import field
 from typing import TYPE_CHECKING
+from uuid import UUID
 
 from heal import config
 from heal.chat.prompt_builder import PromptBuilder
@@ -20,7 +21,9 @@ from heal.chat.stream_processing import StreamProcessor
 from heal.knowledge.models import SearchOutcome
 from heal.knowledge.models import RetrievedChunk
 from heal.knowledge.models import SourceRef
+from heal.llm.registry import default_model
 from heal.llm.service import stream_with_failover
+from heal.llm.settings import GenerationSettings
 from heal.logger import get_logger
 from heal.medical_guidance import audit
 from heal.medical_guidance.routes import emergency_preamble
@@ -44,7 +47,7 @@ class AgentRequest:
     # Prior turns as (is_user, text), oldest first.
     history: list[tuple[bool, str]] = field(default_factory=list)
     language: str = "english"
-    chat_session_id: int | None = None
+    chat_session_id: UUID | None = None
     message_id: int | None = None
     model_id: str | None = None
 
@@ -141,9 +144,14 @@ class MedicalGuidanceAgent:
             self._audit(request, result, response)
             return iter([message]), _fill(response, message)
 
+        # The deployment's own generation settings, read per turn so a change
+        # saved in the admin playground reaches the next message rather than
+        # the next restart.
+        generation = GenerationSettings()
         builder = PromptBuilder(
             knowledge_enabled=self.knowledge_enabled,
             route_instruction=route.instruction,
+            length_instruction=generation.instruction,
             history=request.history,
             context=[c.text for c in outcome.chunks],
             context_labels=[c.source.label() for c in outcome.chunks],
@@ -158,15 +166,17 @@ class MedicalGuidanceAgent:
         processor = StreamProcessor(prefix=prefix)
 
         def stream() -> Iterator[str]:
-            tokens, generation = stream_with_failover(request.model_id, prompt)
+            tokens, gen = stream_with_failover(
+                request.model_id, prompt, generation_settings=generation
+            )
             try:
                 yield from processor.process(tokens)
             finally:
                 # Read after the stream is consumed: which model answered is
                 # only settled once it has.
                 response.text = processor.text
-                response.answering_model = generation.model_id
-                response.model_failed_over = generation.failed_over
+                response.answering_model = gen.model_id
+                response.model_failed_over = gen.failed_over
                 self._audit(request, result, response)
 
         return stream(), response
@@ -211,7 +221,13 @@ class MedicalGuidanceAgent:
     ) -> None:
         audit.emit(
             audit.RoutingEvent(
-                chat_session_id=request.chat_session_id,
+                # Stringified: the event is serialised to JSON, which has no
+                # UUID type.
+                chat_session_id=(
+                    str(request.chat_session_id)
+                    if request.chat_session_id is not None
+                    else None
+                ),
                 message_id=request.message_id,
                 intent=result.intent.value,
                 classified=result.classified,
@@ -224,9 +240,12 @@ class MedicalGuidanceAgent:
                 classifier_model=result.model_id,
                 # The model that answered, falling back to the one requested
                 # for the paths that never reached a model at all.
+                # The deployment's own model, not config.CHAT_MODEL: an admin
+                # may have saved a different default, and an audit line naming
+                # the environment's model would be wrong about who answered.
                 chat_model=response.answering_model
                 or request.model_id
-                or config.CHAT_MODEL,
+                or default_model().id,
                 model_failed_over=response.model_failed_over,
                 safety_version=safety_version(),
                 knowledge_enabled=self.knowledge_enabled,

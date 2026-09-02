@@ -41,15 +41,93 @@ export interface TunableValues {
   temperature: number;
   max_output_tokens: number;
   top_p: number;
+  /** "brief" | "standard" | "detailed". */
+  verbosity: string;
+}
+
+/** One answer length, as the server defines it. */
+export interface VerbosityLevel {
+  name: string;
+  label: string;
+  hint: string;
+  /** Tokens this level is allowed; the applied cap is the smaller of this and
+   * max_output_tokens, which is why "detailed" can still stop early. */
+  budget: number;
 }
 
 export interface PlaygroundOptions {
   models: ModelOption[];
   chat_model: string;
   classifier_model: string;
+  /**
+   * The EFFECTIVE defaults: the environment with any saved override applied.
+   * This is what the deployment actually runs on, and therefore the only
+   * honest baseline for the screen's "changed" marks.
+   */
   defaults: TunableValues;
   bounds: Record<string, [number, number]>;
   knowledge_enabled: boolean;
+  /**
+   * What the environment alone says, before anything an admin saved. Keyed by
+   * the same names, but only for the knobs that can be saved — the model ids
+   * are in here and the retrieval knobs are not.
+   */
+  env_defaults: Record<string, number | string>;
+  /** Knob → "saved" or "environment". */
+  sources: Record<string, string>;
+  verbosity_levels: VerbosityLevel[];
+  updated_at: string | null;
+  updated_by: string | null;
+}
+
+/**
+ * The knobs that can be SAVED as the deployment's default, as opposed to tried
+ * for one run.
+ *
+ * Only the wording ones and the model choice. The retrieval knobs are absent
+ * deliberately: the score floor decides whether a dose may be quoted at all,
+ * it is set from measured results on the clinical eval set, and it stays in
+ * the environment where changing it is a reviewed act rather than a slider and
+ * a save button. The server enforces this too — this list only keeps the
+ * screen from offering something that would be refused.
+ */
+export const SAVEABLE = [
+  "temperature",
+  "max_output_tokens",
+  "top_p",
+  "verbosity",
+] as const;
+
+export type SaveableName = (typeof SAVEABLE)[number];
+
+export function isSaveable(name: string): name is SaveableName {
+  return (SAVEABLE as readonly string[]).includes(name);
+}
+
+/**
+ * The body for a save: the wording knobs that differ from what is deployed,
+ * plus either model picker that has been pointed somewhere else.
+ *
+ * A key that is absent means "leave it alone", which is why nothing unchanged
+ * is included — saving all of them would record a deliberate choice for knobs
+ * the admin never touched, and those would then stop following the
+ * environment.
+ */
+export function savePayload(
+  values: TunableValues,
+  defaults: TunableValues,
+  chatModel: string,
+  classifierModel: string
+): Record<string, number | string> {
+  const body: Record<string, number | string> = {};
+  for (const name of SAVEABLE) {
+    if (isOverridden(values[name], defaults[name])) {
+      body[name] = values[name];
+    }
+  }
+  if (chatModel) body.chat_model = chatModel;
+  if (classifierModel) body.classifier_model = classifierModel;
+  return body;
 }
 
 export interface SettingUsed {
@@ -198,8 +276,8 @@ export const NUMERIC_TUNABLES: Tunable[] = [
   },
   {
     name: "max_output_tokens",
-    label: "Reply length",
-    hint: "The verbosity cap. A health worker reading on a phone mid-consultation is not helped by six paragraphs.",
+    label: "Hard token ceiling",
+    hint: "A cap, not a length control — a model that hits it stops mid-sentence. Ask for length with Verbosity; this only stops a runaway answer.",
     step: 64,
     float: false,
     stage: "generation",
@@ -220,13 +298,16 @@ export const NUMERIC_TUNABLES: Tunable[] = [
 const EPSILON = 1e-9;
 
 export function isOverridden(
-  value: number | boolean,
-  fallback: number | boolean
+  value: number | boolean | string,
+  fallback: number | boolean | string
 ): boolean {
-  if (typeof value === "boolean" || typeof fallback === "boolean") {
-    return value !== fallback;
+  // Only two numbers get the tolerance. Anything else — a switch, a verbosity
+  // level — is compared exactly, and a mismatched pair (a number against a
+  // string) is a difference by definition.
+  if (typeof value === "number" && typeof fallback === "number") {
+    return Math.abs(value - fallback) > EPSILON;
   }
-  return Math.abs(value - fallback) > EPSILON;
+  return value !== fallback;
 }
 
 /**
@@ -250,6 +331,7 @@ export function changedNames(
     "temperature",
     "max_output_tokens",
     "top_p",
+    "verbosity",
   ];
   return order.filter((name) => isOverridden(values[name], defaults[name]));
 }

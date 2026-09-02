@@ -54,7 +54,9 @@ export function AppSplashScreen() {
         </div>
         <span className="heal-splash__name">Heal</span>
         <span className="heal-splash__line" />
-        <span className="heal-splash__tagline">Public health, closer to home</span>
+        {/* The name written out. "Heal" alone reads as a verb; what the
+            product is only becomes clear when it is spelled out. */}
+        <span className="heal-splash__tagline">AI for Health Equity</span>
       </div>
     </div>
   );

@@ -74,7 +74,7 @@ export function ChatSessionDisplay({
               />
             ) : (
               <p className="text-ellipsis break-all line-clamp-1 mr-3 text-emphasis">
-                {chatName || `Chat ${chatSession.id}`}
+                {chatName || "Untitled chat"}
               </p>
             )}
             {isSelected &&

@@ -26,14 +26,15 @@ def get_default_llm(
     custom_llm_provider: str | None = None,
     temperature: float | None = None,
     max_output_tokens: int | None = None,
+    top_p: float | None = None,
 ) -> LLM:
     """A single place to fetch the configured LLM for Danswer
     Also allows overriding certain LLM defaults
 
     `api_base`/`custom_llm_provider` point the client at an OpenAI-compatible
-    endpoint we host ourselves; `temperature`/`max_output_tokens` are the
-    per-request wording knobs. All four keep the module defaults when omitted,
-    so existing callers are unaffected."""
+    endpoint we host ourselves; `temperature`/`max_output_tokens`/`top_p` are
+    the per-request wording knobs. All of them keep the module defaults when
+    omitted, so existing callers are unaffected."""
     if DISABLE_GENERATIVE_AI:
         raise GenAIDisabledException()
 
@@ -70,4 +71,7 @@ def get_default_llm(
             if max_output_tokens is not None
             else GEN_AI_MAX_OUTPUT_TOKENS
         ),
+        # Forwarded as None when unset so the client leaves nucleus sampling to
+        # the provider's own default rather than pinning it to 1.0.
+        top_p=top_p,
     )

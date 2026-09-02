@@ -7,11 +7,13 @@ from typing import NotRequired
 from typing import Optional
 from typing import TypedDict
 from uuid import UUID
+from uuid import uuid4
 
 from fastapi_users.db import SQLAlchemyBaseOAuthAccountTableUUID
 from fastapi_users.db import SQLAlchemyBaseUserTableUUID
 from fastapi_users_db_sqlalchemy.access_token import SQLAlchemyBaseAccessTokenTableUUID
 from sqlalchemy import Boolean
+from sqlalchemy import CheckConstraint
 from sqlalchemy import DateTime
 from sqlalchemy import Enum
 from sqlalchemy import Float
@@ -169,8 +171,8 @@ class ChatMessage__SearchDoc(Base):
     chat_message_id: Mapped[int] = mapped_column(
         ForeignKey("chat_message.id"), primary_key=True
     )
-    search_doc_id: Mapped[int] = mapped_column(
-        ForeignKey("search_doc.id"), primary_key=True
+    search_doc_id: Mapped[UUID] = mapped_column(
+        postgresql.UUID(as_uuid=True), ForeignKey("search_doc.id"), primary_key=True
     )
 
 
@@ -471,7 +473,13 @@ class SearchDoc(Base):
 
     __tablename__ = "search_doc"
 
-    id: Mapped[int] = mapped_column(primary_key=True)
+    # A UUID, not a sequence. This id reaches the browser in a message's
+    # citation map and is taken straight off the URL by the gloss endpoint, so
+    # a sequential one can be walked to read every cited passage in the
+    # deployment.
+    id: Mapped[UUID] = mapped_column(
+        postgresql.UUID(as_uuid=True), primary_key=True, default=uuid4
+    )
     document_id: Mapped[str] = mapped_column(String)
     chunk_ind: Mapped[int] = mapped_column(Integer)
     semantic_id: Mapped[str] = mapped_column(String)
@@ -504,7 +512,15 @@ class SearchDoc(Base):
 class ChatSession(Base):
     __tablename__ = "chat_session"
 
-    id: Mapped[int] = mapped_column(primary_key=True)
+    # A UUID, not a sequence. The session id is the one identifier that reaches
+    # a URL (`/chat?chatId=...`), and a sequential one tells anybody who sees it
+    # how much the deployment is being used, and lets them probe for sessions
+    # that exist. It matters most where auth is disabled: ownership is then
+    # `user_id IS NULL` for everyone, so a guessable id is the only thing
+    # standing between one anonymous visitor and another's conversation.
+    id: Mapped[UUID] = mapped_column(
+        postgresql.UUID(as_uuid=True), primary_key=True, default=uuid4
+    )
     user_id: Mapped[UUID | None] = mapped_column(ForeignKey("user.id"), nullable=True)
     persona_id: Mapped[int] = mapped_column(ForeignKey("persona.id"))
     description: Mapped[str] = mapped_column(Text)
@@ -539,8 +555,12 @@ class ChatMessage(Base):
 
     __tablename__ = "chat_message"
 
+    # Message ids stay sequential: they never appear in a URL and are only ever
+    # reached through a session whose ownership has already been checked.
     id: Mapped[int] = mapped_column(primary_key=True)
-    chat_session_id: Mapped[int] = mapped_column(ForeignKey("chat_session.id"))
+    chat_session_id: Mapped[UUID] = mapped_column(
+        postgresql.UUID(as_uuid=True), ForeignKey("chat_session.id")
+    )
     parent_message: Mapped[int | None] = mapped_column(Integer, nullable=True)
     latest_child_message: Mapped[int | None] = mapped_column(Integer, nullable=True)
     message: Mapped[str] = mapped_column(Text)
@@ -552,8 +572,9 @@ class ChatMessage(Base):
     # the LLM's context (not included in the history of messages)
     token_count: Mapped[int] = mapped_column(Integer)
     message_type: Mapped[MessageType] = mapped_column(Enum(MessageType))
-    # Maps the citation numbers to a SearchDoc id
-    citations: Mapped[dict[int, int]] = mapped_column(postgresql.JSONB(), nullable=True)
+    # Maps the citation number to a SearchDoc id. The id is a UUID and JSON has
+    # no UUID type, so the values are strings.
+    citations: Mapped[dict[int, str]] = mapped_column(postgresql.JSONB(), nullable=True)
     # Only applies for LLM
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
     time_sent: Mapped[datetime.datetime] = mapped_column(
@@ -788,4 +809,79 @@ class TaskQueueState(Base):
     )
     register_time: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class ModelSettings(Base):
+    """The deployment's generation defaults, as an admin has amended them.
+
+    One row, id 1, enforced by a check constraint. This is configuration, not
+    history: there is exactly one answer to "what temperature does this
+    deployment run at", and a table that could hold two of them would make that
+    question ambiguous at the moment it matters most.
+
+    **Every column is nullable and null means "use the environment".** The
+    environment variables in `heal/config.py` remain the source of truth; this
+    table only records where an admin has decided otherwise. That is what lets
+    a deployment be re-pointed by changing env vars without first hunting
+    through the database for a saved value silently overriding them -- and it
+    is why clearing a field here is a real operation, not a delete of the row.
+
+    Read through `heal/llm/defaults.py`, never directly: that module holds the
+    env-fallback and the cache, and a second reader would eventually disagree
+    with it about what the deployment is actually running.
+    """
+
+    __tablename__ = "model_settings"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+
+    # Wording knobs. Bounds are enforced here as well as in the request model:
+    # the API is not the only writer, and a temperature of 40 written from a
+    # psql session would change what a clinical answer sounds like with nothing
+    # to say why.
+    temperature: Mapped[float | None] = mapped_column(Float, nullable=True)
+    max_output_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    top_p: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+    # "brief" | "standard" | "detailed". Not a native enum: adding a level
+    # should be a line in `heal/llm/settings.py`, not a migration that rewrites
+    # a Postgres type.
+    verbosity: Mapped[str | None] = mapped_column(String, nullable=True)
+
+    # Catalogue ids from heal/llm/registry.py. Validated on write against the
+    # catalogue -- an id that does not resolve would take the chat path down on
+    # the next message rather than at the moment somebody saved it.
+    chat_model: Mapped[str | None] = mapped_column(String, nullable=True)
+    classifier_model: Mapped[str | None] = mapped_column(String, nullable=True)
+
+    updated_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    # Who last changed it. Nullable because the row may be seeded by a
+    # migration or a script, and SET NULL rather than CASCADE because deleting
+    # an admin must not silently delete the deployment's configuration.
+    updated_by_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("user.id", ondelete="SET NULL"), nullable=True
+    )
+
+    __table_args__ = (
+        CheckConstraint("id = 1", name="model_settings_single_row"),
+        CheckConstraint(
+            "temperature IS NULL OR (temperature >= 0 AND temperature <= 1)",
+            name="model_settings_temperature_range",
+        ),
+        CheckConstraint(
+            "max_output_tokens IS NULL OR "
+            "(max_output_tokens >= 64 AND max_output_tokens <= 4096)",
+            name="model_settings_max_output_tokens_range",
+        ),
+        CheckConstraint(
+            "top_p IS NULL OR (top_p >= 0 AND top_p <= 1)",
+            name="model_settings_top_p_range",
+        ),
+        CheckConstraint(
+            "verbosity IS NULL OR verbosity IN ('brief', 'standard', 'detailed')",
+            name="model_settings_verbosity_known",
+        ),
     )

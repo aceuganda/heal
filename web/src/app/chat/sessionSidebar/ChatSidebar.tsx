@@ -22,7 +22,7 @@ import { groupSessionsByDateRange } from "../lib";
 
 interface ChatSidebarProps {
   existingChats: ChatSession[];
-  currentChatId: number | null;
+  currentChatId: string | null;
   user: User | null;
 }
 

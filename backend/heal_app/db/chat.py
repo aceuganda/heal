@@ -30,7 +30,7 @@ logger = setup_logger()
 
 
 def get_chat_session_by_id(
-    chat_session_id: int, user_id: UUID | None, db_session: Session
+    chat_session_id: UUID, user_id: UUID | None, db_session: Session
 ) -> ChatSession:
     stmt = select(ChatSession).where(
         ChatSession.id == chat_session_id, ChatSession.user_id == user_id
@@ -89,7 +89,7 @@ def create_chat_session(
 
 
 def update_chat_session(
-    user_id: UUID | None, chat_session_id: int, description: str, db_session: Session
+    user_id: UUID | None, chat_session_id: UUID, description: str, db_session: Session
 ) -> ChatSession:
     chat_session = get_chat_session_by_id(
         chat_session_id=chat_session_id, user_id=user_id, db_session=db_session
@@ -156,7 +156,7 @@ def get_chat_message(
 
 
 def get_chat_messages_by_session(
-    chat_session_id: int,
+    chat_session_id: UUID,
     user_id: UUID | None,
     db_session: Session,
     skip_permission_check: bool = False,
@@ -226,7 +226,7 @@ def create_new_chat_message(
     error: str | None = None,
     reference_docs: list[DBSearchDoc] | None = None,
     # Maps the citation number [n] to the DB SearchDoc
-    citations: dict[int, int] | None = None,
+    citations: dict[int, str] | None = None,
     commit: bool = True,
 ) -> ChatMessage:
     new_chat_message = ChatMessage(

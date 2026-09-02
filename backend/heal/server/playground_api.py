@@ -47,11 +47,13 @@ from heal.knowledge.settings import ENV_VARS as RETRIEVAL_ENV_VARS
 from heal.knowledge.settings import resolve
 from heal.knowledge.settings import RetrievalSettings
 from heal.knowledge.settings import SettingUsed
+from heal.llm import defaults as saved_defaults
 from heal.llm.settings import BOUNDS as GENERATION_BOUNDS
 from heal.llm.settings import ENV_VARS as GENERATION_ENV_VARS
 from heal.llm.settings import GenerationSettings
 from heal.llm.settings import resolve as resolve_generation
 from heal.llm.settings import SettingUsed as GenerationSettingUsed
+from heal.llm.settings import VERBOSITY_LEVELS
 from heal.knowledge.store import KnowledgeStore
 from heal.knowledge.store import QdrantKnowledgeStore
 from heal.knowledge.store import select_context
@@ -61,6 +63,7 @@ from heal.llm.service import build_llm
 from heal.llm import get_model
 from heal.llm import to_provider_messages
 from heal.logger import get_logger
+from heal.medical_guidance import audit
 from heal.medical_guidance.routes import emergency_preamble
 from heal.medical_guidance.routes import MedicalIntent
 from heal.medical_guidance.routes import Route
@@ -118,6 +121,10 @@ class PlaygroundRequest(BaseModel):
     temperature: float | None = None
     max_output_tokens: int | None = None
     top_p: float | None = None
+    # "brief" | "standard" | "detailed". Applied as a line in the prompt and as
+    # a ceiling on the token cap, so trying a level here shows the same answer
+    # a health worker would get if it were saved.
+    verbosity: str | None = None
 
     # Retrieval only: skip generation entirely. Tuning a floor means running
     # the same question many times, and paying for an answer nobody reads is
@@ -256,6 +263,18 @@ class ModelView(BaseModel):
     notes: str = ""
 
 
+class VerbosityView(BaseModel):
+    """One answer length an admin can choose."""
+
+    name: str
+    label: str
+    hint: str
+    # Tokens this level is allowed. The applied cap is the smaller of this and
+    # `max_output_tokens`, so the screen can explain why a "detailed" answer
+    # still stops at the configured ceiling.
+    budget: int
+
+
 class OptionsResponse(BaseModel):
     """Everything the screen needs to draw its controls truthfully.
 
@@ -269,9 +288,69 @@ class OptionsResponse(BaseModel):
     classifier_model: str
     # `Any` for the same reason as SettingView.value: these are floats, ints
     # and one bool, and a union would flatten them all to the first member.
+    #
+    # These are the EFFECTIVE defaults -- the environment with any saved
+    # override applied -- because that is what the deployment actually runs on,
+    # and it is the only honest baseline for the screen's "changed" marks.
     defaults: dict[str, Any]
     bounds: dict[str, list[float]]
     knowledge_enabled: bool
+
+    # What the environment alone says, before anything saved. Sent so the
+    # screen can offer "back to the environment" as a real choice and show what
+    # that would mean.
+    env_defaults: dict[str, Any] = Field(default_factory=dict)
+    # Knob -> "saved" or "environment". A value equal to the environment's is
+    # still reported as saved: somebody chose it, and hiding that would make a
+    # deliberate decision look like a default nobody has reviewed.
+    sources: dict[str, str] = Field(default_factory=dict)
+    verbosity_levels: list[VerbosityView] = Field(default_factory=list)
+    # Byline for the saved settings; both null when nothing has been saved.
+    updated_at: str | None = None
+    updated_by: str | None = None
+
+
+class SavedDefaults(BaseModel):
+    """A change to what the deployment runs on, for every chat, from now on.
+
+    Every field is optional, and the three states are distinguished on purpose:
+
+      * absent  -- leave this knob exactly as it is
+      * null    -- clear it back to the environment variable
+      * a value -- save it
+
+    The set of fields the body actually carried is what separates the first
+    two, which is why this uses a plain optional rather than a sentinel:
+    "reset temperature" and "I did not touch temperature" are different
+    requests and the API has to be able to hear the difference.
+    """
+
+    temperature: float | None = None
+    max_output_tokens: int | None = None
+    top_p: float | None = None
+    verbosity: str | None = None
+    chat_model: str | None = None
+    classifier_model: str | None = None
+
+    class Config:
+        # An unknown key is a 422, not a shrug. Saving is the one action here
+        # that changes what health workers receive, and a request that names a
+        # knob this endpoint will not write -- a retrieval setting, say, or a
+        # misspelling -- has to be told so rather than quietly half-applied.
+        extra = "forbid"
+
+
+class SavedDefaultsResponse(BaseModel):
+    """The deployment's settings after a save, as the server now reads them."""
+
+    defaults: dict[str, Any]
+    env_defaults: dict[str, Any]
+    sources: dict[str, str]
+    # The knobs this request actually changed, so the screen can confirm the
+    # change rather than the whole state.
+    changed: dict[str, Any]
+    updated_at: str | None = None
+    updated_by: str | None = None
 
 
 def _resolve_model(model_id: str | None, field: str) -> str:
@@ -403,6 +482,8 @@ def playground_options(
     """Model catalogue and the deployment's own defaults, retrieval and generation."""
     defaults = RetrievalSettings()
     generation_defaults = GenerationSettings()
+    effective = saved_defaults.effective()
+    updated_at, updated_by = saved_defaults.last_change()
     return OptionsResponse(
         models=[
             ModelView(
@@ -422,12 +503,13 @@ def playground_options(
             )
             for spec in all_models()
         ],
-        chat_model=config.CHAT_MODEL,
-        classifier_model=config.CLASSIFIER_MODEL,
+        chat_model=effective["chat_model"],
+        classifier_model=effective["classifier_model"],
         defaults={
             "temperature": generation_defaults.temperature,
             "max_output_tokens": generation_defaults.max_output_tokens,
             "top_p": generation_defaults.top_p,
+            "verbosity": generation_defaults.verbosity,
             "min_retrieval_score": defaults.min_retrieval_score,
             "hybrid_alpha": defaults.hybrid_alpha,
             "hybrid_search": defaults.hybrid_search,
@@ -440,7 +522,107 @@ def playground_options(
             for name, (low, high) in {**BOUNDS, **GENERATION_BOUNDS}.items()
         },
         knowledge_enabled=config.KNOWLEDGE_ENABLED,
+        env_defaults=saved_defaults.env_defaults(),
+        sources=saved_defaults.sources(),
+        verbosity_levels=[
+            VerbosityView(
+                name=level.name,
+                label=level.label,
+                hint=level.hint,
+                budget=level.budget,
+            )
+            for level in VERBOSITY_LEVELS.values()
+        ],
+        updated_at=updated_at.isoformat() if updated_at else None,
+        updated_by=updated_by,
     )
+
+
+@router.put("/defaults")
+def save_defaults(
+    request: SavedDefaults,
+    user: User | None = Depends(current_super_admin_user),
+) -> SavedDefaultsResponse:
+    """Change what every chat runs on, not just this screen's next run.
+
+    This is the one endpoint here that outlives its request. Everything else in
+    this module is deliberately per-run -- see the module docstring -- and the
+    difference is not a detail: a temperature saved here is the temperature the
+    next health worker's answer is written at.
+
+    Which is why the retrieval knobs are NOT settable through it. The score
+    floor decides whether a dose may be quoted at all; it is a clinical-safety
+    parameter, it is set from measured results on the eval set, and it stays in
+    the deployment's environment where changing it is a reviewed act.
+    """
+    # Only what the caller actually sent. An absent field is untouched; a field
+    # sent as null is a deliberate reset to the environment. `__fields_set__`
+    # is pydantic v1's record of which is which -- without it the two collapse
+    # into "null" and every save would clear the knobs it did not mention.
+    sent = request.__fields_set__
+    values = {
+        name: getattr(request, name) for name in saved_defaults.FIELDS if name in sent
+    }
+    if not values:
+        raise HTTPException(status_code=422, detail="No settings were provided")
+
+    cleaned = {name: _validated(name, value) for name, value in values.items()}
+
+    try:
+        effective = saved_defaults.save(
+            cleaned, actor_id=user.id if user is not None else None
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    audit.emit(
+        audit.SettingsChangeEvent(
+            changed=cleaned,
+            actor_id=str(user.id) if user is not None else None,
+        )
+    )
+
+    updated_at, updated_by = saved_defaults.last_change()
+    return SavedDefaultsResponse(
+        defaults=effective,
+        env_defaults=saved_defaults.env_defaults(),
+        sources=saved_defaults.sources(),
+        changed=cleaned,
+        updated_at=updated_at.isoformat() if updated_at else None,
+        updated_by=updated_by,
+    )
+
+
+def _validated(name: str, value: Any) -> Any:
+    """One saved value, checked the way the run path would check it.
+
+    Null passes straight through: it means "clear this back to the
+    environment", and there is nothing to validate about not having a value.
+
+    Numbers are CLAMPED rather than rejected, exactly as `resolve()` clamps a
+    per-run override -- a slider at its end is a legitimate thing to ask for.
+    Model ids and verbosity levels are REFUSED instead, because there is no
+    nearest valid value to pull them towards and a silent substitution would
+    save a model the admin did not choose.
+    """
+    if value is None:
+        return None
+
+    if name in ("chat_model", "classifier_model"):
+        return _resolve_model(str(value), name)
+
+    if name == "verbosity":
+        if str(value) not in VERBOSITY_LEVELS:
+            raise HTTPException(
+                status_code=422,
+                detail=f"verbosity: unknown level '{value}'. Known: "
+                f"{', '.join(VERBOSITY_LEVELS)}",
+            )
+        return str(value)
+
+    low, high = GENERATION_BOUNDS[name]
+    bounded = max(low, min(high, float(value)))
+    return int(bounded) if isinstance(value, int) else bounded
 
 
 @router.post("/query")
@@ -482,6 +664,7 @@ async def run_query(
             "temperature": request.temperature,
             "max_output_tokens": request.max_output_tokens,
             "top_p": request.top_p,
+            "verbosity": request.verbosity,
         }
     )
 
@@ -615,9 +798,14 @@ def _generate(
     prepended, because an answer shown here without it would not be the answer
     a health worker would have received.
     """
+    gen = generation or GenerationSettings()
     builder = PromptBuilder(
         knowledge_enabled=config.KNOWLEDGE_ENABLED,
         route_instruction=route.instruction,
+        # The verbosity level is half a prompt and half a token cap, and the
+        # prompt half is the one that shapes the answer. Omitting it here would
+        # show an admin a longer answer than the level they picked produces.
+        length_instruction=gen.instruction,
         context=[c.text for c in context],
         context_labels=[c.source.label() for c in context],
     )
@@ -625,7 +813,7 @@ def _generate(
 
     try:
         spec = get_model(chat_model) if chat_model else default_model()
-        llm = build_llm(spec, generation=generation)
+        llm = build_llm(spec, generation=gen)
         text = "".join(llm.stream(to_provider_messages(builder.build(question))))
     except Exception as exc:  # noqa: BLE001 -- the report carries the failure
         logger.error("Playground generation failed: %s", exc)
