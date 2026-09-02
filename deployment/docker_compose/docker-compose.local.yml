@@ -72,6 +72,13 @@ services:
       - HEAL_ENABLED_CHAT_MODELS=${HEAL_ENABLED_CHAT_MODELS:-}
       - HEAL_LLM_TIMEOUT=${HEAL_LLM_TIMEOUT:-}
       - HEAL_EMERGENCY_CONTACT=${HEAL_EMERGENCY_CONTACT:-}
+      # Self-hosted model. Set HEAL_SELF_HOSTED_URL to add it to the catalogue
+      # as `self-hosted`; leave it empty and nothing changes. The address is
+      # internal, so it lives here and in .env, never in source.
+      - HEAL_SELF_HOSTED_URL=${HEAL_SELF_HOSTED_URL:-}
+      - HEAL_SELF_HOSTED_MODEL=${HEAL_SELF_HOSTED_MODEL:-}
+      - HEAL_SELF_HOSTED_CONTEXT_TOKENS=${HEAL_SELF_HOSTED_CONTEXT_TOKENS:-}
+      - HEAL_SELF_HOSTED_API_KEY=${HEAL_SELF_HOSTED_API_KEY:-}
       # Gen AI Settings
       - GEN_AI_MODEL_PROVIDER=${GEN_AI_MODEL_PROVIDER:-openai}
       - GEN_AI_MODEL_VERSION=${GEN_AI_MODEL_VERSION:-gpt-4o-mini}

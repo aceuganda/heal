@@ -101,7 +101,7 @@ function ReferenceContent({
             <p className="text-xs font-medium uppercase tracking-wide text-subtle">
               Relevant excerpt
             </p>
-            <p className="mt-2 text-sm leading-6 text-emphasis">{excerpt}</p>
+            <p className="mt-2 text-xs leading-5 text-emphasis">{excerpt}</p>
           </div>
         )}
 
@@ -166,7 +166,10 @@ export function ReferenceDrawer({
 
   return (
     <>
-      <aside className="hidden h-screen w-80 shrink-0 border-l border-border bg-background lg:block">
+      {/* ChatLayout's header is `absolute top-0`, so it overlays this panel
+          rather than pushing it down. Without the same pt-[84px] the sidebar
+          uses, the close button renders underneath it and can't be clicked. */}
+      <aside className="hidden h-screen w-80 shrink-0 border-l border-border bg-background lg:block lg:pt-[84px]">
         <ReferenceContent
           reference={reference}
           onClose={onClose}

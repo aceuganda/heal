@@ -17,6 +17,7 @@ from heal.knowledge.models import Chunk
 from heal.knowledge.models import RetrievedChunk
 from heal.knowledge.models import SourceRef
 from heal.knowledge.settings import BOUNDS
+from heal.llm.settings import BOUNDS as GENERATION_BOUNDS
 from heal.knowledge.settings import resolve
 from heal.knowledge.settings import RetrievalSettings
 from heal.medical_guidance.intent import MedicalIntent
@@ -437,4 +438,15 @@ class TestOptions:
     def test_the_bounds_the_screen_draws_are_the_ones_enforced(self) -> None:
         body = client_as(UserRole.ADMIN).get("/manage/playground/options").json()
         assert body["bounds"]["min_retrieval_score"] == [0.0, 1.0]
-        assert body["bounds"] == {k: list(v) for k, v in BOUNDS.items()}
+        # Both stages, because the screen draws both sets of sliders.
+        assert body["bounds"] == {
+            k: list(v) for k, v in {**BOUNDS, **GENERATION_BOUNDS}.items()
+        }
+
+    def test_generation_defaults_and_bounds_are_offered(self) -> None:
+        body = client_as(UserRole.ADMIN).get("/manage/playground/options").json()
+        assert body["defaults"]["temperature"] == config.TEMPERATURE
+        assert body["defaults"]["max_output_tokens"] == config.MAX_OUTPUT_TOKENS
+        # Temperature stops at 1.0, not the 2.0 some providers allow: above 1.0
+        # a model paraphrases numbers, and this one quotes doses.
+        assert body["bounds"]["temperature"] == [0.0, 1.0]

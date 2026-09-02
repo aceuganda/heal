@@ -73,6 +73,15 @@ export const ChatSidebar = ({
     return () => window.removeEventListener("toggle-chat-sidebar", toggleSidebar);
   }, []);
 
+  // Mirrors open state back to the header's toggle button, which owns the
+  // close control now (see Header.tsx), so its icon/label stay in sync even
+  // when the sidebar closes itself (mobile overlay, New Chat).
+  useEffect(() => {
+    window.dispatchEvent(
+      new CustomEvent("chat-sidebar-state", { detail: isSidebarOpen })
+    );
+  }, [isSidebarOpen]);
+
   return (
     <div className="relative">
       {isSidebarOpen && (
@@ -91,11 +100,9 @@ export const ChatSidebar = ({
         `}
         id="chat-sidebar"
       >
-
-
         <Link
           href="/chat"
-          className="mx-3 mt-5"
+          className="mx-3 mt-3"
           onClick={() => setIsSidebarOpen(false)}
         >
           <BasicClickable fullWidth>

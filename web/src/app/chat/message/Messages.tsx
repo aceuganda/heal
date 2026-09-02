@@ -21,10 +21,16 @@ import { citationKeyFromHref, linkifyCitations } from "./citationMarkers";
 export const Hoverable: React.FC<{
   children: JSX.Element;
   onClick?: () => void;
-}> = ({ children, onClick }) => {
+  active?: boolean;
+}> = ({ children, onClick, active }) => {
   return (
     <div
-      className="hover:bg-neutral-300 p-2 rounded h-fit cursor-pointer"
+      className={
+        "p-2 rounded h-fit cursor-pointer " +
+        (active
+          ? "bg-heal-teal-50 text-accent"
+          : "text-emphasis hover:bg-neutral-300")
+      }
       onClick={onClick}
     >
       {children}
@@ -60,6 +66,7 @@ export const AIMessage = ({
   isComplete,
   hasDocs,
   handleFeedback,
+  feedbackGiven,
   isCurrentlyShowingRetrieved,
   handleShowRetrieved,
   handleTranslation,
@@ -76,6 +83,7 @@ export const AIMessage = ({
   isComplete?: boolean;
   hasDocs?: boolean;
   handleFeedback?: (feedbackType: FeedbackType) => void;
+  feedbackGiven?: FeedbackType;
   handleTranslation: (id: number | null) => void;
   isCurrentlyShowingRetrieved?: boolean;
   handleShowRetrieved?: (messageNumber: number | null) => void;
@@ -237,11 +245,17 @@ export const AIMessage = ({
                 >
                   {copyClicked ? <FiCheck /> : <FiCopy />}
                 </Hoverable>
-                <Hoverable onClick={() => handleFeedback("like")}>
+                <Hoverable
+                  onClick={() => handleFeedback("like")}
+                  active={feedbackGiven === "like"}
+                >
                   <FiThumbsUp />
                 </Hoverable>
-                <Hoverable>
-                  <FiThumbsDown onClick={() => handleFeedback("dislike")} />
+                <Hoverable
+                  onClick={() => handleFeedback("dislike")}
+                  active={feedbackGiven === "dislike"}
+                >
+                  <FiThumbsDown />
                 </Hoverable>
               </div>
             </div>

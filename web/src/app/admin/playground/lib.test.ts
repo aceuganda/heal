@@ -29,6 +29,9 @@ const defaults: TunableValues = {
   retrieval_top_k: 20,
   context_top_k: 5,
   max_chunks_per_source: 2,
+  temperature: 0,
+  max_output_tokens: 1024,
+  top_p: 1,
 };
 
 const candidate = (over: Partial<Candidate> = {}): Candidate => ({

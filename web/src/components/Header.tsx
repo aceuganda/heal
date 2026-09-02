@@ -7,7 +7,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import React, { useEffect, useRef, useState } from "react";
 import { CustomDropdown, DefaultDropdownElement } from "./Dropdown";
-import { FiMenu, FiMessageSquare, FiSearch, FiUser } from "react-icons/fi";
+import { FiMenu, FiMessageSquare, FiSearch, FiUser, FiX } from "react-icons/fi";
 import { usePathname } from "next/navigation";
 
 interface HeaderProps {
@@ -19,6 +19,17 @@ export const Header: React.FC<HeaderProps> = ({ user }) => {
   const pathname = usePathname();
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  // Mirrors ChatSidebar's open state so this button can double as its close
+  // control: icon/label reflect what a click will actually do.
+  const [chatSidebarOpen, setChatSidebarOpen] = useState(true);
+
+  useEffect(() => {
+    const handleSidebarState = (event: Event) =>
+      setChatSidebarOpen(Boolean((event as CustomEvent<boolean>).detail));
+    window.addEventListener("chat-sidebar-state", handleSidebarState);
+    return () =>
+      window.removeEventListener("chat-sidebar-state", handleSidebarState);
+  }, []);
 
   const handleLogout = async () => {
     const response = await logout();
@@ -72,10 +83,17 @@ export const Header: React.FC<HeaderProps> = ({ user }) => {
             type="button"
             onClick={() => window.dispatchEvent(new Event("toggle-chat-sidebar"))}
             className="ml-1 flex h-9 w-9 items-center justify-center rounded-lg text-emphasis hover:bg-hover sm:ml-3 sm:h-full sm:w-auto sm:gap-2 sm:rounded-none sm:px-3"
-            aria-label="Open or close chat history"
+            aria-label={chatSidebarOpen ? "Close chat history" : "Open chat history"}
+            aria-pressed={chatSidebarOpen}
           >
-            <FiMenu size={18} aria-hidden="true" />
-            <span className="hidden sm:inline">History</span>
+            {chatSidebarOpen ? (
+              <FiX size={18} aria-hidden="true" />
+            ) : (
+              <FiMenu size={18} aria-hidden="true" />
+            )}
+            <span className="hidden sm:inline">
+              {chatSidebarOpen ? "Close" : "History"}
+            </span>
           </button>
         )}
 

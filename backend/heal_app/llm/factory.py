@@ -1,8 +1,13 @@
 from heal_app.configs.app_configs import DISABLE_GENERATIVE_AI
 from heal_app.configs.chat_configs import QA_TIMEOUT
 from heal_app.configs.model_configs import FAST_GEN_AI_MODEL_VERSION
+from heal_app.configs.model_configs import GEN_AI_API_ENDPOINT
+from heal_app.configs.model_configs import GEN_AI_API_VERSION  # noqa: F401
+from heal_app.configs.model_configs import GEN_AI_LLM_PROVIDER_TYPE
+from heal_app.configs.model_configs import GEN_AI_MAX_OUTPUT_TOKENS
 from heal_app.configs.model_configs import GEN_AI_MODEL_PROVIDER
 from heal_app.configs.model_configs import GEN_AI_MODEL_VERSION
+from heal_app.configs.model_configs import GEN_AI_TEMPERATURE
 from heal_app.llm.chat_llm import DefaultMultiLLM
 from heal_app.llm.custom_llm import CustomModelServer
 from heal_app.llm.exceptions import GenAIDisabledException
@@ -47,18 +52,22 @@ def get_default_llm(
     if gen_ai_model_provider.lower() == "gpt4all":
         return DanswerGPT4All(model_version=model_version, timeout=timeout)
 
-    # Only pass what the caller actually set: DefaultMultiLLM's own defaults
-    # come from the environment, and forwarding None would overwrite them.
-    optional = {
-        key: value
-        for key, value in (
-            ("api_base", api_base),
-            ("custom_llm_provider", custom_llm_provider),
-            ("temperature", temperature),
-            ("max_output_tokens", max_output_tokens),
-        )
-        if value is not None
-    }
+    # Fall back to the module defaults rather than forwarding None, which would
+    # overwrite DefaultMultiLLM's own environment-derived values.
     return DefaultMultiLLM(
-        model_version=model_version, api_key=api_key, timeout=timeout, **optional
+        model_version=model_version,
+        api_key=api_key,
+        timeout=timeout,
+        api_base=api_base if api_base is not None else GEN_AI_API_ENDPOINT,
+        custom_llm_provider=(
+            custom_llm_provider
+            if custom_llm_provider is not None
+            else GEN_AI_LLM_PROVIDER_TYPE
+        ),
+        temperature=temperature if temperature is not None else GEN_AI_TEMPERATURE,
+        max_output_tokens=(
+            max_output_tokens
+            if max_output_tokens is not None
+            else GEN_AI_MAX_OUTPUT_TOKENS
+        ),
     )

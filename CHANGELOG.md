@@ -211,6 +211,20 @@ the first pilot release.
   `RoutingEvent.chat_model` now records the model that **answered** rather than
   the one that was requested, alongside a new `model_failed_over` flag.
 
+- **The playground tunes how an answer is worded, not just what it may say.**
+  Temperature, reply length and top-p join the retrieval knobs, set by
+  `HEAL_TEMPERATURE` (default 0.0), `HEAL_MAX_OUTPUT_TOKENS` (1024) and
+  `HEAL_TOP_P` (1.0). They are grouped separately on the screen and in the
+  response, because a temperature slider and a score floor do not carry the
+  same clinical weight: the floor decides whether a dose may be quoted at all,
+  temperature only decides how it reads.
+
+  Every overridden knob now shows the environment line that would make it the
+  default for every chat. Tuning a value you cannot keep is half a tool.
+
+  The model picker marks the internal model, so choosing it is a visible choice
+  rather than an opaque catalogue id.
+
 ### To do
 
 Designed and documented in `docs/architecture-decisions.md`; not yet built.

@@ -586,9 +586,7 @@ def _run(
         return response
 
     mark = time.perf_counter()
-    answer, error = _generate(
-        question, route, result, context, chat_model, generation
-    )
+    answer, error = _generate(question, route, result, context, chat_model, generation)
     response.timings.generate_ms = _elapsed_ms(mark)
     response.timings.total_ms = _elapsed_ms(started)
 
