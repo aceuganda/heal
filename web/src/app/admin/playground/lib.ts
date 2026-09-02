@@ -18,10 +18,19 @@ export interface ModelOption {
   provider: string;
   selectable: boolean;
   configured: boolean;
+  /** Runs on our own infrastructure rather than a provider's. */
+  self_hosted: boolean;
   notes: string;
 }
 
-/** The six numeric/boolean knobs, keyed exactly as the API names them. */
+/**
+ * Every knob, keyed exactly as the API names them.
+ *
+ * Two stages, deliberately distinguished: the retrieval knobs decide what the
+ * assistant is allowed to say, the generation ones only how it reads. A
+ * temperature slider and a score floor do not carry the same clinical weight
+ * and the screen should not imply they do.
+ */
 export interface TunableValues {
   min_retrieval_score: number;
   hybrid_alpha: number;
@@ -29,6 +38,9 @@ export interface TunableValues {
   retrieval_top_k: number;
   context_top_k: number;
   max_chunks_per_source: number;
+  temperature: number;
+  max_output_tokens: number;
+  top_p: number;
 }
 
 export interface PlaygroundOptions {
@@ -42,6 +54,10 @@ export interface PlaygroundOptions {
 
 export interface SettingUsed {
   name: string;
+  /** "retrieval" or "generation". */
+  stage: string;
+  /** Environment variable that makes this value the default for every chat. */
+  env_var: string;
   value: number | boolean;
   default: number | boolean;
   overridden: boolean;
@@ -120,6 +136,9 @@ export interface Tunable {
   step: number;
   /** Floats need a tolerance when compared; the k values do not. */
   float: boolean;
+  stage: "retrieval" | "generation";
+  /** Set this in the environment to make the value the default for all chats. */
+  envVar: string;
 }
 
 export const NUMERIC_TUNABLES: Tunable[] = [
@@ -129,6 +148,8 @@ export const NUMERIC_TUNABLES: Tunable[] = [
     hint: "Below this the assistant cites nothing and refuses a dosage question.",
     step: 0.01,
     float: true,
+    stage: "retrieval",
+    envVar: "HEAL_MIN_RETRIEVAL_SCORE",
   },
   {
     name: "hybrid_alpha",
@@ -136,6 +157,8 @@ export const NUMERIC_TUNABLES: Tunable[] = [
     hint: "1.0 is meaning-only; 0.0 is exact-wording only. Drug codes need the lexical half.",
     step: 0.05,
     float: true,
+    stage: "retrieval",
+    envVar: "HEAL_HYBRID_ALPHA",
   },
   {
     name: "retrieval_top_k",
@@ -143,6 +166,8 @@ export const NUMERIC_TUNABLES: Tunable[] = [
     hint: "How many chunks come back from the store before any filtering.",
     step: 1,
     float: false,
+    stage: "retrieval",
+    envVar: "HEAL_RETRIEVAL_TOP_K",
   },
   {
     name: "context_top_k",
@@ -150,6 +175,8 @@ export const NUMERIC_TUNABLES: Tunable[] = [
     hint: "How many survive to be numbered for the model to cite.",
     step: 1,
     float: false,
+    stage: "retrieval",
+    envVar: "HEAL_CONTEXT_TOP_K",
   },
   {
     name: "max_chunks_per_source",
@@ -157,6 +184,35 @@ export const NUMERIC_TUNABLES: Tunable[] = [
     hint: "Stops one long guideline crowding out a corroborating second source.",
     step: 1,
     float: false,
+    stage: "retrieval",
+    envVar: "HEAL_MAX_CHUNKS_PER_SOURCE",
+  },
+  {
+    name: "temperature",
+    label: "Temperature",
+    hint: "0 gives the same answer to the same question every time. Above 0 a model starts rewording, and this one quotes doses.",
+    step: 0.05,
+    float: true,
+    stage: "generation",
+    envVar: "HEAL_TEMPERATURE",
+  },
+  {
+    name: "max_output_tokens",
+    label: "Reply length",
+    hint: "The verbosity cap. A health worker reading on a phone mid-consultation is not helped by six paragraphs.",
+    step: 64,
+    float: false,
+    stage: "generation",
+    envVar: "HEAL_MAX_OUTPUT_TOKENS",
+  },
+  {
+    name: "top_p",
+    label: "Top-p",
+    hint: "Nucleus sampling. 1.0 disables it, and at temperature 0 it changes nothing either way.",
+    step: 0.05,
+    float: true,
+    stage: "generation",
+    envVar: "HEAL_TOP_P",
   },
 ];
 
@@ -191,6 +247,9 @@ export function changedNames(
     "retrieval_top_k",
     "context_top_k",
     "max_chunks_per_source",
+    "temperature",
+    "max_output_tokens",
+    "top_p",
   ];
   return order.filter((name) => isOverridden(values[name], defaults[name]));
 }

@@ -8,6 +8,8 @@ from heal_app.chat.models import RetrievalDocs
 from heal_app.configs.constants import DocumentSource
 from heal_app.configs.constants import MessageType
 from heal_app.configs.constants import SearchFeedbackType
+from heal.feedback.aggregate import MAX_RATING
+from heal.feedback.aggregate import MIN_RATING
 from heal_app.search.models import BaseFilters
 from heal_app.search.models import RetrievalDetails
 from heal_app.search.models import SearchDoc
@@ -43,16 +45,23 @@ class CreateChatSessionID(BaseModel):
 
 class ChatFeedbackRequest(BaseModel):
     chat_message_id: int
+    # 1 (worst) to 4 (best). The current control; `is_positive` is still
+    # accepted so an older client keeps working.
+    rating: int | None = None
     is_positive: bool | None = None
     feedback_text: str | None = None
 
     @root_validator
     def check_is_positive_or_feedback_text(cls: BaseModel, values: dict) -> dict:
+        rating = values.get("rating")
         is_positive, feedback_text = values.get("is_positive"), values.get(
             "feedback_text"
         )
 
-        if is_positive is None and feedback_text is None:
+        if rating is not None and not (MIN_RATING <= rating <= MAX_RATING):
+            raise ValueError(f"rating must be between {MIN_RATING} and {MAX_RATING}")
+
+        if rating is None and is_positive is None and feedback_text is None:
             raise ValueError("Empty feedback received.")
 
         return values

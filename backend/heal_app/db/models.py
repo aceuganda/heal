@@ -608,6 +608,10 @@ class ChatMessageFeedback(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     chat_message_id: Mapped[int] = mapped_column(ForeignKey("chat_message.id"))
+    # 1 (worst) to 4 (best). The current control. `is_positive` is kept rather
+    # than dropped: rows written before the rating existed still carry a real
+    # judgement, and losing them would erase the only field history there is.
+    rating: Mapped[int | None] = mapped_column(Integer, nullable=True)
     is_positive: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     required_followup: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     feedback_text: Mapped[str | None] = mapped_column(Text, nullable=True)

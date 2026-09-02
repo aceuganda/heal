@@ -13,7 +13,6 @@ import {
   StreamingError,
 } from "./interfaces";
 import { useRouter } from "next/navigation";
-import { FeedbackType } from "./types";
 import {
   createChatSession,
   getCitedDocumentsFromMessage,
@@ -26,7 +25,6 @@ import {
   sendMessage,
 } from "./lib";
 import { AnswerProgress } from "./message/AnswerProgress";
-import { FeedbackModal } from "./modal/FeedbackModal";
 import { Persona } from "../admin/personas/interfaces";
 import { ChatPersonaSelector } from "./ChatPersonaSelector";
 import { useFilters } from "@/lib/hooks";
@@ -237,14 +235,9 @@ export const Chat = ({
     isCancelledRef.current = isCancelled;
   }, [isCancelled]);
 
-  const [currentFeedback, setCurrentFeedback] = useState<
-    [FeedbackType, number] | null
-  >(null);
-  // Tracks which messages have been rated, keyed by messageId, so the thumb
-  // UI can show the user their click registered.
-  const [givenFeedback, setGivenFeedback] = useState<
-    Record<number, FeedbackType>
-  >({});
+  // The rating each message was given, keyed by messageId, so the stars show
+  // the user their click registered.
+  const [givenFeedback, setGivenFeedback] = useState<Record<number, number>>({});
 
   // auto scroll as message comes out
   const scrollableDivRef = useRef<HTMLDivElement>(null);
@@ -475,7 +468,7 @@ export const Chat = ({
 
   const onFeedback = async (
     messageId: number,
-    feedbackType: FeedbackType,
+    rating: number | null,
     feedbackDetails: string
   ) => {
     if (chatSessionId === null) {
@@ -484,12 +477,14 @@ export const Chat = ({
 
     const response = await handleChatFeedback(
       messageId,
-      feedbackType,
+      rating,
       feedbackDetails
     );
 
     if (response.ok) {
-      setGivenFeedback((prev) => ({ ...prev, [messageId]: feedbackType }));
+      if (rating !== null) {
+        setGivenFeedback((prev) => ({ ...prev, [messageId]: rating }));
+      }
       setPopup({
         message: "Thanks for your feedback!",
         type: "success",
@@ -507,17 +502,6 @@ export const Chat = ({
   return (
     <div className="flex w-full min-w-0 overflow-x-hidden" ref={masterFlexboxRef}>
       {popup}
-      {currentFeedback && (
-        <FeedbackModal
-          feedbackType={currentFeedback[0]}
-          onClose={() => setCurrentFeedback(null)}
-          onSubmit={(feedbackDetails) => {
-            onFeedback(currentFeedback[1], currentFeedback[0], feedbackDetails);
-            setCurrentFeedback(null);
-          }}
-        />
-      )}
-
       {documentSidebarInitialWidth !== undefined ? (
         <>
 
@@ -618,11 +602,19 @@ export const Chat = ({
                           handleFeedback={
                             i === messageHistory.length - 1 && isStreaming
                               ? undefined
-                              : (feedbackType) =>
-                                setCurrentFeedback([
-                                  feedbackType,
+                              : (rating) =>
+                                onFeedback(
                                   message.messageId as number,
-                                ])
+                                  rating,
+                                  ""
+                                )
+                          }
+                          handleComment={(comment) =>
+                            onFeedback(
+                              message.messageId as number,
+                              null,
+                              comment
+                            )
                           }
                           handleSearchQueryEdit={
                             i === messageHistory.length - 1 && !isStreaming

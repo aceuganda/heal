@@ -159,6 +159,35 @@ the first pilot release.
 - **Super admins were locked out of admin screens.** `current_admin_user` tested
   `role != ADMIN`, which denied every super admin. The same equality bug existed
   in `Layout.tsx`, `Header.tsx` and `ChatSidebar.tsx`. All now use a rank check.
+- **Feedback is a four-star rating, not a thumbs pair.** 1 is worst, 4 best.
+  Four rather than five because there is no neutral middle to hide in: a health
+  worker has to come down on one side of "was this usable", and a five-point
+  midpoint is where undecided answers go to be uncounted. The control is inline
+  under the answer, one click, submitted immediately — the modal is gone.
+
+  **The comment is opt-in.** Rating and commenting are separate actions, so
+  confirming an answer was fine costs one click and never opens a form.
+
+  Ratings feed the sigmoid aggregate described in
+  `docs/architecture-decisions.md` § Feedback: a bounded, confidence-weighted
+  score that starts neutral and moves further as ratings accumulate, so one
+  irritated afternoon cannot condemn a guideline and a much-used source cannot
+  accumulate an unbounded score. Surfaced to admins at `/manage/feedback/answers`
+  and `/manage/feedback/sources`, worst first. **It does not affect retrieval
+  ranking** — it exists to send a human to look at a guideline.
+
+  `chat_feedback` gains a nullable `rating` column with a range check
+  (migration `b7e3c9a41d52`). `is_positive` is kept, not dropped: older rows
+  carry a real judgement, and backfilling a thumbs-up into a number would be a
+  guess. Those rows are counted as thumbs and skipped by the aggregate.
+
+- **The feedback comment read as required when it never was.** A rating always
+  submitted with or without one, but the dialog said "Provide additional
+  feedback" and offered only "Submit feedback", so a health worker who just
+  wanted to press 👎 was left facing a form. It now says the rating is already
+  recorded, marks the box optional, and offers Skip. A blank comment is sent as
+  null rather than an empty string, so "rated, no comment" and "opened the box
+  and typed nothing" stay distinguishable.
 - **Duplicate React keys on reference chips.** They were keyed by
   `document_id`, which is `source_id:version` and therefore shared by every
   passage from one guideline. Two citations from the same source collided.

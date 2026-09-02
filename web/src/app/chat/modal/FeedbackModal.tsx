@@ -21,16 +21,22 @@ export const FeedbackModal = ({
   return (
     <ModalWrapper onClose={onClose} modalClassName="max-w-5xl">
       <>
-        <h2 className="text-2xl text-emphasis font-bold mb-4 flex">
+        <h2 className="text-2xl text-emphasis font-bold mb-1 flex">
           <div className="mr-1 my-auto">
             {feedbackType === "like" ? (
-              <FiThumbsUp className="text-green-500 my-auto mr-2" />
+              <FiThumbsUp className="text-accent my-auto mr-2" />
             ) : (
               <FiThumbsDown className="text-red-600 my-auto mr-2" />
             )}
           </div>
-          Provide additional feedback
+          Add a comment
         </h2>
+        {/* The rating is already recorded by the time this opens. Saying so
+            stops the box reading as a required second step. */}
+        <p className="mb-4 text-sm text-subtle">
+          Optional — your {feedbackType === "like" ? "👍" : "👎"} has been
+          recorded either way.
+        </p>
         <textarea
           autoFocus
           className={`
@@ -56,8 +62,8 @@ export const FeedbackModal = ({
           aria-multiline
           placeholder={
             feedbackType === "like"
-              ? "What did you like about this response?"
-              : "What was the issue with the response? How could it be improved?"
+              ? "What did you like about this response? (optional)"
+              : "What was the issue with the response? How could it be improved? (optional)"
           }
           value={message}
           onChange={(e) => setMessage(e.target.value)}
@@ -70,12 +76,18 @@ export const FeedbackModal = ({
           suppressContentEditableWarning={true}
         />
 
-        <div className="flex mt-2">
+        <div className="mt-3 flex items-center justify-center gap-3">
           <button
-            className="bg-accent text-white py-2 px-4 rounded hover:bg-accent-hover focus:outline-none mx-auto"
+            className="rounded px-4 py-2 text-sm text-subtle hover:bg-hover hover:text-strong focus:outline-none"
+            onClick={() => onSubmit("")}
+          >
+            Skip
+          </button>
+          <button
+            className="bg-accent text-white py-2 px-4 rounded hover:bg-accent-hover focus:outline-none"
             onClick={() => onSubmit(message)}
           >
-            Submit feedback
+            {message.trim() ? "Submit comment" : "Done"}
           </button>
         </div>
       </>

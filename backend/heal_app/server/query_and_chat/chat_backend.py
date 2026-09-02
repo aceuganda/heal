@@ -211,6 +211,7 @@ def create_chat_feedback(
     user_id = user.id if user else None
 
     create_chat_message_feedback(
+        rating=feedback.rating,
         is_positive=feedback.is_positive,
         feedback_text=feedback.feedback_text,
         chat_message_id=feedback.chat_message_id,

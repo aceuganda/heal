@@ -130,6 +130,7 @@ function NumberKnob({
   value,
   fallback,
   step,
+  envVar,
   bounds,
   onChange,
 }: {
@@ -138,6 +139,7 @@ function NumberKnob({
   value: number;
   fallback: number;
   step: number;
+  envVar?: string;
   bounds: [number, number] | undefined;
   onChange: (next: number) => void;
 }) {
@@ -186,6 +188,11 @@ function NumberKnob({
         )}
       </div>
       <p className="mt-1 text-xs text-heal-ink-500">{hint}</p>
+      {moved && envVar && (
+        <p className="mt-1 font-mono text-xs text-heal-ink-500">
+          Keep it: {envVar}={value}
+        </p>
+      )}
     </div>
   );
 }
@@ -222,6 +229,7 @@ function ModelPicker({
         {options.map((model) => (
           <option key={model.id} value={model.id}>
             {model.display_name}
+            {model.self_hosted ? " — internal" : ""}
             {model.configured ? "" : " — no API key set"}
           </option>
         ))}
@@ -683,19 +691,36 @@ export default function Page() {
             </div>
 
             <div className="flex flex-col gap-5">
-              {NUMERIC_TUNABLES.map((tunable) => (
-                <NumberKnob
-                  key={tunable.name}
-                  label={tunable.label}
-                  hint={tunable.hint}
-                  step={tunable.step}
-                  bounds={options.bounds[tunable.name]}
-                  value={current[tunable.name] as number}
-                  fallback={options.defaults[tunable.name] as number}
-                  onChange={(next) =>
-                    set({ [tunable.name]: next } as Partial<TunableValues>)
-                  }
-                />
+              {(["retrieval", "generation"] as const).map((stage) => (
+                <div key={stage} className="flex flex-col gap-5">
+                  <div className="border-b border-border pb-1">
+                    <div className="text-xs font-semibold uppercase tracking-wide text-heal-ink-900">
+                      {stage === "retrieval" ? "Retrieval" : "Wording"}
+                    </div>
+                    <p className="mt-0.5 text-xs text-heal-ink-500">
+                      {stage === "retrieval"
+                        ? "Decides what the assistant is allowed to say."
+                        : "Decides only how the answer reads, not what it may claim."}
+                    </p>
+                  </div>
+                  {NUMERIC_TUNABLES.filter((t) => t.stage === stage).map(
+                    (tunable) => (
+                      <NumberKnob
+                        key={tunable.name}
+                        label={tunable.label}
+                        hint={tunable.hint}
+                        step={tunable.step}
+                        envVar={tunable.envVar}
+                        bounds={options.bounds[tunable.name]}
+                        value={current[tunable.name] as number}
+                        fallback={options.defaults[tunable.name] as number}
+                        onChange={(next) =>
+                          set({ [tunable.name]: next } as Partial<TunableValues>)
+                        }
+                      />
+                    )
+                  )}
+                </div>
               ))}
             </div>
           </div>
@@ -710,6 +735,27 @@ export default function Page() {
             <div className="mt-1 text-xs text-amber-800">
               {changed.map((name) => name.replace(/_/g, " ")).join(", ")} — for
               this request only. Health workers are unaffected.
+            </div>
+            {/* The tuning is worthless if you cannot keep the value you liked.
+                These are the exact lines to put in the environment. */}
+            <div className="mt-2 rounded bg-amber-100/70 px-3 py-2">
+              <div className="text-xs font-semibold text-amber-900">
+                To make this the default for every chat, set:
+              </div>
+              <pre className="mt-1 overflow-x-auto font-mono text-xs text-amber-900">
+                {changed
+                  .map((name) => {
+                    const tunable = NUMERIC_TUNABLES.find((t) => t.name === name);
+                    const envVar =
+                      tunable?.envVar ?? `HEAL_${name.toUpperCase()}`;
+                    return `${envVar}=${current ? current[name] : ""}`;
+                  })
+                  .join("\n")}
+              </pre>
+              <div className="mt-1 text-xs text-amber-800">
+                Then restart the API. Until you do, this is a playground result
+                and nothing else.
+              </div>
             </div>
             <button
               type="button"

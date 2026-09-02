@@ -14,6 +14,7 @@ from heal import config as heal_config
 from heal.bootstrap import ensure_bootstrap_admin
 from heal.knowledge.startup import prepare_knowledge_store_in_background
 from heal.server.api_key import get_danswer_api_key
+from heal.server.feedback_api import router as feedback_router
 from heal.server.knowledge_api import router as knowledge_router
 from heal.server.playground_api import router as playground_router
 from heal.server.reference_api import router as reference_router
@@ -118,6 +119,7 @@ def get_application() -> FastAPI:
     # Approved-source library. Its routes 409 only if a deployment sets
     # KNOWLEDGE_ENABLED=false; `make up` leaves it on.
     include_router_with_global_prefix_prepended(application, knowledge_router)
+    include_router_with_global_prefix_prepended(application, feedback_router)
     # Creating accounts and changing roles. Mounted after `user_router`, which
     # keeps the inherited read-only user routes.
     include_router_with_global_prefix_prepended(application, users_admin_router)

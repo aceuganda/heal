@@ -10,6 +10,7 @@ import {
   FiThumbsUp,
 } from "react-icons/fi";
 import { FeedbackType } from "../types";
+import { FeedbackControl } from "./FeedbackControl";
 import { useState } from "react";
 import ReactMarkdown from "react-markdown";
 import { DanswerDocument } from "@/lib/search/interfaces";
@@ -66,6 +67,7 @@ export const AIMessage = ({
   isComplete,
   hasDocs,
   handleFeedback,
+  handleComment,
   feedbackGiven,
   isCurrentlyShowingRetrieved,
   handleShowRetrieved,
@@ -82,8 +84,9 @@ export const AIMessage = ({
   citedDocuments?: [string, DanswerDocument][] | null;
   isComplete?: boolean;
   hasDocs?: boolean;
-  handleFeedback?: (feedbackType: FeedbackType) => void;
-  feedbackGiven?: FeedbackType;
+  handleFeedback?: (rating: number) => void;
+  handleComment?: (comment: string) => void;
+  feedbackGiven?: number;
   handleTranslation: (id: number | null) => void;
   isCurrentlyShowingRetrieved?: boolean;
   handleShowRetrieved?: (messageNumber: number | null) => void;
@@ -233,30 +236,25 @@ export const AIMessage = ({
                   <FiGlobe size={12} aria-hidden="true" />
                   {messageIdTranslating && messageIdTranslating === messageId ? "translating..." : "Translate to Luganda"}
                 </button>}
-              <div className="flex flex-row gap-x-0.5 ml-8 mt-1">
-                <Hoverable
-                  onClick={() => {
-                    if (typeof content === "string") {
-                      navigator.clipboard.writeText(content.toString());
-                      setCopyClicked(true);
-                      setTimeout(() => setCopyClicked(false), 3000);
-                    }
-                  }}
-                >
-                  {copyClicked ? <FiCheck /> : <FiCopy />}
-                </Hoverable>
-                <Hoverable
-                  onClick={() => handleFeedback("like")}
-                  active={feedbackGiven === "like"}
-                >
-                  <FiThumbsUp />
-                </Hoverable>
-                <Hoverable
-                  onClick={() => handleFeedback("dislike")}
-                  active={feedbackGiven === "dislike"}
-                >
-                  <FiThumbsDown />
-                </Hoverable>
+              <div className="ml-8 mt-1 flex flex-col gap-2">
+                <div className="flex flex-row gap-x-0.5">
+                  <Hoverable
+                    onClick={() => {
+                      if (typeof content === "string") {
+                        navigator.clipboard.writeText(content.toString());
+                        setCopyClicked(true);
+                        setTimeout(() => setCopyClicked(false), 3000);
+                      }
+                    }}
+                  >
+                    {copyClicked ? <FiCheck /> : <FiCopy />}
+                  </Hoverable>
+                </div>
+                <FeedbackControl
+                  rating={feedbackGiven}
+                  onRate={handleFeedback}
+                  onComment={(comment) => handleComment?.(comment)}
+                />
               </div>
             </div>
           )}

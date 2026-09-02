@@ -5,6 +5,9 @@ from sqlalchemy import desc
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from heal.feedback.aggregate import MAX_RATING
+from heal.feedback.aggregate import MIN_RATING
+from heal.feedback.aggregate import valid_rating
 from heal_app.configs.constants import MessageType
 from heal_app.db.chat import get_chat_message
 from heal_app.db.models import ChatMessageFeedback
@@ -45,9 +48,19 @@ def create_chat_message_feedback(
     db_session: Session,
     # Slack user requested help from human
     required_followup: bool | None = None,
+    # 1 (worst) to 4 (best).
+    rating: int | None = None,
 ) -> None:
-    if is_positive is None and feedback_text is None and required_followup is None:
+    if (
+        rating is None
+        and is_positive is None
+        and feedback_text is None
+        and required_followup is None
+    ):
         raise ValueError("No feedback provided")
+
+    if rating is not None and not valid_rating(rating):
+        raise ValueError(f"rating must be between {MIN_RATING} and {MAX_RATING}")
 
     chat_message = get_chat_message(
         chat_message_id=chat_message_id, user_id=user_id, db_session=db_session
@@ -58,6 +71,7 @@ def create_chat_message_feedback(
 
     message_feedback = ChatMessageFeedback(
         chat_message_id=chat_message_id,
+        rating=rating,
         is_positive=is_positive,
         feedback_text=feedback_text,
         required_followup=required_followup,

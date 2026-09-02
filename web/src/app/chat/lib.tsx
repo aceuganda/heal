@@ -115,7 +115,7 @@ export async function nameChatSession(chatSessionId: number, message: string) {
 
 export async function handleChatFeedback(
   messageId: number,
-  feedback: FeedbackType,
+  rating: number | null,
   feedbackDetails: string
 ) {
   const response = await fetch("/api/chat/create-chat-message-feedback", {
@@ -125,8 +125,10 @@ export async function handleChatFeedback(
     },
     body: JSON.stringify({
       chat_message_id: messageId,
-      is_positive: feedback === "like",
-      feedback_text: feedbackDetails,
+      rating,
+      // null, not "", so a rating with no comment is distinguishable from one
+      // where someone opened the box and typed nothing.
+      feedback_text: feedbackDetails.trim() || null,
     }),
   });
   return response;
