@@ -93,7 +93,11 @@ export const ChatSidebar = ({
       >
 
 
-        <Link href="/chat" className="mx-3 mt-5">
+        <Link
+          href="/chat"
+          className="mx-3 mt-5"
+          onClick={() => setIsSidebarOpen(false)}
+        >
           <BasicClickable fullWidth>
             <div className="flex text-sm">
               <FiPlusSquare className="my-auto mr-2" /> New Chat

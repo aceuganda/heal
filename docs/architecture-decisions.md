@@ -398,7 +398,7 @@ documentation, so it is set out explicitly.
 
 | Old stage | Status | Reasoning |
 | --- | --- | --- |
-| Hybrid BM25 + vector | **kept, reimplemented** | Lexical matching is not optional for this product — `TDF/3TC/DTG` and `500mg BD` must match exactly. Vespa's BM25 was replaced with Qdrant sparse vectors: same capability, no second service. |
+| Hybrid BM25 + vector | **kept, reimplemented — and initially weaker than claimed** | Lexical matching is not optional for this product — `TDF/3TC/DTG` and `500mg BD` must match exactly. Vespa's BM25 was replaced with Qdrant sparse vectors. "Same capability" was not true as first written: see *The IDF gap* below. |
 | Keyword / semantic mode switch | dropped | One collection, one model. There is nothing to switch between, and `SearchType` has no meaning. |
 | Recency decay | **replaced with explicit versioning** | A curated library of approved clinical guidance should not silently prefer newer text. Supersession is a fact, not a gradient: a source version is approved or it is not. |
 | Cross-encoder reranking | **deferred** | Not forbidden — see the trigger below. |
@@ -407,12 +407,105 @@ documentation, so it is set out explicitly.
 | Citation ordering | kept | Same job, same need. |
 | — | **score floor is new** | The old pipeline always returned top-k regardless of quality. For a dosage question, citing a weak match is worse than refusing. |
 
-**What was genuinely given up.** Vespa is a more capable search engine than
-Qdrant plus a hash-based sparse vector. It offers real BM25 with corpus
-statistics, richer query expressions, and tuning this system cannot express.
-For a few thousand chunks of curated clinical text the difference is unlikely to
-matter — but this has not been measured on Heal's own corpus, and "unlikely"
-is not "shown". See *Limitations*.
+**What was genuinely given up.** Vespa offers richer query expressions and
+tuning this system cannot express, and for a few thousand chunks of curated
+clinical text that difference is unlikely to matter — though it has not been
+measured on Heal's own corpus, and "unlikely" is not "shown". See *Limitations*.
+
+Corpus statistics, however, were **not** given up. That part of this paragraph
+was wrong, and the correction matters enough to state separately.
+
+### The IDF gap
+
+This section records a mistake in the original analysis, because the reasoning
+that produced it is more useful than the fix.
+
+`sparse_vector()` in `heal/knowledge/embedder.py` computes `1 + log(tf)` per
+token, hashes each token into one of `2**20` slots with blake2b, and
+L2-normalises. There is **no inverse document frequency and no document-length
+normalisation**. That is not BM25 with fewer features; it is cosine similarity
+over hashed term frequency, which is a materially weaker function.
+
+The consequence is precise, and it undercuts the stated reason the sparse half
+exists. Without IDF, a term is weighted only by how often it occurs *locally*.
+`TDF/3TC/DTG` — rare, and therefore the single most discriminating token in a
+question about ART — is weighted no more heavily than `patient`, which appears
+in nearly every chunk of the corpus. The rare drug code still matches. It does
+not *win*. A lexical stage built specifically to catch drug codes was
+systematically under-weighting exactly those codes.
+
+**Why this was avoidable.** The deployment runs `qdrant/qdrant:v1.19.0`
+(`deployment/docker_compose/docker-compose.prod.yml`). Qdrant has computed IDF
+inside the engine since **1.10**: a collection declares
+`SparseVectorParams(modifier=Modifier.IDF)`, the client keeps sending raw term
+frequencies, and the server applies corpus-level weighting at query time,
+staying correct as documents are added. The server has supported this for nine
+minor versions.
+
+What blocked it was `qdrant-client==1.9.0` in `backend/requirements/default.txt`
+— a pin predating both `Modifier` and the Query API. So the capability the
+paragraph above described as *given up with Vespa* was in fact sitting behind a
+dependency bump, and the architecture note asserted a constraint that the
+infrastructure did not have. The general lesson: when a doc claims a capability
+was lost to a technology choice, check the version pins before believing it.
+
+**Decision: enable native IDF.** Bump the client, declare the modifier, keep
+sending raw term frequencies. No new service, no new model, no GPU, no change
+to the ingest pipeline's shape.
+
+Three consequences that make this more than a one-line change:
+
+1. **It requires a collection rebuild.** The modifier is fixed at collection
+   creation. This is a Qdrant collection, not a relational table — it is
+   derived data, fully rebuildable from the approved source documents — so it
+   does not touch the never-drop-a-table rule. It does mean a re-ingest, and
+   the re-ingest must be part of the same change.
+2. **It invalidates two constants.** Sparse scores move to an entirely
+   different scale once IDF is applied. `HYBRID_ALPHA = 0.6` stops meaning what
+   it meant, and `MIN_RETRIEVAL_SCORE = 0.35` — already a placeholder — shifts
+   underneath us in a direction nobody has characterised. **Shipping IDF and
+   leaving the floor at 0.35 by inertia would be the dangerous outcome**, since
+   the floor decides when the assistant refuses a dosage question.
+3. **It argues for changing the fusion.** The current
+   `alpha * dense + (1 - alpha) * clamp(sparse)` adds two scores that live on
+   different scales, and IDF widens that mismatch. Reciprocal Rank Fusion
+   combines *ranks* rather than magnitudes and is indifferent to scale. The
+   Query API that arrived alongside IDF in 1.10 performs it server-side.
+
+**One upstream issue to verify before trusting this:**
+[qdrant#6735](https://github.com/qdrant/qdrant/issues/6735) reports IDF
+statistics not updating correctly when points are deleted. Heal deletes points
+whenever a source version is superseded, so this is directly on our path and
+must be checked against 1.19 rather than assumed fixed.
+
+### Stage two, and why it is not being built yet
+
+Repairing IDF fixes *recall* — which candidates come back. It does nothing for
+*precision*, because dense and sparse scoring both still evaluate the query and
+the chunk independently and never look at them together.
+
+The scorer that would fix that is a cross-encoder, and it is now cheap enough
+to run here: FastEmbed's `TextCrossEncoder` is ONNX on CPU with no `torch`
+dependency, roughly 38 ms per query-document pair, so twenty candidates rerank
+in under half a second on a few cores. The constraint that used to rule this
+out — a GPU, or a second service — no longer applies.
+
+It is still deferred, and the reasoning in *Reranking* below is unchanged: a
+reranker trained on searcher satisfaction learns to prefer the passage that
+reads best, and in clinical guidance the passage that deserves the citation is
+frequently the hedged one full of qualifiers. It would fail silently while an
+aggregate metric improved.
+
+So the two stages are deliberately sequenced rather than built together:
+
+| Stage | Change | Gate |
+| --- | --- | --- |
+| **1 — recall** | Native IDF, collection rebuild, re-derive `HYBRID_ALPHA` and `MIN_RETRIEVAL_SCORE` | None. It repairs a known, specific defect and is measurable without an eval set |
+| **2 — precision** | Cross-encoder rerank over the top 20 | Blocked on the clinician evaluation set, and only justified if that set shows the correct chunk landing in the top 20 but outside the top 5 |
+
+Stage 1 is worth doing now precisely because it is narrow: it targets one
+identified weakness with a known cause, rather than adding a general-purpose
+component whose effect on clinical text nobody has measured.
 
 ### Constants, and which one matters
 
@@ -647,6 +740,54 @@ rank, never by equality. The first account created in an empty database becomes
 `SUPER_ADMIN`; everyone else, including all self-registration, becomes `MEMBER`.
 The last super admin cannot be demoted.
 
+### A guardrails framework: evaluated, deliberately deferred
+
+A dedicated guardrails library would sit across input and output, flagging
+responses that trip a validator. It was assessed and **parked as future work**,
+so the reasoning is recorded here rather than rediscovered later.
+
+**Licensing is not the obstacle.** `guardrails-ai` is Apache-2.0. Its former
+awkwardness — a private hub registry needing an account and API key, plus
+hosted remote inferencing — ended with the August 2026 sunset of both;
+validators are now ordinary PyPI packages installed with `pip`, with no
+account, no token and no call to anyone's infrastructure. It is usable as a
+pure library today.
+
+**Two things argue for waiting:**
+
+- **Most of the safety surface here is structural, not validator-shaped.** The
+  six properties above come from *where decisions are made* — a fixed route
+  table consulted before the model runs, refusal on unsourced dosage, emergency
+  text emitted ahead of generation. A validator framework inspects text after
+  the fact. It would add a second, weaker opinion about questions this system
+  already answers earlier and more reliably.
+- **Adopting it well requires learning it well.** The correct first posture is
+  flag-only (`on_fail=NOOP`): the validator records a hit and the response is
+  still delivered, because a blocker tuned on no data will refuse real clinical
+  questions. Choosing which validators earn a place, and reading enough flagged
+  traffic to trust them, is a study exercise — not something to fold into
+  another change.
+
+**What is explicitly ruled out rather than deferred:**
+
+- **NeMo Guardrails.** Apache-2.0 and capable, but it controls dialog flow
+  through Colang policies. Heal already routes deterministically via
+  `route_for()` *before* the model is called. Adding NeMo means two route
+  tables that can disagree about the same question — a safety regression
+  dressed as a safety feature.
+- **A self-hosted observability platform** for the flag feed. The usual
+  candidates require ClickHouse, Redis and object storage. Installing that
+  fleet to monitor a system whose principal claim is that it runs on one
+  machine would undo the architecture to observe it. Flags belong on the audit
+  event that is already written, rendered in the admin UI that already exists.
+
+**One candidate worth revisiting sooner than the rest:** Presidio (MIT) for PII
+detection. A health worker typing a patient's name, age and village into the
+chat box is an ordinary Tuesday, not an edge case, and nothing in Heal
+currently notices when it happens. That is a real gap in the audit story — the
+guarantee that events carry no patient text holds for what Heal *writes*, not
+for what a user *types*.
+
 ---
 
 ## Answer review and revision
@@ -807,6 +948,42 @@ model call:
   what catches an answer that cites a passage but states something the passage
   does not contain.
 
+#### The tokenizer these checks run on
+
+The grounding check is a token-overlap test, so it is only as good as its
+tokenizer. `tokenize()` is deliberately simple — lowercase, split, drop
+stopwords and single characters — which is adequate for building a retrieval
+vector, where a missed match costs a little recall, and inadequate for a
+correctness check, where a missed match is a false accusation. `administered`
+and `administer` are the same clinical fact and different strings, and a
+grounding check that reports the answer as unsupported because the guideline
+conjugated a verb differently is worse than no check: it teaches the reader to
+ignore the signal.
+
+**Decision: use FastEmbed's BM25 tokenizer for the token-accuracy checks, and
+only for those.** It brings proper stemming and language-aware stopword
+handling, it is Qdrant's own library, and it runs on ONNX with no `torch`
+dependency, so it costs an import rather than an architecture change.
+
+The scope is deliberately narrow, and worth stating as a boundary:
+
+- **It is not the retrieval encoder.** Retrieval keeps the existing sparse
+  vector plus the IDF modifier from *The IDF gap*. Those are two separate
+  decisions about two separate problems, and coupling them would mean a
+  tokenizer change silently altering what gets retrieved.
+- **It runs on both directions.** On the **answer**, to check that what was
+  stated appears in the passages that were cited. On the **message sent**, to
+  check that the terms the user actually asked about appear in what was
+  retrieved — a query whose distinctive terms are absent from every retrieved
+  chunk is a retrieval miss, and it is invisible today because a confident
+  answer is still produced on top of it.
+
+**This makes the request slightly longer, and that is the right trade.** The
+cost is tokenization and set comparison over text already in memory — no model
+call, no network hop. What it buys is the difference between an answer that
+claims a citation and an answer whose claims were checked against it, which on
+a clinical path is worth more than the milliseconds.
+
 Three states, and the reference panel renders each differently:
 
 | State | What it means | How it reads |
@@ -827,8 +1004,32 @@ Two things this must not do:
   changes what gets computed, which is why it is settled here rather than in the
   UI.
 
+#### Standing rule: every check runs on English
+
 For a Luganda session the score is computed on the **English** text before
 translation, because that is the text the citations were extracted from.
+
+This is not a detail of the grounding score; it is a rule for the whole system,
+and it holds in both directions:
+
+- A Luganda question is translated to English **before** retrieval. The query
+  embedding, the lexical match, every retrieval score and the score floor all
+  see English.
+- The answer is generated in English, and **all checks run on that English
+  text** — citation extraction, citation coverage, lexical grounding, the
+  review and revision pass, and the token-accuracy checks above. Only after
+  every check has passed is the answer translated out.
+
+The reason is that a check is only as trustworthy as the text it reads. The
+cited passages are English, so an overlap test against translated output would
+measure translation quality and report it as a grounding failure — two
+different problems, one number, and no way to tell which one fired. A check
+that cannot distinguish "the model made this up" from "the translator chose a
+different word" is worse than no check on a clinical path.
+
+The corollary is that **translation quality is unguarded by any of this
+machinery**, and needs its own evaluation rather than being covered by
+inference from the English scores. It is listed as such under *Limitations*.
 
 ---
 
@@ -1039,12 +1240,22 @@ running it need to know where it is thin.
 - **There is no clinician evaluation set.** Recall, citation correctness,
   emergency routing and unsafe-answer rates are all unmeasured on Heal's own
   corpus and question distribution. This is the single largest gap.
-- **Lexical retrieval is untested on real drug codes.** The sparse-vector
-  implementation exists specifically to handle `TDF/3TC/DTG` and `500mg BD`, but
-  no evaluation case has yet confirmed it does.
-- **Translation quality is on the clinical path and has no test set.** A
-  mistranslated negation or dosage unit is a clinical error that no amount of
-  retrieval quality will catch.
+- **Lexical retrieval is untested on real drug codes, and known to be
+  under-weighting them.** The sparse-vector implementation exists specifically
+  to handle `TDF/3TC/DTG` and `500mg BD`. No evaluation case has confirmed that
+  it does, and *The IDF gap* establishes that without inverse document
+  frequency it weights a rare drug code no more heavily than a ubiquitous word.
+  Enabling the IDF modifier is queued; until it ships and the constants are
+  re-derived, this is a known defect rather than an open question.
+- **Hash collisions in the sparse vector are uncounted.** Tokens are hashed
+  into `2**20` slots and colliding weights are summed. That is correct for the
+  vector and invisible to a clinician. Nobody has measured the collision rate
+  on the real corpus vocabulary, which is a cheap thing to count and has not
+  been counted.
+- **Translation quality is critical to this flow and unmeasured.** Every
+  Luganda answer passes through two translation hops, and no evaluation set
+  exists for either direction. A correct English answer can still reach the
+  reader wrong.
 
 ### Structural
 
@@ -1059,9 +1270,13 @@ running it need to know where it is thin.
 - **Drift between PostgreSQL and Qdrant is possible.** There is no continuous
   reconciliation, only an admin-triggered report. Silent divergence would show
   up as a source that is approved but never cited.
-- **No reranker and no corpus-statistics BM25.** The ranking stack is
-  deliberately simpler than what it replaced, and for a larger or noisier corpus
-  that simplicity would start to cost recall.
+- **No reranker.** Deliberate, and gated on the evaluation set — see *Stage
+  two, and why it is not being built yet*. For a larger or noisier corpus the
+  absence would start to cost precision.
+- **Corpus statistics are available but not yet switched on.** Previously
+  listed here as a permanent structural limit, which was wrong: the running
+  Qdrant supports engine-side IDF and the client pin is what prevents it. It is
+  a queued change, not a property of the architecture.
 - **Dependency on an external LLM provider** for both answers and intent
   classification: availability, latency, cost and data handling are all outside
   this system's control.

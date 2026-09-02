@@ -55,13 +55,13 @@ export const Header: React.FC<HeaderProps> = ({ user }) => {
 
   return (
     <header className="border-b border-border bg-background-emphasis">
-      <div className="mx-8 flex h-16">
+      <div className="mx-4 flex h-16 sm:mx-8">
         <Link className="py-4" href="/chat">
-          <div className="flex">
+          <div className="flex items-center gap-2 sm:gap-3">
             <div className="h-[32px] w-[30px]">
               <Image src="/logo.png" alt="Logo" width="1419" height="1520" />
             </div>
-            <h1 className="flex text-2xl text-strong font-bold my-auto">
+            <h1 className="flex text-xl font-bold text-strong sm:text-2xl">
               Heal
             </h1>
           </div>
@@ -71,7 +71,7 @@ export const Header: React.FC<HeaderProps> = ({ user }) => {
           <button
             type="button"
             onClick={() => window.dispatchEvent(new Event("toggle-chat-sidebar"))}
-            className="ml-3 flex h-full items-center gap-2 px-3 text-sm font-medium text-emphasis hover:bg-hover"
+            className="ml-1 flex h-9 w-9 items-center justify-center rounded-lg text-emphasis hover:bg-hover sm:ml-3 sm:h-full sm:w-auto sm:gap-2 sm:rounded-none sm:px-3"
             aria-label="Open or close chat history"
           >
             <FiMenu size={18} aria-hidden="true" />
@@ -91,7 +91,7 @@ export const Header: React.FC<HeaderProps> = ({ user }) => {
           </div>
         </Link> */}
 
-        <Link href="/chat" className="h-full flex flex-col hover:bg-hover">
+        <Link href="/chat" className="hidden h-full flex-col hover:bg-hover sm:flex">
           <div className="w-24 flex my-auto">
             <div className="mx-auto flex text-strong px-2">
               <FiMessageSquare className="my-auto mr-1" />
@@ -100,7 +100,7 @@ export const Header: React.FC<HeaderProps> = ({ user }) => {
           </div>
         </Link>
 
-        <div className="ml-auto h-full flex flex-col">
+        <div className="ml-auto flex h-full flex-col">
           <div className="my-auto">
             <CustomDropdown
               dropdown={

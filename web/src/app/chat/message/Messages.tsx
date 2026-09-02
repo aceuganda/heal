@@ -3,6 +3,7 @@ import {
   FiActivity,
   FiChevronRight,
   FiCopy,
+  FiGlobe,
   FiMessageCircle,
   // FiCpu,
   FiThumbsDown,
@@ -219,8 +220,9 @@ export const AIMessage = ({
               {language === 'luganda' && messageId && !luganda_message &&
                 <button
                   onClick={() => handleTranslation(messageId)}
-                  className="text-link text-[10px] ml-8 "
+                  className="ml-8 flex items-center gap-1 text-[10px] text-link"
                 >
+                  <FiGlobe size={12} aria-hidden="true" />
                   {messageIdTranslating && messageIdTranslating === messageId ? "translating..." : "Translate to Luganda"}
                 </button>}
               <div className="flex flex-row gap-x-0.5 ml-8 mt-1">
@@ -304,8 +306,9 @@ export const HumanMessage = ({
           {language === 'luganda' && id && !luganda_message &&
             <button
               onClick={() => handleTranslation(id)}
-              className="text-link ml-16 text-[10px]"
+              className="ml-16 flex items-center gap-1 text-[10px] text-link"
             >
+              <FiGlobe size={12} aria-hidden="true" />
               {messageIdTranslating && messageIdTranslating === id ? "translating..." : "Translate to Luganda"}
             </button>}
         </div>

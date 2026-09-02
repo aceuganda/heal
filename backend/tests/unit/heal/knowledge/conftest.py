@@ -5,6 +5,7 @@ and embedder as constructor arguments precisely so this is possible.
 """
 from dataclasses import dataclass
 from dataclasses import field
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -19,6 +20,31 @@ class FakePoint:
     id: str
     score: float
     payload: dict[str, Any]
+
+
+@dataclass
+class FakeQueryResponse:
+    """`query_points` returns a wrapper; `search` returned a bare list."""
+
+    points: list["FakePoint"]
+
+
+@dataclass
+class FakeCollectionInfo:
+    """Just enough of CollectionInfo for `collection_uses_idf` to read it."""
+
+    config: Any
+    points_count: int
+
+    @classmethod
+    def build(cls, points: int, modifier: str | None) -> "FakeCollectionInfo":
+        sparse = SimpleNamespace(modifier=modifier)
+        return cls(
+            config=SimpleNamespace(
+                params=SimpleNamespace(sparse_vectors={"lexical": sparse})
+            ),
+            points_count=points,
+        )
 
 
 @dataclass
@@ -37,14 +63,30 @@ class FakeQdrant:
     payload_sets: list[dict[str, Any]] = field(default_factory=list)
     collections: set[str] = field(default_factory=set)
     raises: Exception | None = None
+    # What `get_collection` reports the live sparse modifier to be. `None`
+    # means a collection created before the modifier existed.
+    live_modifier: str | None = None
 
-    def search(self, **kwargs: Any) -> list[FakePoint]:
+    def query_points(self, **kwargs: Any) -> "FakeQueryResponse":
+        """Mirrors the 1.19 client, which no longer has `search`.
+
+        The old fake kept a `search` method after the real client dropped it,
+        which is precisely the failure the `set_payload` note below describes:
+        a fake that answers a call the server would refuse. Dense and sparse
+        are told apart by `using`, the way the real API distinguishes them.
+        """
         if self.raises:
             raise self.raises
         self.searches.append(kwargs)
-        vector = kwargs.get("query_vector")
-        is_sparse = not isinstance(vector, tuple)
-        return self.sparse_results if is_sparse else self.dense_results
+        is_sparse = kwargs.get("using") == "lexical"
+        return FakeQueryResponse(
+            points=self.sparse_results if is_sparse else self.dense_results
+        )
+
+    def get_collection(self, name: str) -> "FakeCollectionInfo":
+        return FakeCollectionInfo.build(
+            points=len(self.dense_results), modifier=self.live_modifier
+        )
 
     def upsert(self, *, collection_name: str, points: Any, **kwargs: Any) -> None:
         if self.raises:
@@ -143,6 +185,11 @@ def predictable_retrieval(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(config, "MAX_CHUNKS_PER_SOURCE", 2)
     monkeypatch.setattr(config, "RETRIEVAL_TOP_K", 20)
     monkeypatch.setattr(config, "CONTEXT_TOP_K", 5)
+    # Off by default in the suite so the existing assertions keep testing the
+    # pre-IDF fusion, which is still a supported configuration. The IDF path
+    # turns it on explicitly, so the change in scoring is asserted rather than
+    # absorbed silently across every unrelated test.
+    monkeypatch.setattr(config, "SPARSE_IDF", False)
     monkeypatch.setattr(config, "HYBRID_SEARCH", True)
     monkeypatch.setattr(config, "HYBRID_ALPHA", 0.6)
     monkeypatch.setattr(config, "QDRANT_COLLECTION", "test_collection")

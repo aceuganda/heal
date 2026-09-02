@@ -507,7 +507,8 @@ export const Chat = ({
       {documentSidebarInitialWidth !== undefined ? (
         <>
 
-          <div className="min-w-0 flex-1 sm:relative">
+          <div className="relative min-w-0 flex-1">
+            <div className="pointer-events-none absolute bottom-0 left-0 top-16 z-10 w-px bg-heal-teal-300/80" />
             <div
               className={`w-full h-screen ${HEADER_PADDING} flex flex-col overflow-y-auto relative`}
               ref={scrollableDivRef}

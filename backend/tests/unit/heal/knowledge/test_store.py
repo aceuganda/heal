@@ -274,3 +274,179 @@ class TestSources:
         outcome = build(fake_client, fake_embedder).search("q")
         label = outcome.chunks[0].source.label()
         assert "Uganda ART Guidelines" in label and "Ministry of Health" in label
+
+
+class TestQueryApi:
+    """The 1.19 client removed `search`. These pin the replacement.
+
+    Worth asserting rather than trusting: the call still type-checks against a
+    permissive fake if someone reverts it, and the failure would only appear
+    against a real Qdrant.
+    """
+
+    def test_both_halves_go_through_query_points(
+        self, fake_client, fake_embedder
+    ) -> None:
+        fake_client.dense_results = [make_point()]
+        fake_client.sparse_results = [make_point("lex", 0.5)]
+
+        build(fake_client, fake_embedder).search("TDF/3TC/DTG")
+
+        assert not hasattr(
+            fake_client, "search"
+        ), "the fake still offers a method the 1.19 client does not have"
+        assert [c["using"] for c in fake_client.searches] == ["dense", "lexical"]
+
+    def test_the_sparse_half_is_addressed_by_name_not_by_tuple(
+        self, fake_client, fake_embedder
+    ) -> None:
+        """`query_points` names the vector in `using`, never in `query`."""
+        fake_client.dense_results = []
+        fake_client.sparse_results = [make_point("lex", 0.5)]
+
+        build(fake_client, fake_embedder).search("500mg BD")
+
+        sparse_call = fake_client.searches[-1]
+        assert sparse_call["using"] == "lexical"
+        assert not isinstance(sparse_call["query"], tuple)
+
+
+class TestIdfModifier:
+    """Corpus statistics for the lexical half. See "The IDF gap" in the doc."""
+
+    def test_a_new_collection_declares_the_idf_modifier(
+        self, fake_client, monkeypatch
+    ) -> None:
+        from qdrant_client import models as qm
+
+        from heal.knowledge import store as store_module
+
+        monkeypatch.setattr(config, "SPARSE_IDF", True)
+        monkeypatch.setattr(config, "QDRANT_COLLECTION", "fresh")
+
+        store_module.ensure_collection(client=fake_client, dimension=384)
+
+        sparse = fake_client.created["sparse_vectors_config"]["lexical"]
+        assert sparse.modifier == qm.Modifier.IDF
+
+    def test_the_modifier_is_omitted_when_idf_is_disabled(
+        self, fake_client, monkeypatch
+    ) -> None:
+        from heal.knowledge import store as store_module
+
+        monkeypatch.setattr(config, "SPARSE_IDF", False)
+        monkeypatch.setattr(config, "QDRANT_COLLECTION", "fresh")
+
+        store_module.ensure_collection(client=fake_client, dimension=384)
+
+        sparse = fake_client.created["sparse_vectors_config"]["lexical"]
+        assert getattr(sparse, "modifier", None) is None
+
+    def test_an_existing_collection_without_idf_is_reported_not_silently_kept(
+        self, fake_client, monkeypatch, caplog
+    ) -> None:
+        """The silent-failure case this guard exists for.
+
+        The modifier can only be set at creation. Turning the flag on against
+        an older collection changes nothing, so without this warning an admin
+        would read "IDF: on" in the panel while rare drug codes went on being
+        under-weighted.
+        """
+        from heal.knowledge import store as store_module
+
+        monkeypatch.setattr(config, "SPARSE_IDF", True)
+        monkeypatch.setattr(config, "QDRANT_COLLECTION", "existing")
+        fake_client.collections.add("existing")
+        fake_client.live_modifier = None
+
+        with caplog.at_level("WARNING"):
+            store_module.ensure_collection(client=fake_client)
+
+        assert "re-ingest" in caplog.text.lower()
+        assert not hasattr(fake_client, "created"), "an existing collection was rebuilt"
+
+    def test_a_matching_collection_says_nothing_alarming(
+        self, fake_client, monkeypatch, caplog
+    ) -> None:
+        from heal.knowledge import store as store_module
+
+        monkeypatch.setattr(config, "SPARSE_IDF", True)
+        monkeypatch.setattr(config, "QDRANT_COLLECTION", "existing")
+        fake_client.collections.add("existing")
+        fake_client.live_modifier = "idf"
+
+        with caplog.at_level("WARNING"):
+            store_module.ensure_collection(client=fake_client)
+
+        assert caplog.text == ""
+
+    def test_stats_separate_what_is_configured_from_what_is_running(
+        self, fake_client, monkeypatch
+    ) -> None:
+        from heal.knowledge import store as store_module
+
+        monkeypatch.setattr(config, "SPARSE_IDF", True)
+        fake_client.collections.add("kb")
+        fake_client.live_modifier = None
+
+        stats = store_module.collection_stats(client=fake_client, collection="kb")
+
+        assert stats["sparse_idf_configured"] is True
+        assert stats["sparse_idf_active"] is False
+        assert stats["sparse_idf_needs_reingest"] is True
+
+
+class TestSparseRescaling:
+    """What IDF does to the fused score, and why clamping is not enough."""
+
+    def test_idf_scores_above_one_keep_their_order_instead_of_saturating(
+        self, fake_client, fake_embedder, monkeypatch
+    ) -> None:
+        """The bug this guards against.
+
+        IDF multiplies each term by roughly log(N / df), so a rare drug code
+        can push the dot product to 8 or more. Clamping to 1.0 would flatten
+        every lexical hit to the same value and throw away the ordering IDF was
+        enabled to produce.
+        """
+        monkeypatch.setattr(config, "SPARSE_IDF", True)
+        fake_client.dense_results = []
+        fake_client.sparse_results = [
+            make_point("strong", 8.4, source_id="src-1"),
+            make_point("weak", 2.1, source_id="src-2"),
+        ]
+
+        found = build(fake_client, fake_embedder).candidates("TDF/3TC/DTG")
+
+        by_id = {c.chunk.chunk_id: c for c in found}
+        assert by_id["strong"].score > by_id["weak"].score, "scores saturated"
+        assert by_id["weak"].score > 0.0
+
+    def test_the_raw_sparse_score_is_still_reported_unmodified(
+        self, fake_client, fake_embedder, monkeypatch
+    ) -> None:
+        """Normalisation is for fusion only.
+
+        The admin playground explains a ranking with these numbers, so the
+        value Qdrant returned has to survive to the surface.
+        """
+        monkeypatch.setattr(config, "SPARSE_IDF", True)
+        fake_client.dense_results = []
+        fake_client.sparse_results = [make_point("s", 8.4)]
+
+        found = build(fake_client, fake_embedder).candidates("q")
+
+        assert found[0].sparse_score == 8.4
+
+    def test_pre_idf_scoring_is_unchanged(
+        self, fake_client, fake_embedder, monkeypatch
+    ) -> None:
+        """With IDF off the fusion must be arithmetically what it always was."""
+        monkeypatch.setattr(config, "SPARSE_IDF", False)
+        monkeypatch.setattr(config, "HYBRID_ALPHA", 0.6)
+        fake_client.dense_results = [make_point("a", 0.8)]
+        fake_client.sparse_results = [make_point("a", 0.5)]
+
+        found = build(fake_client, fake_embedder).candidates("q")
+
+        assert found[0].score == pytest.approx(0.6 * 0.8 + 0.4 * 0.5)

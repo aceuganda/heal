@@ -7,7 +7,12 @@ enforced, in this order:
                             BEFORE the ANN search. Post-filtering an HNSW
                             result set silently returns fewer than k and hides
                             the loss.
-  2. hybrid score           dense cosine fused with sparse lexical overlap
+  2. hybrid score           dense cosine fused with sparse lexical overlap.
+                            The sparse half is weighted by inverse document
+                            frequency computed inside Qdrant (SPARSE_IDF), so
+                            a rare drug code outranks a ubiquitous word. IDF
+                            is a property of the COLLECTION, fixed at
+                            creation -- see `ensure_collection`.
   3. SCORE FLOOR            below MIN_RETRIEVAL_SCORE, return NOTHING. The old
                             pipeline always returned top-k regardless of
                             quality; for a dosage question a weak citation is
@@ -16,6 +21,12 @@ enforced, in this order:
   5. context ordering       final order sets citation numbers
 
 There is no reranker. See the plan for the trigger to add one.
+
+Everything here runs on ENGLISH text. A Luganda question is translated to
+English before it reaches this module and the answer is translated back
+afterwards, so queries, chunks, lexical matching and every score in between are
+English throughout. Nothing downstream should re-derive a score from translated
+text.
 
 The tuning constants reach this module as a `RetrievalSettings` value rather
 than being read from `heal.config` in place. Omitting it reads exactly the same
@@ -181,30 +192,31 @@ class QdrantKnowledgeStore:
             ]
         )
 
-        dense = self.client.search(
+        # `query_points`, not `search`: the latter was removed in the 1.19
+        # client. It is also the endpoint that carries server-side fusion, so
+        # moving to it now is what makes RRF available later without a second
+        # rewrite of this function.
+        dense = self.client.query_points(
             collection_name=self.collection,
-            query_vector=(DENSE_VECTOR, self.embedder.embed_query(query)),
+            query=self.embedder.embed_query(query),
+            using=DENSE_VECTOR,
             query_filter=approved_only,
             limit=top_k,
             with_payload=True,
-        )
+        ).points
         results = {p.id: (_to_chunk(p), float(p.score), 0.0) for p in dense}
 
         if settings.hybrid_search:
             sparse = sparse_vector(lexical_query or query)
             if len(sparse):
-                lexical = self.client.search(
+                lexical = self.client.query_points(
                     collection_name=self.collection,
-                    query_vector=qm.NamedSparseVector(
-                        name=SPARSE_VECTOR,
-                        vector=qm.SparseVector(
-                            indices=sparse.indices, values=sparse.values
-                        ),
-                    ),
+                    query=qm.SparseVector(indices=sparse.indices, values=sparse.values),
+                    using=SPARSE_VECTOR,
                     query_filter=approved_only,
                     limit=top_k,
                     with_payload=True,
-                )
+                ).points
                 for point in lexical:
                     chunk, dense_score, _ = results.get(
                         point.id, (_to_chunk(point), 0.0, 0.0)
@@ -212,14 +224,17 @@ class QdrantKnowledgeStore:
                     results[point.id] = (chunk, dense_score, float(point.score))
 
         alpha = settings.alpha
+        rows = list(results.values())
+        scale = _sparse_scale(rows)
         fused = [
             RetrievedChunk(
                 chunk=chunk,
-                score=alpha * dense_score + (1.0 - alpha) * _clamp(sparse_score),
+                score=alpha * dense_score
+                + (1.0 - alpha) * _normalise_sparse(sparse_score, scale),
                 dense_score=dense_score,
                 sparse_score=sparse_score,
             )
-            for chunk, dense_score, sparse_score in results.values()
+            for chunk, dense_score, sparse_score in rows
         ]
         fused.sort(key=lambda r: r.score, reverse=True)
         return fused
@@ -267,6 +282,39 @@ def select_context(
 def _clamp(score: float) -> float:
     """Sparse dot products are unbounded above; the fusion assumes 0..1."""
     return max(0.0, min(1.0, score))
+
+
+def _sparse_scale(rows: list[tuple[Chunk, float, float]]) -> float:
+    """The divisor that puts this result set's sparse scores back into 0..1.
+
+    Without IDF the sparse score is a cosine between two L2-normalised term
+    frequency vectors, already in 0..1, and clamping is enough. That is the
+    pre-IDF behaviour and it is preserved exactly.
+
+    With IDF the server multiplies each term by roughly log(N / df), so a rare
+    drug code can carry a weight of 8 or more and the dot product routinely
+    exceeds 1. Clamping there would be actively harmful: nearly every lexical
+    hit would saturate at 1.0, every sparse score would become identical, and
+    the ordering the IDF weighting was added to produce would be thrown away at
+    the last step. Dividing by the best score in the same result set keeps the
+    ordering intact and bounded.
+
+    The honest caveat: this makes the sparse half a RELATIVE measure -- the
+    strongest lexical match in a result set always contributes the full
+    `1 - alpha`, whether it is a superb match or a mediocre one. That shifts
+    what a fused score means, and therefore what MIN_RETRIEVAL_SCORE means. See
+    `collection_stats`, which reports the combination so the mismatch is
+    visible rather than assumed away.
+    """
+    if not config.SPARSE_IDF:
+        return 1.0
+    best = max((sparse for _, _, sparse in rows), default=0.0)
+    return best if best > 0.0 else 1.0
+
+
+def _normalise_sparse(score: float, scale: float) -> float:
+    """One sparse score on the 0..1 scale the fusion weight assumes."""
+    return _clamp(score / scale) if scale > 0.0 else 0.0
 
 
 def _cap_per_source(results: list[RetrievedChunk], cap: int) -> list[RetrievedChunk]:
@@ -391,6 +439,11 @@ def collection_stats(
     name = collection or config.QDRANT_COLLECTION
     exists = client.collection_exists(name)
     info = client.get_collection(name) if exists else None
+    # Configured and live are reported separately on purpose. They disagree
+    # whenever the flag was turned on after the collection was built, and an
+    # admin reading a panel that showed only the flag would believe rare drug
+    # codes were being weighted when they were not.
+    live_idf = collection_uses_idf(client, name) if exists else None
     return {
         "collection": name,
         "collection_exists": exists,
@@ -399,9 +452,16 @@ def collection_stats(
         "embedding_dim": config.EMBEDDING_DIM,
         "hybrid_search": config.HYBRID_SEARCH,
         "hybrid_alpha": config.HYBRID_ALPHA,
+        "sparse_idf_configured": config.SPARSE_IDF,
+        "sparse_idf_active": live_idf,
+        "sparse_idf_needs_reingest": bool(config.SPARSE_IDF and live_idf is False),
         "retrieval_top_k": config.RETRIEVAL_TOP_K,
         "context_top_k": config.CONTEXT_TOP_K,
         "min_retrieval_score": config.MIN_RETRIEVAL_SCORE,
+        # True whenever the floor is being applied to a score distribution it
+        # was never derived against. Both halves are unmeasured today, so this
+        # is honest rather than alarming -- but it has to be visible.
+        "min_retrieval_score_unvalidated": True,
         "max_chunks_per_source": config.MAX_CHUNKS_PER_SOURCE,
     }
 
@@ -419,6 +479,24 @@ def build_client() -> Any:
     return QdrantClient(url=url, api_key=api_key, timeout=config.LLM_TIMEOUT)
 
 
+def collection_uses_idf(client: Any, collection: str) -> bool | None:
+    """Whether the LIVE collection applies IDF. None when it cannot be read.
+
+    Read from the server rather than inferred from config, because the two can
+    disagree: the modifier is fixed when the collection is created, so setting
+    `HEAL_SPARSE_IDF=true` against a collection built without it changes
+    nothing at all. Everything that reports on retrieval needs to be able to
+    tell the difference between "IDF is on" and "IDF is configured on".
+    """
+    try:
+        info = client.get_collection(collection)
+        params = info.config.params.sparse_vectors[SPARSE_VECTOR]
+        modifier = getattr(params, "modifier", None)
+        return str(getattr(modifier, "value", modifier)).lower() == "idf"
+    except Exception:  # noqa: BLE001 -- a status probe must not raise
+        return None
+
+
 def ensure_collection(client: Any | None = None, dimension: int | None = None) -> None:
     """Create the collection with both named vectors, if it does not exist.
 
@@ -431,16 +509,38 @@ def ensure_collection(client: Any | None = None, dimension: int | None = None) -
     client = client or build_client()
     name = config.QDRANT_COLLECTION
     if client.collection_exists(name):
-        logger.info("Qdrant collection %s already exists", name)
+        # The one case worth more than an "already exists" line. The IDF
+        # modifier can only be set at creation, so a collection built before
+        # this change will keep scoring without corpus statistics no matter
+        # what the config says -- silently, and while the admin panel claims
+        # the setting is on. Saying so here is what stops that going unnoticed.
+        live = collection_uses_idf(client, name)
+        if config.SPARSE_IDF and live is False:
+            logger.warning(
+                "Qdrant collection %s was created WITHOUT the IDF modifier, but "
+                "HEAL_SPARSE_IDF is on. Lexical scoring is still running on raw "
+                "term frequency and rare drug codes remain under-weighted. "
+                "Recreate the collection and re-ingest the corpus to apply it.",
+                name,
+            )
+        else:
+            logger.info("Qdrant collection %s already exists", name)
         return
 
     dim = dimension or config.EMBEDDING_DIM
+    # IDF is a property of the collection, applied by Qdrant at query time to
+    # the raw term frequencies we write. Nothing changes on the ingest side.
+    sparse_params = (
+        qm.SparseVectorParams(modifier=qm.Modifier.IDF)
+        if config.SPARSE_IDF
+        else qm.SparseVectorParams()
+    )
     client.create_collection(
         collection_name=name,
         vectors_config={
             DENSE_VECTOR: qm.VectorParams(size=dim, distance=qm.Distance.COSINE)
         },
-        sparse_vectors_config={SPARSE_VECTOR: qm.SparseVectorParams()},
+        sparse_vectors_config={SPARSE_VECTOR: sparse_params},
     )
     # Indexed because every search filters on them before the ANN step; without
     # payload indexes that pre-filter degrades to a full scan.
@@ -452,4 +552,9 @@ def ensure_collection(client: Any | None = None, dimension: int | None = None) -
             if field_name != "source_id"
             else qm.PayloadSchemaType.KEYWORD,
         )
-    logger.info("Created Qdrant collection %s (%d-dim dense + sparse)", name, dim)
+    logger.info(
+        "Created Qdrant collection %s (%d-dim dense + sparse, IDF %s)",
+        name,
+        dim,
+        "on" if config.SPARSE_IDF else "off",
+    )
