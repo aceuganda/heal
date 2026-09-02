@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { AfricaPulseLoader } from "@/components/health/AfricaPulseLoader";
+import { DotMarkLoader } from "@/components/health/DotMarkLoader";
 
 /**
  * What a health worker sees between sending a question and the first token.
@@ -108,7 +108,10 @@ export const AnswerProgress = ({ className }: { className?: string }) => {
 
   return (
     <div className={`flex items-center gap-3 ${className || ""}`}>
-      <AfricaPulseLoader size="2.5rem" label="Preparing your answer" />
+      {/* Smaller than the loader it replaced (2.5rem): the mark carries more
+          detail than the old pulse did, so it holds the eye harder at the same
+          size, and the status text beside it is what should be read first. */}
+      <DotMarkLoader size="2rem" label="Preparing your answer" />
       {/* aria-live is off: the loader beside it already announces a busy
           state, and reading five rotating steps aloud would be noise rather
           than information. */}

@@ -734,9 +734,17 @@ export const Chat = ({
               </div>
             </div>
 
+            {/* The composer sits ON the page rather than on a bar laid over
+                it. It used to be 95% white with a hard rule along the top —
+                on the warm canvas the chat actually uses, that read as a
+                paler slab pasted over the bottom of the screen. Now the ground
+                is the canvas colour, fading up to nothing, so an answer
+                scrolling underneath dissolves into the page instead of
+                stopping at a line. The blur is what keeps text off the input
+                legible through the transparent part of the fade. */}
             <div
               ref={composerRef}
-              className="absolute bottom-0 max-sm:left-0 sm:z-10 w-full border-t border-border bg-background/95 backdrop-blur"
+              className="absolute bottom-0 max-sm:left-0 sm:z-10 w-full bg-gradient-to-b from-canvas/0 via-canvas/90 to-canvas backdrop-blur-[2px]"
             >
               {modelNotice && (
                 <div className="mx-auto flex w-full max-w-3xl flex-wrap items-center gap-x-3 gap-y-1 px-4 pt-2 text-xs text-subtle sm:px-6">
@@ -766,18 +774,24 @@ export const Chat = ({
               <div className="w-full pb-2 pt-1.5">
                 <div className="mx-auto flex w-full max-w-3xl items-end px-3 py-1 sm:px-6">
                   <div className="relative min-w-0 flex-1">
-                    {/* Sits over the textarea, so the field's top padding is
-                        sized to clear it — see pt-12 below. Moving one without
-                        the other puts the language pills on top of the first
-                        line the user types. */}
-                    <div className="absolute left-1.5 top-1.5 z-10">
-                      <SearchLanguageSelector
-                        language={language}
-                        setLanguage={(language: string) => {
-                          setLanguage(language)
-                        }}
-                      />
-                    </div>
+                    {/* The field is the card, not the textarea. The border,
+                        background and focus ring live out here so the language
+                        pills sit INSIDE the same surface as the text — they
+                        used to be absolutely positioned over the textarea,
+                        paid for with a pt-12 that had to be kept in sync by
+                        hand or the pills landed on the user's first line.
+                        focus-within is also the only focus indicator this
+                        composer has ever had; the textarea itself is
+                        outline-none. */}
+                    <div className="relative rounded-2xl border border-border bg-background shadow-sm transition-shadow duration-150 focus-within:border-heal-teal-200 focus-within:shadow-md focus-within:ring-2 focus-within:ring-accent/15">
+                      <div className="px-2 pt-2">
+                        <SearchLanguageSelector
+                          language={language}
+                          setLanguage={(language: string) => {
+                            setLanguage(language)
+                          }}
+                        />
+                      </div>
                     {/* {selectedDocuments.length > 0 ? (
                       <SelectedDocuments
                         selectedDocuments={selectedDocuments}
@@ -793,29 +807,28 @@ export const Chat = ({
                     <textarea
                       ref={textareaRef}
                       autoFocus
+                      // Transparent and borderless: the wrapper above draws
+                      // the field. min-h is now one comfortable line rather
+                      // than the 80px that was reserving room for the pills.
                       className={`
-                    opacity-100
                     w-full
                     shrink
-                    border 
-                    border-border 
-                    rounded-xl
-                    outline-none 
-                    placeholder-gray-400 
-                    bg-background
-                    shadow-sm
+                    border-0
+                    bg-transparent
+                    outline-none
+                    placeholder-subtle
                     pl-4
                     pr-12
-                    pt-12
+                    pt-1
                     pb-3
                     overflow-hidden
-                    min-h-[80px]
+                    min-h-[44px]
                     ${(textareaRef?.current?.scrollHeight || 0) >
                           MAX_INPUT_HEIGHT
                           ? "overflow-y-auto"
                           : ""
-                        } 
-                    whitespace-normal 
+                        }
+                    whitespace-normal
                     break-word
                     overscroll-contain
                     resize-none
@@ -838,61 +851,80 @@ export const Chat = ({
                       }}
                       suppressContentEditableWarning={true}
                     />
-                    <div className="absolute bottom-2 right-3">
-                      <button
-                        type="button"
-                        className="cursor-pointer"
-                        onClick={() => {
-                          if (!isStreaming) {
-                            if (message) {
-                              onSubmit();
-                            }
-                          } else {
-                            setIsCancelled(true);
+                      {/* The button is the button. These classes used to sit
+                          on the icon itself, which left the control with no
+                          accessible name and a hit area the size of an svg. */}
+                      <div className="absolute bottom-2.5 right-2.5">
+                        <button
+                          type="button"
+                          aria-label={
+                            isStreaming ? "Stop generating" : "Send message"
                           }
-                        }}
-                      >
-                        {isStreaming ? (
-                          <FiStopCircle
-                            size={18}
-                            className={
-                              "h-9 w-9 rounded-lg p-2 text-emphasis hover:bg-hover"
-                            }
-                          />
-                        ) : (
-                          <FiSend
-                            size={18}
-                            className={
-                              "h-9 w-9 rounded-lg p-2 text-emphasis transition-colors " +
-                              (message
+                          disabled={!isStreaming && !message}
+                          className={
+                            "flex h-9 w-9 items-center justify-center rounded-xl transition-colors " +
+                            (isStreaming
+                              ? "text-emphasis hover:bg-hover"
+                              : message
                                 ? "bg-accent text-white hover:bg-accent-hover"
-                                : "bg-background-strong text-subtle")
+                                : "cursor-not-allowed bg-background-strong text-subtle")
+                          }
+                          onClick={() => {
+                            if (!isStreaming) {
+                              if (message) {
+                                onSubmit();
+                              }
+                            } else {
+                              setIsCancelled(true);
                             }
-                          />
-                        )}
-                      </button>
+                          }}
+                        >
+                          {isStreaming ? (
+                            <FiStopCircle size={18} aria-hidden="true" />
+                          ) : (
+                            <FiSend size={18} aria-hidden="true" />
+                          )}
+                        </button>
+                      </div>
                     </div>
                   </div>
                 </div>
 
                 {recentReferences.length > 0 && (
-                  <div className="mx-auto flex w-full max-w-3xl items-center gap-2 overflow-x-auto px-3 pb-1 sm:px-6">
-                    <div className="flex shrink-0 items-center gap-1.5 text-xs font-medium text-subtle">
-                      <FiBookOpen size={14} aria-hidden="true" />
-                      Recent references
+                  <div className="mx-auto w-full max-w-3xl px-3 pb-2 sm:px-6">
+                    {/* Scrolls sideways without a visible track: this row is
+                        two chips on a phone, and a scrollbar under the
+                        composer reads as a second control rather than as
+                        overflow. */}
+                    <div className="flex items-center gap-2 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                      <span className="flex shrink-0 items-center gap-1.5 text-[11px] font-medium uppercase tracking-wide text-subtle">
+                        <FiBookOpen size={13} aria-hidden="true" />
+                        Recent references
+                      </span>
+                      {recentReferences.slice(0, 2).map(([citationKey, document]) => (
+                        <button
+                          // See Messages.tsx: document_id is shared by every
+                          // passage from one guideline, the marker is not.
+                          key={citationKey}
+                          type="button"
+                          // Full name on hover; the chip truncates. Nullable
+                          // on the wire, and `title={null}` is a type error.
+                          title={document.semantic_identifier ?? undefined}
+                          onClick={() => setSelectedReference({ citationKey, document })}
+                          className="group flex max-w-[13rem] shrink-0 items-center gap-2 rounded-full border border-border bg-background py-1 pl-1 pr-3 text-xs text-emphasis shadow-sm transition-colors hover:border-heal-teal-200 hover:bg-hover-light"
+                        >
+                          {/* The marker as a badge rather than "[1] " run into
+                              the title — at this size the brackets were being
+                              read as part of the guideline's name. */}
+                          <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-background-strong text-[10px] font-semibold text-emphasis transition-colors group-hover:bg-heal-teal-100 group-hover:text-accent">
+                            {citationKey}
+                          </span>
+                          <span className="truncate">
+                            {document.semantic_identifier}
+                          </span>
+                        </button>
+                      ))}
                     </div>
-                    {recentReferences.slice(0, 2).map(([citationKey, document]) => (
-                      <button
-                        // See Messages.tsx: document_id is shared by every
-                        // passage from one guideline, the marker is not.
-                        key={citationKey}
-                        type="button"
-                        onClick={() => setSelectedReference({ citationKey, document })}
-                        className="max-w-[12rem] shrink-0 truncate rounded-full border border-border bg-background px-3 py-1.5 text-xs text-emphasis transition-colors hover:border-heal-teal-200 hover:bg-hover-light"
-                      >
-                        [{citationKey}] {document.semantic_identifier}
-                      </button>
-                    ))}
                   </div>
                 )}
               </div>

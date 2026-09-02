@@ -3,6 +3,10 @@ import "./AfricaPulseLoader.css";
 /**
  * AfricaPulseLoader
  *
+ * **Currently unrendered, and kept on purpose.** It was the chat's waiting
+ * state until `DotMarkLoader` took that job; it is held for a second use that
+ * has not been chosen yet. Do not remove it as dead code without asking.
+ *
  * A resizable loading indicator: the African continent (plus Madagascar)
  * rendered as a field of dots, with a travelling impulse rippling outward
  * from the centre of the point cloud, brightening and scaling each dot as

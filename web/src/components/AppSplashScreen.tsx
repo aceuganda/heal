@@ -8,6 +8,21 @@ import { DotMark } from "@/components/splash/DotMark";
 type SplashState = "shown" | "leaving" | "hidden";
 
 /**
+ * How long the splash holds before it starts fading.
+ *
+ * The dot-draw finishes at `DRAW_DURATION_MS` (780ms), so anything close to
+ * that cuts the fade in over a mark that has only just landed. This leaves
+ * the assembled mark up for well over a second of its own — the colour band
+ * gets to travel across the continent at least once, which is the part that
+ * was previously being thrown away.
+ */
+const SPLASH_HOLD_MS = 2150;
+
+/** The fade itself — matches `.heal-splash`'s 350ms opacity transition, plus
+ *  a frame's slack so the element is not removed mid-fade. */
+const SPLASH_FADE_MS = 350;
+
+/**
  * A short brand moment for the app shell. Authentication screens deliberately
  * stay direct so sign-in and verification are never delayed by the splash.
  */
@@ -21,8 +36,11 @@ export function AppSplashScreen() {
       return;
     }
 
-    const leaveTimer = window.setTimeout(() => setState("leaving"), 1150);
-    const removeTimer = window.setTimeout(() => setState("hidden"), 1500);
+    const leaveTimer = window.setTimeout(() => setState("leaving"), SPLASH_HOLD_MS);
+    const removeTimer = window.setTimeout(
+      () => setState("hidden"),
+      SPLASH_HOLD_MS + SPLASH_FADE_MS
+    );
 
     return () => {
       window.clearTimeout(leaveTimer);

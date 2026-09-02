@@ -34,6 +34,7 @@ import {
   Badge,
 } from "@tremor/react";
 import { LoadingAnimation } from "@/components/Loading";
+import { LoadingButton } from "@/components/LoadingButton";
 import { AdminPageTitle } from "@/components/admin/Title";
 import { usePopup } from "@/components/admin/connectors/Popup";
 import { BookmarkIcon } from "@/components/icons/icons";
@@ -408,9 +409,9 @@ function UploadPanel({ setPopup }: { setPopup: (p: any) => void }) {
           Approve immediately — answers may cite it as soon as it is indexed
         </label>
         <div className="flex items-center gap-3">
-          <Button onClick={submit} disabled={busy} loading={busy}>
+          <LoadingButton onClick={submit} disabled={busy} loading={busy}>
             {busy ? "Indexing…" : "Upload and index"}
-          </Button>
+          </LoadingButton>
         </div>
 
         {job && <IngestProgress job={job} />}
@@ -654,9 +655,9 @@ function SearchPanel({ setPopup }: { setPopup: (p: any) => void }) {
           onValueChange={setQuery}
           onKeyDown={(e) => e.key === "Enter" && run()}
         />
-        <Button onClick={run} disabled={busy} loading={busy}>
+        <LoadingButton onClick={run} disabled={busy} loading={busy}>
           {busy ? "Searching…" : "Search"}
-        </Button>
+        </LoadingButton>
       </div>
 
       {result && (

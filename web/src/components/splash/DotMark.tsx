@@ -25,10 +25,31 @@ const MIN_SCALE = 0.3;
  *  size. Only used if the canvas is measured before CSS has applied a real
  *  size to it — the ResizeObserver below corrects this the moment layout
  *  settles, so this is a one-frame fallback, not the real sizing path. */
-const FALLBACK_SIZE_PX = 92;
+const DEFAULT_FALLBACK_SIZE_PX = 92;
+
+interface DotMarkProps {
+  /** Applied on top of `.heal-dot-mark`. The mark takes its size from
+   *  whatever box it is given, so this is how a caller shrinks it. */
+  className?: string;
+  /** Accessible name. "Heal" on the splash, where the mark is the logo;
+   *  something about the wait wherever it is standing in for a spinner. */
+  label?: string;
+  /** `status` where the mark means "working", so assistive tech announces it
+   *  as a live busy state rather than as a picture. */
+  role?: "img" | "status";
+  /** One-frame fallback before layout settles. Worth setting when the mark
+   *  is rendered much smaller than the splash's 5.75rem, so the first frame
+   *  is not drawn at four times its final size. */
+  fallbackSizePx?: number;
+}
 
 /**
- * The splash mark, redrawn dot by dot rather than shown as the static PNG.
+ * The Heal mark, redrawn dot by dot rather than shown as the static PNG.
+ *
+ * Used at 5.75rem on the splash and small in chat, where it stands in for a
+ * spinner while the model works. Nothing here is splash-specific: the mark
+ * assembles once and then keeps breathing and cycling colour indefinitely,
+ * which is a loading state as much as it is an entrance.
  *
  * Canvas over 170 animated SVG circles: each of those would be a DOM node
  * getting a transform and a fill rewritten every frame, and on the low-end
@@ -38,7 +59,12 @@ const FALLBACK_SIZE_PX = 92;
  * device, and nothing here needs to be a DOM node — there is no per-dot
  * interactivity or accessibility content to hang off one.
  */
-export function DotMark() {
+export function DotMark({
+  className,
+  label = "Heal",
+  role = "img",
+  fallbackSizePx = DEFAULT_FALLBACK_SIZE_PX,
+}: DotMarkProps = {}) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
@@ -53,7 +79,7 @@ export function DotMark() {
     ).matches;
 
     const start = performance.now();
-    let size = FALLBACK_SIZE_PX;
+    let size = fallbackSizePx;
     let frame = 0;
     let cancelled = false;
 
@@ -64,7 +90,7 @@ export function DotMark() {
     // scaled by devicePixelRatio so the dots stay crisp on retina.
     const resize = () => {
       const rect = canvas.getBoundingClientRect();
-      size = rect.width || FALLBACK_SIZE_PX;
+      size = rect.width || fallbackSizePx;
       const dpr = window.devicePixelRatio || 1;
       canvas.width = Math.round(size * dpr);
       canvas.height = Math.round(size * dpr);
@@ -121,7 +147,7 @@ export function DotMark() {
     // splash mounts before layout has necessarily settled), and separately
     // the container's real size might not be known yet at all. Either way,
     // this repaints once layout catches up instead of leaving the mark
-    // stuck at FALLBACK_SIZE_PX or blank.
+    // stuck at the fallback size or blank.
     let observer: ResizeObserver | undefined;
     if (typeof ResizeObserver !== "undefined") {
       observer = new ResizeObserver(() => {
@@ -145,14 +171,14 @@ export function DotMark() {
       if (frame) cancelAnimationFrame(frame);
       observer?.disconnect();
     };
-  }, []);
+  }, [fallbackSizePx]);
 
   return (
     <canvas
       ref={canvasRef}
-      className="heal-splash__mark-canvas"
-      role="img"
-      aria-label="Heal"
+      className={className ? `heal-dot-mark ${className}` : "heal-dot-mark"}
+      role={role}
+      aria-label={label}
     />
   );
 }

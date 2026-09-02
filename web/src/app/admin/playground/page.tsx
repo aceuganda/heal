@@ -28,6 +28,7 @@ import {
   TextInput,
   Title,
 } from "@tremor/react";
+import { LoadingButton } from "@/components/LoadingButton";
 import { AdminPageTitle } from "@/components/admin/Title";
 import { usePopup } from "@/components/admin/connectors/Popup";
 import { ZoomInIcon } from "@/components/icons/icons";
@@ -917,9 +918,9 @@ export default function Page() {
             onValueChange={setQuestion}
             onKeyDown={(e) => e.key === "Enter" && run()}
           />
-          <Button onClick={run} disabled={busy || !current} loading={busy}>
+          <LoadingButton onClick={run} disabled={busy || !current} loading={busy}>
             {busy ? "Running…" : "Run"}
-          </Button>
+          </LoadingButton>
         </div>
 
         {current && options && (
@@ -1037,7 +1038,7 @@ export default function Page() {
                     .join(", ")}
                   {chatModel || classifierModel ? " and the model choice" : ""}?
                 </div>
-                <Button
+                <LoadingButton
                   size="xs"
                   className="mt-2"
                   loading={saving}
@@ -1045,7 +1046,7 @@ export default function Page() {
                   onClick={saveDefaults}
                 >
                   Save as deployment default
-                </Button>
+                </LoadingButton>
                 <div className="mt-1 text-xs text-amber-800">
                   Applies to every chat from the next message. No restart.
                 </div>

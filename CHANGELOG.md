@@ -22,6 +22,34 @@ the first pilot release.
 
 ### Added
 
+- **An external reference now says what the body is and where to read it.**
+  The drawer told a health worker to "look it up" and then gave them nothing
+  to look up with — a bare acronym, no excerpt, no link. That is not an
+  instruction anybody can follow if they have not met the acronym before. Six
+  bodies Heal expects to see named — the Uganda Ministry of Health, WHO, CDC,
+  UNAIDS, UNICEF and NICE — now carry a sentence on what they publish, a note
+  on what the reader still has to do once they arrive, and a link to that
+  body's own publications library.
+
+  **The warning above it does not move and does not soften.** This sits under
+  "Not from the approved library", inside the same amber panel, and the panel
+  still says the assistant named the source from general knowledge and that
+  nothing was retrieved or checked.
+
+  **These links are not the links the product refuses to print.** The standing
+  rule is that a URL the *model* produced is a claim about what sits at the
+  other end of it. These are not model output: they are publisher front doors,
+  written by hand into `web/src/app/chat/reference/externalSources.ts`,
+  reviewable in the diff, and pointing at a library rather than at a document.
+  The reader is told where to go and search — not handed a page and told it
+  says what the answer said. The panel says so in as many words.
+
+  **A name Heal does not recognise gets no note and no link**, which is the
+  correct output rather than a gap: guessing a publisher from an unrecognised
+  name is the exact failure this design exists to prevent. The two English
+  words in that list are matched as capitalised acronyms only — a source line
+  reading "guidance for staff who manage TB" was otherwise filed under WHO.
+
 - **Model settings can now be saved from the admin playground instead of living
   only in environment variables.** Temperature, top-p, the token ceiling, the
   new verbosity level, and the default chat and classifier models can be tuned
@@ -76,6 +104,29 @@ the first pilot release.
 
 ### Fixed
 
+- **Every admin action button crashed the page on the click that started the
+  work.** "Upload and index" threw `findDOMNode is not a function` and the
+  screen went blank — and so did test search, the playground's Run, **Save as
+  deployment default**, and Create user. An admin could not get a document into
+  the library at all.
+
+  The cause is the Next 16 move below. Tremor's `Button` runs its `loading`
+  state through a `react-transition-group` `Transition` with no `nodeRef`, so
+  the first time `loading` flips, the library reaches for `findDOMNode` —
+  which React 19 removed. Nothing in Heal called it; the crash sat two
+  dependencies deep and only fired on the state change, which is why it
+  survived to the admin's first click. Tremor 3.x is deprecated upstream and
+  will not fix this, so the busy state is now drawn by
+  `web/src/components/LoadingButton.tsx`, which keeps Tremor's styling and
+  never passes `loading` down. A test fails the build if a `loading` prop finds
+  its way back onto a Tremor `Button`.
+
+  **Worth knowing when reading the code:** `web/package.json` still asks for
+  React 18, but Next 16 aliases `react` and `react-dom` to its own bundled
+  React 19. The app has been running React 19 since that upgrade regardless of
+  what `npm ls` reports, so other React 19 removals may still be waiting in
+  dependencies. Aligning the pin with what actually ships is not done here.
+
 - **The safety prompt was talking the assistant out of naming any source.**
   "Do not invent a source, a citation, a guideline name or a statistic" was
   being read as "never name a source", producing answers like *"I cannot
@@ -100,6 +151,75 @@ the first pilot release.
   top-p slider measured nothing.
 
 ### Changed
+
+- **The admin is closed on small screens and says why.** Below 1024px, every
+  admin screen now shows "Open the admin on a computer" and a way back to
+  chat, instead of a 320px sidebar folded on top of a content column built for
+  desktop width. The work these screens exist for — reading retrieval scores
+  side by side, comparing a playground run against the score floor, working a
+  user table — does not survive one narrow column, and these are the screens
+  that set clinical-safety parameters. **This is a block, not a responsive
+  layout:** an admin on a phone can no longer reach the library, and that is
+  the intended behaviour until the screens are actually designed for it. It is
+  a CSS breakpoint rather than a user-agent test, so a small desktop window
+  gets the same message, and both branches render server-side so nothing
+  flashes the wrong layout.
+
+- **The composer no longer sits on a white slab.** The bar behind the chat
+  input was 95% white with a rule along its top, over a page whose actual
+  ground is the warm `#f5f4f0` canvas — so it read as a paler panel pasted
+  over the bottom of the screen. It is now a gradient of that same canvas
+  colour fading up to nothing, with the rule gone: an answer scrolling
+  underneath dissolves into the page instead of stopping at a line. The colour
+  is a `canvas` token in `tailwind.config.js` now rather than a hex repeated
+  per component.
+
+- **The chat input is one field, and it shows when it has focus.** The
+  language pills were absolutely positioned over the textarea, paid for with a
+  `pt-12` that had to be kept in step by hand — move one without the other and
+  the pills landed on the user's first line. Border, background and shadow now
+  belong to a wrapper the pills sit inside, so the textarea is transparent and
+  the reserved 80px of empty height is gone. **The field also has a focus
+  indicator for the first time:** it was `outline-none` with nothing put back,
+  so a keyboard user had no way to see where they were. The send button gained
+  an accessible name ("Send message" / "Stop generating"), a real 36px hit
+  area instead of an svg wearing the styling, and a disabled state that
+  matches the greyed-out look it already had.
+
+- **Recent references read as citations again.** The chips ran the marker into
+  the title as `[1] Uganda Clinical Guidelines`, and at that size the brackets
+  were being read as part of the guideline's name. The marker is a badge now,
+  the full title is on hover for the ones that truncate, and the row scrolls
+  sideways without a visible scrollbar track under the composer.
+
+- **The splash mark is red now, not teal, and it holds for a second longer.**
+  The dot map's palette was 55% teal by dwell time, sitting directly above a
+  teal rule under the wordmark — one flat block of the colour, with the logo's
+  own red reduced to a passing accent. The weights are inverted: red leads the
+  cycle and holds 62% of it, black follows, teal is down to an accent, and
+  yellow is the briefest stop of the four (at this dot size it goes muddy
+  against the warm background long before it goes unnoticed). The mark carries
+  the red; the rule under the wordmark still carries the brand teal.
+
+  The splash also holds for 2150ms rather than 1150ms before fading. The
+  dot-draw finishes at 780ms, so the previous timing started the fade over a
+  mark that had only just landed — the colour band never got to travel across
+  the continent once. **This is a second of startup a user now waits through,**
+  which is a deliberate trade and the thing to revisit if a field pilot says
+  launch feels slow.
+
+- **The chat's waiting state is the splash mark, smaller.** Between sending a
+  question and the first token, the answer placeholder now draws the same dot
+  continent the app opens with, at 2rem rather than the splash's 5.75rem — a
+  health worker sees the mark assemble on launch, and the same continent
+  assembling while an answer is prepared reads as the same product thinking
+  rather than as a new widget. It needs no loop to stay alive: once assembled
+  the mark keeps breathing and the colour band keeps travelling. The rotating
+  status lines beside it are unchanged.
+
+  `AfricaPulseLoader`, the loader this replaced, **is still in the tree and
+  still works.** It is held for a use not yet chosen, and is marked in its own
+  file so it is not swept up as dead code.
 
 - **The web app is off the PWA plugin and on Next 16, and the build is minutes
   faster.** `@ducanh2912/next-pwa` ran a second full webpack pass on every build
@@ -499,6 +619,39 @@ change is inert or unvalidated without them:
     every `chatId` URL; its own pass.
 19. **Clinician evaluation set.** Blocks tuning `MIN_RETRIEVAL_SCORE`,
     `REVIEW_FLOOR`, the 5% grounding threshold, and any reranker decision.
+20. **Make the production API image small enough to deploy reliably.** A first
+    read of `requirements/default.txt` says the roughly 3 GB is mostly dead
+    weight, and that the service split is the *last* lever to reach for, not
+    the first:
+
+    - `tensorflow==2.14.0` is imported in exactly one file,
+      `heal_app/search/search_nlp_models.py`, which is legacy Danswer search
+      reachable only from the removed Vespa index, the Slack bot and
+      `one_shot_answer`. Importing `heal_app.main` loads neither TensorFlow,
+      torch, nltk nor sentence-transformers, so the API boots without touching
+      any of it.
+    - `torchvision==0.15.2` has no references anywhere in `heal/`, `heal_app/`
+      or `shared_models/`.
+    - `torch==2.0.1` comes from the default PyPI index, so the Linux wheel
+      drags in the bundled NVIDIA CUDA libraries — well over a gigabyte that
+      never executes on a CPU deployment. The CPU wheel index is a one-line
+      change.
+
+    Do those three and measure again before designing anything. A multi-stage
+    builder is worth having but is close to a rounding error here: it removes
+    `cmake` and the apt lists, while every runtime wheel still has to be copied
+    into the final image.
+
+    **The split is also less available than it looks.** torch cannot leave the
+    API image today: `heal/knowledge/embedder.py` loads the sentence-transformer
+    lazily, but *query* embedding is on the request path, so the API needs the
+    model even if all ingestion moves elsewhere. Moving extraction and OCR out
+    is real; moving embedding out means putting query embedding behind a
+    network call, which is a larger decision than image size alone justifies.
+    None of this is a runtime problem — 3 GB costs pull time, registry storage
+    and host disk, not request latency. Keep any indexer compatible with the
+    same approved-source and Qdrant workflow, and document the operational
+    trade-off before introducing a permanently running worker.
 
 **Open, not queued**
 

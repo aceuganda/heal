@@ -13,8 +13,9 @@
  */
 
 /** Every dot has arrived and is sitting at its true position by this point.
- *  The splash starts leaving at 1150ms, so this leaves a real hold before
- *  that — the draw must never still be running when the fade begins. */
+ *  The splash starts leaving at `SPLASH_HOLD_MS` (AppSplashScreen), so this
+ *  leaves a long hold before that — the draw must never still be running when
+ *  the fade begins, and the assembled mark is the part worth looking at. */
 export const DRAW_DURATION_MS = 780;
 
 /** How long one dot's own pop-in takes, from first appearing to settled. */
@@ -66,8 +67,8 @@ export const COLOR_SWEEP_SPAN = 0.42;
 export const COLOR_EDGE_DITHER = 0.035;
 
 /** Fraction of a palette stop's dwell spent holding that colour outright
- *  before easing into the next one. Below this, a dot is simply teal (or
- *  red, or...); above it, it is blending. Keeping the hold well over half
+ *  before easing into the next one. Below this, a dot is simply red (or
+ *  black, or...); above it, it is blending. Keeping the hold well over half
  *  is what makes the shift read as occasional drift rather than a
  *  continuous colour wash. */
 export const HOLD_FRACTION = 0.55;
@@ -200,14 +201,24 @@ interface PaletteStop {
   readonly weight: number;
 }
 
-// Weight is dwell time in the loop, not a one-off pick: teal spends most of
-// the cycle held, the other three pass through briefly. This is what makes
-// the mark read as "teal, with accents" rather than four equal colours.
+// Weight is dwell time in the loop, not a one-off pick: red spends most of
+// the cycle held and the other three pass through briefly, so the mark reads
+// as "red, with accents" rather than four equal colours. Red leads the array
+// as well as dominating it — the first stop is what a dot shows at the top of
+// its cycle, so the mark resolves into the logo's own red and only drifts
+// away from it.
+//
+// Teal is down to a passing accent. It was the dominant colour here and is
+// still the brand teal under the wordmark (`.heal-splash__line`), but a teal
+// map above a teal rule read as one flat block of it; the mark carries the
+// logo's red now and the rule carries the teal. Yellow is the briefest stop
+// of the four: at this dot size it goes muddy against the warm background
+// long before it goes unnoticed.
 export const PALETTE: readonly PaletteStop[] = [
-  { color: TEAL, weight: 0.55 },
-  { color: RED, weight: 0.24 },
-  { color: YELLOW, weight: 0.11 },
-  { color: BLACK, weight: 0.1 },
+  { color: RED, weight: 0.62 },
+  { color: BLACK, weight: 0.18 },
+  { color: TEAL, weight: 0.14 },
+  { color: YELLOW, weight: 0.06 },
 ];
 
 const TOTAL_WEIGHT = PALETTE.reduce((sum, stop) => sum + stop.weight, 0);
@@ -230,7 +241,7 @@ export function colorPhaseOffset(x: number, y: number, seed: number): number {
 /**
  * A dot's colour at a moment in time.
  *
- * Every dot rides the same weighted teal -> red -> yellow -> black -> teal
+ * Every dot rides the same weighted red -> black -> teal -> yellow -> red
  * loop, offset by `phaseOffset` — which `colorPhaseOffset` derives mostly
  * from where the dot sits, so the palette sweeps across the mark as a band
  * of colour rather than each dot changing on its own. Within each stop the
@@ -255,7 +266,7 @@ export function colorAt(phaseOffset: number, elapsedMs: number): RGB {
     acc += stop.weight;
   }
 
-  return TEAL; // Unreachable given TOTAL_WEIGHT above, but keeps this total.
+  return PALETTE[0].color; // Unreachable given TOTAL_WEIGHT, but keeps this total.
 }
 
 export function toRgbString(color: RGB): string {

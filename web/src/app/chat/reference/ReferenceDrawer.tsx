@@ -3,6 +3,7 @@ import { SourceIcon } from "@/components/SourceIcon";
 import { useEffect, useState } from "react";
 import { FiArrowUpRight, FiFileText, FiX } from "react-icons/fi";
 import { fetchReferenceGloss } from "../lib";
+import { lookupPublisher, publisherHost } from "./externalSources";
 
 export interface SelectedReference {
   citationKey: string;
@@ -75,6 +76,13 @@ function ReferenceContent({
     ? null
     : document.match_highlights?.[0] || document.blurb;
 
+  // Heal's own note on the body the model named, when it recognises one.
+  // Null for anything it does not — see externalSources.ts on why a guess
+  // would be worse than saying nothing.
+  const publisher = isExternal
+    ? lookupPublisher(document.semantic_identifier)
+    : null;
+
   return (
     <div className="flex h-full flex-col">
       <div className="flex items-start gap-3 border-b border-border px-5 py-4">
@@ -123,6 +131,43 @@ function ReferenceContent({
               retrieved and no wording from it was checked, so there is no
               excerpt to show. Look it up before acting on the answer.
             </p>
+
+            {/* "Look it up" is not an instruction anybody can follow if they
+                have never met the acronym. This is what Heal knows about the
+                body itself — written by hand in externalSources.ts, not
+                produced by the model — so the reader knows what they are
+                being sent to and can go and read it. */}
+            {publisher && (
+              <div className="mt-4 border-t border-amber-200 pt-3">
+                <p className="text-xs font-semibold text-amber-900">
+                  {publisher.name}
+                </p>
+                <p className="mt-1.5 text-xs leading-5 text-amber-900">
+                  {publisher.about}
+                </p>
+                <p className="mt-2 text-xs leading-5 text-amber-800">
+                  {publisher.findIt}
+                </p>
+                <a
+                  href={publisher.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="mt-3 inline-flex items-center gap-1.5 rounded-lg border border-amber-300 bg-amber-100/70 px-3 py-2 text-xs font-medium text-amber-900 hover:bg-amber-100"
+                >
+                  {publisherHost(publisher)}
+                  <FiArrowUpRight size={14} aria-hidden="true" />
+                </a>
+                {/* The distinction the whole panel rests on, said once more
+                    where it matters: this link is Heal's, and it goes to a
+                    library, not to the document the answer leaned on. */}
+                <p className="mt-2 text-[11px] leading-4 text-amber-700">
+                  Heal&apos;s link to the publisher, not one the assistant
+                  produced. It opens their library — you will still need to
+                  find the specific guidance, and nobody here has checked that
+                  it says what the answer said.
+                </p>
+              </div>
+            )}
           </div>
         )}
 

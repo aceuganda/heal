@@ -29,6 +29,7 @@ import {
   Badge,
 } from "@tremor/react";
 import { LoadingAnimation } from "@/components/Loading";
+import { LoadingButton } from "@/components/LoadingButton";
 import { AdminPageTitle } from "@/components/admin/Title";
 import { usePopup } from "@/components/admin/connectors/Popup";
 import { UsersIcon } from "@/components/icons/icons";
@@ -186,9 +187,9 @@ function AddUserPanel({ setPopup }: { setPopup: (p: any) => void }) {
               </option>
             ))}
           </select>
-          <Button onClick={submit} disabled={busy} loading={busy}>
+          <LoadingButton onClick={submit} disabled={busy} loading={busy}>
             {busy ? "Creating…" : "Create user"}
-          </Button>
+          </LoadingButton>
         </div>
       </div>
     </Card>

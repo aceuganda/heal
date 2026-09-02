@@ -130,7 +130,9 @@ body {
   filter: drop-shadow(0 14px 20px rgb(31 41 51 / 0.12));
 }
 
-.heal-splash__mark-canvas {
+/* The dot mark itself, wherever it is drawn — the splash and the chat's
+   waiting state both size it from their own wrapper. */
+.heal-dot-mark {
   display: block;
   width: 100%;
   height: auto;

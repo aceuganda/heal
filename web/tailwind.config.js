@@ -115,6 +115,11 @@ module.exports = {
         background: "#ffffff",
         "background-emphasis": "#f8fafb",
         "background-strong": "#f1f5f6", // heal.ink.100
+        // The warm ground the chat and the splash sit on. Not white: it is
+        // what makes a white message card read as a card. Anything overlaying
+        // the chat has to be built from this and not from `background`, or it
+        // shows up as a paler slab laid over the page.
+        canvas: "#f5f4f0",
         border: "#e2e8eb",
         "border-light": "#f1f5f6",
         "border-strong": "#cbd5da", // heal.ink.300
