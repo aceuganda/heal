@@ -107,12 +107,16 @@ export const AIMessage = ({
       : content;
 
   return (
-    <div className="flex w-full px-4 py-5 sm:px-6">
+    // Tight on purpose. A health worker is reading this mid-consultation on a
+    // phone, and every row of padding is a line of the answer pushed off the
+    // screen — but the gutter stays wide enough that the text is not running
+    // into the edge of the display.
+    <div className="flex w-full px-3 py-3 sm:px-6">
       <div className="mx-auto w-full max-w-3xl">
         <div>
           <div className="flex">
-            <div className="flex h-8 w-8 items-center justify-center rounded-full border border-heal-teal-200 bg-heal-teal-50">
-              <FiActivity size={16} className="text-accent" aria-hidden="true" />
+            <div className="flex h-7 w-7 items-center justify-center rounded-full border border-heal-teal-200 bg-heal-teal-50">
+              <FiActivity size={15} className="text-accent" aria-hidden="true" />
             </div>
 
             <div className="font-bold text-emphasis ml-2 my-auto">Heal</div>
@@ -133,7 +137,7 @@ export const AIMessage = ({
               )} */}
           </div>
 
-          <div className="mt-2 max-w-2xl break-words rounded-2xl rounded-tl-md border border-border bg-background p-4 text-emphasis shadow-sm sm:ml-9">
+          <div className="mt-1.5 max-w-2xl break-words rounded-2xl rounded-tl-md border border-border bg-background px-4 py-3 text-emphasis shadow-sm sm:ml-8">
             {query !== undefined &&
               handleShowRetrieved !== undefined &&
               isCurrentlyShowingRetrieved !== undefined && (
@@ -227,7 +231,7 @@ export const AIMessage = ({
             )}
           </div>
           {handleFeedback && (
-            <div className="flex flex-col gap-y-3 items-start">
+            <div className="flex flex-col gap-y-1.5 items-start">
               {language === 'luganda' && messageId && !luganda_message &&
                 <button
                   onClick={() => handleTranslation(messageId)}
@@ -236,7 +240,10 @@ export const AIMessage = ({
                   <FiGlobe size={12} aria-hidden="true" />
                   {messageIdTranslating && messageIdTranslating === messageId ? "translating..." : "Translate to Luganda"}
                 </button>}
-              <div className="ml-8 mt-1 flex flex-col gap-2">
+              {/* Pulled close under the answer it belongs to: these controls
+                  rate the message above them, and a wide gap makes them read
+                  as belonging to whatever comes next. */}
+              <div className="ml-8 mt-0.5 flex flex-col gap-1.5">
                 <div className="flex flex-row gap-x-0.5">
                   <Hoverable
                     onClick={() => {
@@ -280,18 +287,18 @@ export const HumanMessage = ({
   messageIdTranslating?: number | null;
 }) => {
   return (
-    <div className="flex w-full flex-col px-4 py-5 sm:px-6">
+    <div className="flex w-full flex-col px-3 py-3 sm:px-6">
       <div className="mx-auto w-full max-w-3xl">
         <div>
           <div className="flex">
-            <div className="flex h-8 w-8 items-center justify-center rounded-full border border-border bg-background-strong text-emphasis">
-              <FiMessageCircle size={16} aria-hidden="true" />
+            <div className="flex h-7 w-7 items-center justify-center rounded-full border border-border bg-background-strong text-emphasis">
+              <FiMessageCircle size={15} aria-hidden="true" />
             </div>
 
             <div className="font-bold text-emphasis ml-2 my-auto">You</div>
           </div>
-          <div className="mt-2 ml-9 flex flex-wrap">
-            <div className="max-w-2xl break-words rounded-2xl rounded-tl-md border border-heal-teal-100 bg-heal-teal-50/70 p-4 text-emphasis">
+          <div className="mt-1.5 ml-8 flex flex-wrap">
+            <div className="max-w-2xl break-words rounded-2xl rounded-tl-md border border-heal-teal-100 bg-heal-teal-50/70 px-4 py-3 text-emphasis">
               {typeof content === "string" ? (
                 <ReactMarkdown
                   className="prose max-w-full"
@@ -314,7 +321,7 @@ export const HumanMessage = ({
             </div>
           </div>
         </div>
-        <div className="flex flex-col gap-y-3 items-start">
+        <div className="flex flex-col gap-y-1.5 items-start">
           {language === 'luganda' && id && !luganda_message &&
             <button
               onClick={() => handleTranslation(id)}

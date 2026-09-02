@@ -101,6 +101,37 @@ the first pilot release.
 
 ### Changed
 
+- **The web app is off the PWA plugin and on Next 16, and the build is minutes
+  faster.** `@ducanh2912/next-pwa` ran a second full webpack pass on every build
+  (the duplicated "Compiling for server" line) and had been unmaintained since
+  September 2024; it was also the last thing pinning us to webpack. With it gone
+  the build runs on Next 16's Turbopack and compiles in seconds. **What a user
+  loses: offline support.** The app shell is no longer cached, so a health worker
+  who loses connectivity now gets a browser error rather than a cached page — the
+  thing to weigh before a field pilot. The install path is mostly intact:
+  `manifest.json`, the home-screen icons, and the "add to home screen" prompt all
+  stay, and iOS installation never needed a service worker; Chrome on Android may
+  no longer offer its native install prompt. `docs/pwa.md` records the options for
+  bringing offline back, with Serwist as the maintained successor.
+- **Returning visitors get a one-time forced refresh.** Anyone who loaded Heal
+  before this change has the old service worker installed, and it would keep
+  serving its cached copy of the app forever — pinning them to the last PWA build
+  through every future deploy. `web/public/sw.js` is now a hand-written worker
+  that clears the caches, unregisters itself, and reloads open tabs. It is source,
+  not build output, and must not be deleted until returning visitors have picked
+  it up.
+- **The web toolchain moved to Node 24.** `web/.nvmrc` pins it and the web
+  Dockerfile builds `FROM node:24-alpine`, so local and image toolchains match.
+  Node 20 no longer suffices: Next 16 needs 20.9+ and `@capacitor/cli` needs 22+.
+  **Anyone building the web app locally needs `nvm use` in `web/` first.**
+- **Dependency vulnerabilities dropped from 31 to 21, including both criticals.**
+  `sharp` was removed outright — `images: { unoptimized: true }` meant Next never
+  called it, so it was carrying four libvips CVEs and a `node-gyp` install script
+  for nothing. `js-cookie`, `cookies-next`, and `vitest` were bumped to patched
+  releases. Two known items remain: `@capacitor/cli` is on 8.x while the Capacitor
+  runtime packages are still on 5.x (a `npm audit fix --force` side effect), and
+  Next's own advisory is transitive through `postcss`.
+
 - **The lexical half of retrieval now weights rare terms by how rare they are.**
   Until now the sparse vector was raw term frequency: a term counted only by how
   often it appeared in its own chunk, with no corpus statistics. `TDF/3TC/DTG` —

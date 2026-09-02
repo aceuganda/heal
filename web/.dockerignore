@@ -1,6 +1,12 @@
 node_modules
 .next
 
+# Capacitor mobile shells. Nothing in the server build reads them, and they are
+# copied into the builder stage by `COPY . .` otherwise.
+android
+ios
+capacitor.config.ts
+
 # Retired routes and components. tsconfig.json excludes src/deprecated from the
 # typecheck; this keeps it out of the build context entirely.
 src/deprecated

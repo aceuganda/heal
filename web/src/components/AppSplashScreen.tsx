@@ -1,8 +1,9 @@
 "use client";
 
-import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
+
+import { DotMark } from "@/components/splash/DotMark";
 
 type SplashState = "shown" | "leaving" | "hidden";
 
@@ -44,13 +45,7 @@ export function AppSplashScreen() {
 
       <div className="heal-splash__brand">
         <div className="heal-splash__mark">
-          <Image
-            src="/logo.png"
-            alt=""
-            width={463}
-            height={470}
-            priority
-          />
+          <DotMark />
         </div>
         <span className="heal-splash__name">Heal</span>
         <span className="heal-splash__line" />

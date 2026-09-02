@@ -8,12 +8,14 @@ export function buildUrl(path: string) {
   return `${INTERNAL_URL}/${path}`;
 }
 
-export function fetchSS(url: string, options?: RequestInit) {
+// Async since Next 15: `cookies()` returns a promise there. Callers already
+// awaited the fetch, so the extra hop is invisible to them.
+export async function fetchSS(url: string, options?: RequestInit) {
   const init = options || {
     credentials: "include",
     cache: "no-store",
     headers: {
-      cookie: cookies()
+      cookie: (await cookies())
         .getAll()
         .map((cookie) => `${cookie.name}=${cookie.value}`)
         .join("; "),

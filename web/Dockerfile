@@ -1,5 +1,8 @@
 # syntax=docker/dockerfile:1
-FROM node:20-alpine AS base
+# Node 24, matching web/.nvmrc. Next 16 requires >= 20.9, so 20-alpine would
+# still build -- but a local toolchain and an image on different majors is how
+# "works on my machine" starts.
+FROM node:24-alpine AS base
 
 # Image version, normally overridden by the release workflow with the git tag.
 ARG HEAL_VERSION=0.3-dev
@@ -44,7 +47,12 @@ ENV NEXT_TELEMETRY_DISABLED 1
 ARG NEXT_PUBLIC_DISABLE_STREAMING
 ENV NEXT_PUBLIC_DISABLE_STREAMING=${NEXT_PUBLIC_DISABLE_STREAMING}
 
-RUN npm run build
+# Next's webpack cache, kept across builds for the same reason as the npm cache
+# above: without it every image build recompiles from cold, which is most of the
+# build time. `output: standalone` means the runner stage copies only
+# .next/standalone and .next/static, so nothing from this mount reaches the image.
+RUN --mount=type=cache,target=/app/.next/cache,sharing=locked \
+    npm run build
 
 # Step 3. Production image, copy all the files and run next
 FROM base AS runner

@@ -14,11 +14,11 @@ import { Card, Title, Text } from "@tremor/react";
 import Link from "next/link";
 import AddToHomeScreen from '../../../components/AddToHomeScreen'
 
-const Page = async ({
-  searchParams,
-}: {
-  searchParams?: { [key: string]: string | string[] | undefined };
+// `searchParams` is a promise as of Next 15.
+const Page = async (props: {
+  searchParams?: Promise<{ [key: string]: string | string[] | undefined }>;
 }) => {
+  const searchParams = await props.searchParams;
   const autoRedirectDisabled = searchParams?.disableAutoRedirect === "true";
 
   // catch cases where the backend is completely unreachable here

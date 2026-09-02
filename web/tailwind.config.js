@@ -20,8 +20,31 @@ module.exports = {
         "2xl": "1420px",
         "3xl": "1700px",
       },
+      // The stack, not just the variable. Tailwind's default `sans` is
+      // replaced here, so a bare `var(--font-sans)` with nothing behind it
+      // would drop the whole app to the browser's default serif on any load
+      // where the font file has not arrived yet -- which on the connections
+      // this is deployed over is not a rare case. See src/app/layout.tsx for
+      // why IBM Plex.
       fontFamily: {
-        sans: ["var(--font-inter)"],
+        sans: [
+          "var(--font-sans)",
+          "system-ui",
+          "-apple-system",
+          "Segoe UI",
+          "Roboto",
+          "Helvetica Neue",
+          "Arial",
+          "sans-serif",
+        ],
+        mono: [
+          "var(--font-mono)",
+          "ui-monospace",
+          "SFMono-Regular",
+          "Menlo",
+          "Consolas",
+          "monospace",
+        ],
       },
       width: {
         "message-xs": "350px",

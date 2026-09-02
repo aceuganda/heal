@@ -6,6 +6,11 @@ html,
 body {
   background-color: #f8fafb;
   color: #1f2933; /* heal.ink.900 */
+  /* Plex is drawn with fairly even stroke weights; without this it renders
+     noticeably heavier on macOS than the design was set at. Harmless
+     elsewhere -- every other platform ignores both properties. */
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 /* Focus rings use the clinical teal accent. */
@@ -14,38 +19,52 @@ body {
   outline-offset: 2px;
 }
 
-/* Scrollbars stay deliberately quiet so they do not compete with content:
-   a muted teal at rest, a stronger teal on hover. Firefox ignores the
-   ::-webkit- rules, hence the scrollbar-color/-width fallback below. */
+/* Scrollbars are brand teal and meant to be seen as teal.
+
+   They were already this colour at 25% opacity, which on the near-white app
+   background is indistinguishable from grey -- the intent was there and none
+   of it reached the screen. At 55% the hue is unmistakable while the bar
+   still sits behind the content rather than competing with it.
+
+   Firefox ignores the ::-webkit- rules, hence the scrollbar-color/-width
+   pair; the two are kept in step by hand. */
 * {
-  scrollbar-color: rgb(15 118 110 / 0.25) #f8fafb; /* heal.teal.700 @ 25% */
+  scrollbar-color: rgb(15 118 110 / 0.55) #eef4f3; /* heal.teal.700 @ 55% */
   scrollbar-width: thin;
 }
 
 ::-webkit-scrollbar-track {
-  background: #f8fafb;
+  /* A faint teal wash rather than the page background, so the track reads as
+     a channel the thumb runs in instead of a gap in the layout. */
+  background: #eef4f3;
+  border-radius: 10px;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgb(15 118 110 / 0.25); /* heal.teal.700 @ 25% */
+  background: rgb(15 118 110 / 0.55); /* heal.teal.700 @ 55% */
   border-radius: 10px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgb(15 118 110 / 0.45); /* heal.teal.700 @ 45% */
+  background: rgb(15 118 110 / 0.8); /* heal.teal.700 @ 80% */
 }
 
+::-webkit-scrollbar-thumb:active {
+  background: rgb(15 118 110 / 0.95); /* heal.teal.700 @ 95% */
+}
+
+/* For panels on a darker or busier ground, where 55% would disappear. */
 .dark-scrollbar {
-  scrollbar-color: rgb(15 118 110 / 0.4) #f8fafb;
+  scrollbar-color: rgb(15 118 110 / 0.7) #eef4f3;
 }
 
 .dark-scrollbar::-webkit-scrollbar-thumb {
-  background: rgb(15 118 110 / 0.4); /* heal.teal.700 @ 40% */
+  background: rgb(15 118 110 / 0.7); /* heal.teal.700 @ 70% */
   border-radius: 10px;
 }
 
 .dark-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: rgb(15 118 110 / 0.6); /* heal.teal.700 @ 60% */
+  background: rgb(15 118 110 / 0.9); /* heal.teal.700 @ 90% */
 }
 
 ::-webkit-scrollbar {
@@ -109,13 +128,16 @@ body {
 .heal-splash__mark {
   width: 5.75rem;
   filter: drop-shadow(0 14px 20px rgb(31 41 51 / 0.12));
-  animation: heal-splash-mark-colors 8s ease-in-out infinite;
-  will-change: filter;
 }
 
-.heal-splash__mark img {
+.heal-splash__mark-canvas {
+  display: block;
   width: 100%;
   height: auto;
+  /* The canvas has no intrinsic size before its first JS resize pass; this
+     is what stops it rendering as the browser's 300x150 default for a frame
+     and flashing into the right proportions. */
+  aspect-ratio: 1;
 }
 
 .heal-splash__name {
@@ -155,43 +177,9 @@ body {
   }
 }
 
-/* A deliberately unhurried colour cycle gives the mark a sense of life while
-   someone waits, without turning the splash into a distracting spinner. */
-@keyframes heal-splash-mark-colors {
-  0%,
-  100% {
-    filter: hue-rotate(0deg) drop-shadow(0 14px 20px rgb(31 41 51 / 0.12));
-  }
-
-  14% {
-    filter: hue-rotate(-14deg) saturate(1.12) brightness(1.03) drop-shadow(0 14px 20px rgb(180 35 55 / 0.16));
-  }
-
-  28% {
-    filter: hue-rotate(18deg) saturate(1.08) brightness(1.04) drop-shadow(0 14px 20px rgb(217 88 61 / 0.16));
-  }
-
-  46% {
-    filter: hue-rotate(105deg) drop-shadow(0 14px 20px rgb(15 118 110 / 0.16));
-  }
-
-  63% {
-    filter: hue-rotate(175deg) drop-shadow(0 14px 20px rgb(30 116 172 / 0.16));
-  }
-
-  78% {
-    filter: hue-rotate(275deg) drop-shadow(0 14px 20px rgb(146 64 122 / 0.14));
-  }
-
-  90% {
-    filter: hue-rotate(-22deg) saturate(1.15) brightness(0.96) drop-shadow(0 14px 20px rgb(151 35 52 / 0.17));
-  }
-}
-
 @media (prefers-reduced-motion: reduce) {
   .heal-splash,
-  .heal-splash__brand,
-  .heal-splash__mark {
+  .heal-splash__brand {
     animation: none;
     transition-duration: 1ms;
   }

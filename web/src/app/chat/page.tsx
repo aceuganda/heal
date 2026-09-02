@@ -21,11 +21,11 @@ import { DOCUMENT_SIDEBAR_WIDTH_COOKIE_NAME } from "@/components/resizable/conta
 import { personaComparator } from "../admin/personas/lib";
 import { ChatLayout } from "./ChatPage";
 
-export default async function Page({
-  searchParams,
-}: {
-  searchParams: { [key: string]: string };
+// `searchParams` is a promise as of Next 15.
+export default async function Page(props: {
+  searchParams: Promise<{ [key: string]: string }>;
 }) {
+  const searchParams = await props.searchParams;
   noStore();
 
   const tasks = [
@@ -102,7 +102,7 @@ export default async function Page({
     ? parseInt(defaultPersonaIdRaw)
     : undefined;
 
-  const documentSidebarCookieInitialWidth = cookies().get(
+  const documentSidebarCookieInitialWidth = (await cookies()).get(
     DOCUMENT_SIDEBAR_WIDTH_COOKIE_NAME
   );
   const finalDocumentSidebarInitialWidth = documentSidebarCookieInitialWidth

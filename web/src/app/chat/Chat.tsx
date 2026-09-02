@@ -760,10 +760,17 @@ export const Chat = ({
                   </button>
                 </div>
               )}
-              <div className="w-full pb-4 pt-2">
-                <div className="mx-auto flex w-full max-w-3xl items-end px-4 py-2 sm:px-6">
+              {/* The composer is the one thing permanently occupying screen
+                  space, so its padding costs a line of every answer above it.
+                  Trimmed to what still reads as a distinct bar. */}
+              <div className="w-full pb-2 pt-1.5">
+                <div className="mx-auto flex w-full max-w-3xl items-end px-3 py-1 sm:px-6">
                   <div className="relative min-w-0 flex-1">
-                    <div className="absolute left-2 top-2 z-10">
+                    {/* Sits over the textarea, so the field's top padding is
+                        sized to clear it — see pt-12 below. Moving one without
+                        the other puts the language pills on top of the first
+                        line the user types. */}
+                    <div className="absolute left-1.5 top-1.5 z-10">
                       <SearchLanguageSelector
                         language={language}
                         setLanguage={(language: string) => {
@@ -799,10 +806,10 @@ export const Chat = ({
                     shadow-sm
                     pl-4
                     pr-12
-                    pt-14
-                    pb-4
+                    pt-12
+                    pb-3
                     overflow-hidden
-                    min-h-[96px]
+                    min-h-[80px]
                     ${(textareaRef?.current?.scrollHeight || 0) >
                           MAX_INPUT_HEIGHT
                           ? "overflow-y-auto"
@@ -869,7 +876,7 @@ export const Chat = ({
                 </div>
 
                 {recentReferences.length > 0 && (
-                  <div className="mx-auto flex w-full max-w-3xl items-center gap-2 overflow-x-auto px-4 pb-1 sm:px-6">
+                  <div className="mx-auto flex w-full max-w-3xl items-center gap-2 overflow-x-auto px-3 pb-1 sm:px-6">
                     <div className="flex shrink-0 items-center gap-1.5 text-xs font-medium text-subtle">
                       <FiBookOpen size={14} aria-hidden="true" />
                       Recent references
