@@ -22,8 +22,6 @@ the first pilot release.
 
 ### Added
 
-- **`make deploy` works entirely through the k3s API** with the `heal-deployer` token (`DEPLOY_API_SERVER`, `DEPLOY_KUBE_TOKEN`, `DEPLOY_KUBE_CA`). Images go to a private registry inside k3s (`deployment/kubernetes/registry/registry.yaml`) that listens on the node's loopback only; the deploy reaches it with `kubectl port-forward` and pushes with `crane`, sending only changed layers. SSH side-loading, the SSH tunnel, external registries and kubeconfig files are no longer supported by the deploy CLI. Server setup is one script, `deployment/kubernetes/setup-server.sh`, and everything lives in the `heal` namespace.
-
 - **Change your own password** at Admin → User Management → Your password (`/admin/account`), backed by `POST /api/manage/me/password`. It needs the current password, refuses fewer than 8 characters, an unchanged password, common ones and the account's own email, and signs out every other session of the account. Meant first for the bootstrap administrator, whose initial password came from an env file.
 - **Show/hide toggle on password fields**, including the login and sign-up forms.
 
@@ -38,27 +36,32 @@ the first pilot release.
   without a usable GPU is an error instead of a silent CPU fallback. The torch
   and torchvision versions are unchanged.
 
-- **`make deploy`: a controlled deploy to k3s from your own machine.** Code
-  stays local and on GitHub; nothing deploys from CI. A deploy will not start
-  unless the commit is clean and already on `origin/main`, every shipped
-  dependency and base image is pinned to a stable release, and Trivy finds no
-  fixable critical/high vulnerability or leaked secret. Images are scanned
-  again after the build and an SBOM is kept. The operator confirms by typing
-  the namespace before anything is shipped. With no registry configured (the
-  default), images are streamed over SSH straight into the single k3s node and
-  never pulled from anywhere; with one, they are pushed, deployed by digest and
-  can be signed with cosign. Builds target the node's architecture (amd64 by
-  default, even from an Apple Silicon Mac) and a wrong-architecture image
-  stops the deploy. The cluster is reached over an SSH tunnel as a
-  namespace-scoped `heal-deployer` account that cannot read Secrets, and k3s is
-  called by full path so RHEL's sudo can find it. A failed rollout is undone
-  automatically, and every deploy is recorded locally.
+- **`make deploy`: a controlled deploy to k3s from your own machine, entirely
+  through the cluster API.** Code stays local and on GitHub; nothing deploys
+  from CI. A deploy will not start unless the commit is clean and already on
+  `origin/main`, every shipped dependency and base image is pinned to a stable
+  release, and Trivy finds no fixable critical/high vulnerability or leaked
+  secret. Images are built for the node's architecture (amd64 by default, even
+  from an Apple Silicon Mac), scanned again after the build, and an SBOM is
+  kept. The operator confirms by typing the namespace before anything ships.
+  Images go to a private registry inside k3s
+  (`deployment/kubernetes/registry/registry.yaml`) that listens on the node's
+  loopback only; the deploy reaches it with `kubectl port-forward` and pushes
+  with `crane`, sending only changed layers, and deploys by digest (cosign
+  signing optional). Everything runs as the `heal-deployer` service account in
+  the one `heal` namespace, which cannot read Secrets; its token stays in the
+  macOS Keychain (`heal-deploy-token`) and each command writes a short-lived,
+  owner-only kubeconfig, so the token is never in a file in the repo or on a
+  command line. A failed rollout is undone automatically, and every deploy is
+  recorded in `deployment/.deploy/history.jsonl`. Server setup is one script,
+  `deployment/kubernetes/setup-server.sh`. Commands: `make deploy-doctor`,
+  `deploy-check`, `deploy`, `deploy-status`, `deploy-rollback`.
 
   **Migration:** the Kubernetes manifests now name images `heal-backend` and
   `heal-web` instead of `khalifan1126/*:latest`, so applying them by hand no
-  longer works. Set up `deployment/deploy.env` and the deployer account as
-  `deployment/README.md` § Kubernetes (k3s) describes. The web image's base is
-  pinned to `node:24.22.0-alpine3.24` (it was the floating `node:24-alpine`).
+  longer works. Set up `deployment/deploy.env` as `deployment/README.md`
+  § Kubernetes (k3s) describes. The web image's base is pinned to
+  `node:24.22.0-alpine3.24` (it was the floating `node:24-alpine`).
 
 - **An external reference now says what the body is and where to read it.**
   The drawer told a health worker to "look it up" and then gave them nothing
@@ -212,6 +215,10 @@ the first pilot release.
   top-p slider measured nothing.
 
 ### Changed
+
+- **Kubernetes volume sizes for the pilot:** Postgres 10 GiB (was 1), app
+  storage `dynamic-pvc` 5 GiB (was 1), in-cluster registry 20 GiB. k3s's
+  local-path storage does not enforce these; all share the node's disk.
 
 - **Sidebar chats read left to right, with when they started underneath.**
   Titles were centred in the row and the date sat outside it in small italics.
