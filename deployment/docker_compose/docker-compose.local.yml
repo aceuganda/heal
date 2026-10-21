@@ -18,6 +18,9 @@ services:
     build:
       context: ../../backend
       dockerfile: Dockerfile
+      args:
+        # cpu, or cuda for a GPU host. See backend/Dockerfile.
+        TORCH_VARIANT: ${TORCH_VARIANT:-cpu}
     command: >
       /bin/sh -c "alembic upgrade head &&
         echo 'Starting Heal API server' &&
@@ -98,6 +101,7 @@ services:
       - QDRANT_API_KEY=${QDRANT_API_KEY:-}
       - QDRANT_COLLECTION=${QDRANT_COLLECTION:-}
       - HEAL_EMBEDDING_MODEL=${HEAL_EMBEDDING_MODEL:-}
+      - HEAL_EMBEDDING_DEVICE=${HEAL_EMBEDDING_DEVICE:-}
       - HEAL_MIN_RETRIEVAL_SCORE=${HEAL_MIN_RETRIEVAL_SCORE:-}
       # The embedding model is baked into the image at /opt/models (see
       # backend/Dockerfile); nothing is downloaded at boot or on first upload.

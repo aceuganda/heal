@@ -22,6 +22,44 @@ the first pilot release.
 
 ### Added
 
+- **`make deploy` works entirely through the k3s API** with the `heal-deployer` token (`DEPLOY_API_SERVER`, `DEPLOY_KUBE_TOKEN`, `DEPLOY_KUBE_CA`). Images go to a private registry inside k3s (`deployment/kubernetes/registry/registry.yaml`) that listens on the node's loopback only; the deploy reaches it with `kubectl port-forward` and pushes with `crane`, sending only changed layers. SSH side-loading, the SSH tunnel, external registries and kubeconfig files are no longer supported by the deploy CLI. Server setup is one script, `deployment/kubernetes/setup-server.sh`, and everything lives in the `heal` namespace.
+
+- **Change your own password** at Admin → User Management → Your password (`/admin/account`), backed by `POST /api/manage/me/password`. It needs the current password, refuses fewer than 8 characters, an unchanged password, common ones and the account's own email, and signs out every other session of the account. Meant first for the bootstrap administrator, whose initial password came from an env file.
+- **Show/hide toggle on password fields**, including the login and sign-up forms.
+
+- **The backend image is CPU-only by default, with a GPU build one setting
+  away.** On amd64, PyPI's `torch==2.0.1` is the CUDA build, which put about
+  2.5 GB of GPU libraries into an image that runs on CPU-only servers. The
+  backend Dockerfile now takes `TORCH_VARIANT` (`cpu` default, or `cuda`),
+  passed through by Compose (`TORCH_VARIANT` in the shell) and by `make deploy`
+  (`DEPLOY_TORCH_VARIANT`). The build fails if the torch it installed does not
+  match the variant asked for. A new `HEAL_EMBEDDING_DEVICE` setting chooses
+  where embeddings run (empty = GPU if usable, else CPU); asking for `cuda`
+  without a usable GPU is an error instead of a silent CPU fallback. The torch
+  and torchvision versions are unchanged.
+
+- **`make deploy`: a controlled deploy to k3s from your own machine.** Code
+  stays local and on GitHub; nothing deploys from CI. A deploy will not start
+  unless the commit is clean and already on `origin/main`, every shipped
+  dependency and base image is pinned to a stable release, and Trivy finds no
+  fixable critical/high vulnerability or leaked secret. Images are scanned
+  again after the build and an SBOM is kept. The operator confirms by typing
+  the namespace before anything is shipped. With no registry configured (the
+  default), images are streamed over SSH straight into the single k3s node and
+  never pulled from anywhere; with one, they are pushed, deployed by digest and
+  can be signed with cosign. Builds target the node's architecture (amd64 by
+  default, even from an Apple Silicon Mac) and a wrong-architecture image
+  stops the deploy. The cluster is reached over an SSH tunnel as a
+  namespace-scoped `heal-deployer` account that cannot read Secrets, and k3s is
+  called by full path so RHEL's sudo can find it. A failed rollout is undone
+  automatically, and every deploy is recorded locally.
+
+  **Migration:** the Kubernetes manifests now name images `heal-backend` and
+  `heal-web` instead of `khalifan1126/*:latest`, so applying them by hand no
+  longer works. Set up `deployment/deploy.env` and the deployer account as
+  `deployment/README.md` § Kubernetes (k3s) describes. The web image's base is
+  pinned to `node:24.22.0-alpine3.24` (it was the floating `node:24-alpine`).
+
 - **An external reference now says what the body is and where to read it.**
   The drawer told a health worker to "look it up" and then gave them nothing
   to look up with — a bare acronym, no excerpt, no link. That is not an
@@ -104,6 +142,8 @@ the first pilot release.
 
 ### Fixed
 
+- **Kubernetes: the API server now reads its database credentials from `heal-secrets`.** It previously fell back to the built-in default password, so any real password set in the secret broke the connection. The LLM provider key also moved from the ConfigMap to the secret (`gen_ai_api_key`, optional).
+
 - **Enter on an empty composer sent a blank message and opened a chat with
   it.** The keydown handler only acted when the field had text, so on an empty
   field Enter fell through to the textarea and inserted a newline. `message`
@@ -172,6 +212,13 @@ the first pilot release.
   top-p slider measured nothing.
 
 ### Changed
+
+- **Sidebar chats read left to right, with when they started underneath.**
+  Titles were centred in the row and the date sat outside it in small italics.
+  Each chat is now a two-line row with one left edge: the title, then the day
+  and time it started ("Today · 09:05", "28 Aug · 14:30"). Older chats show the
+  time as well now, so two from the same day can be told apart. The open chat
+  is marked with a teal rail, and rename/delete also show when you hover a row.
 
 - **Chat history is grouped by calendar day, and every chat says when it was
   started.** The sidebar divided a raw millisecond span by 86,400,000 and

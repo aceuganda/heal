@@ -13,6 +13,7 @@ from httpx_oauth.clients.google import GoogleOAuth2
 from heal import config as heal_config
 from heal.bootstrap import ensure_bootstrap_admin
 from heal.knowledge.startup import prepare_knowledge_store_in_background
+from heal.server.account_api import router as account_router
 from heal.server.api_key import get_danswer_api_key
 from heal.server.feedback_api import router as feedback_router
 from heal.server.knowledge_api import router as knowledge_router
@@ -123,6 +124,7 @@ def get_application() -> FastAPI:
     # Creating accounts and changing roles. Mounted after `user_router`, which
     # keeps the inherited read-only user routes.
     include_router_with_global_prefix_prepended(application, users_admin_router)
+    include_router_with_global_prefix_prepended(application, account_router)
     # Retrieval playground. Behind the same gate as user management: its
     # settings are per-request and change nothing for anyone else, but whoever
     # can tune the score floor decides when the assistant refuses a dose.

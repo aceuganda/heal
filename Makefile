@@ -83,7 +83,7 @@ deprecated-gate: ## Fail if live code imports anything under deprecated/
 		&& echo "deprecated/ is not imported by live code"
 
 .PHONY: check
-check: format-check lint typecheck test deprecated-gate ## Everything CI runs
+check: format-check lint typecheck test test-deploy deprecated-gate ## Everything CI runs
 
 # ---------------------------------------------------------------------------
 # Local stack
@@ -268,6 +268,43 @@ db-shell: ## psql into the local database
 .PHONY: db-dump
 db-dump: ## Schema-only dump of the local database, for the rebaseline diff
 	$(COMPOSE) exec -T relational_db pg_dump --schema-only -U postgres postgres
+
+# ---------------------------------------------------------------------------
+# Deploy to k3s
+#
+# Gates and scans locally, builds, asks, pushes to the registry inside k3s,
+# then rolls out -- all through the cluster API with the deployer's token.
+# Settings live in deployment/deploy.env -- README § k3s.
+# ---------------------------------------------------------------------------
+
+# The token comes from the macOS Keychain when it is there (README § k3s), so it
+# need not sit in deploy.env. It reaches the CLI as an env var, never an argument.
+DEPLOY := DEPLOY_KUBE_TOKEN="$${DEPLOY_KUBE_TOKEN:-$$(security find-generic-password -s heal-deploy-token -w 2>/dev/null)}" \
+	PYTHONPATH=deployment/cli python3 -m heal_deploy
+
+.PHONY: deploy
+deploy: ## Gate, scan, build, push and roll out to k3s (asks before pushing)
+	$(DEPLOY) deploy
+
+.PHONY: deploy-check
+deploy-check: ## Run the deploy gates and dependency scan, build nothing
+	$(DEPLOY) check
+
+.PHONY: deploy-doctor
+deploy-doctor: ## Check deploy tools, the API token and the in-cluster registry
+	$(DEPLOY) doctor
+
+.PHONY: deploy-status
+deploy-status: ## Show what is running on the cluster and its rollout history
+	$(DEPLOY) status
+
+.PHONY: deploy-rollback
+deploy-rollback: ## Roll the API and web back to their previous release
+	$(DEPLOY) rollback
+
+.PHONY: test-deploy
+test-deploy: venv ## Run the deploy CLI's unit tests
+	$(PY) -m pytest deployment/cli/tests -q
 
 # ---------------------------------------------------------------------------
 # Housekeeping

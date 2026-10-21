@@ -3,9 +3,8 @@ import { ChatSession } from "../interfaces";
 import { useEffect, useState } from "react";
 import { deleteChatSession, renameChatSession } from "../lib";
 import { DeleteChatModal } from "../modal/DeleteChatModal";
-import { BasicSelectable } from "@/components/BasicClickable";
 import Link from "next/link";
-import { FiCheck, FiEdit, FiMessageSquare, FiTrash, FiX } from "react-icons/fi";
+import { FiCheck, FiEdit, FiTrash, FiX } from "react-icons/fi";
 import { formatSessionStart, fullSessionStart } from "./sessionGrouping";
 
 interface ChatSessionDisplayProps {
@@ -26,6 +25,31 @@ function stopRowNavigation(action: () => void) {
     event.stopPropagation();
     action();
   };
+}
+
+/** A small icon control on a session row. Not a <button>: it sits inside
+ *  the row's <Link>, and interactive content inside an anchor is invalid. */
+function RowAction({
+  label,
+  onClick,
+  children,
+}: {
+  label: string;
+  onClick: () => void;
+  children: JSX.Element;
+}) {
+  return (
+    <span
+      role="button"
+      tabIndex={0}
+      aria-label={label}
+      title={label}
+      onClick={stopRowNavigation(onClick)}
+      className="rounded-md p-1 transition-colors hover:bg-black/5 hover:text-emphasis"
+    >
+      {children}
+    </span>
+  );
 }
 
 export function ChatSessionDisplay({
@@ -74,89 +98,98 @@ export function ChatSessionDisplay({
           chatSessionName={chatSession.name}
         />
       )}
+      {/* Two lines, left-aligned: the title, and when it was started under
+          it. This used to be a <button>, whose default centring put short
+          titles in the middle of the sidebar with the date dangling outside
+          the row. Now both lines share one left edge and one hover/selected
+          fill, and the date is told apart from the title by size and tone
+          rather than by sitting outside the box. A teal rail marks the open
+          conversation. Full timestamp on hover of the caption. */}
       <Link
-        className="block my-1"
         key={chatSession.id}
         href={`/chat?chatId=${chatSession.id}`}
         scroll={false}
+        aria-current={isSelected ? "page" : undefined}
+        className={`group relative my-0.5 flex items-start gap-2 rounded-lg py-2 pl-3 pr-2 transition-colors ${
+          isSelected ? "bg-hover" : "hover:bg-hover/60"
+        }`}
       >
-        <BasicSelectable fullWidth selected={isSelected}>
-          <div className="flex items-center gap-2">
-            <FiMessageSquare size={16} className="shrink-0" />
-            <div className="min-w-0 flex-1">
-              {isRenamingChat ? (
-                <input
-                  value={chatName}
-                  onChange={(e) => setChatName(e.target.value)}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter") {
-                      onRename();
-                      event.preventDefault();
-                    }
-                  }}
-                  className="-my-px px-1 mr-2 w-full rounded"
-                />
-              ) : (
-                <p className="line-clamp-1 break-all text-ellipsis text-emphasis">
-                  {chatName || "Untitled chat"}
-                </p>
-              )}
-            </div>
-            {isSelected &&
-              (isRenamingChat ? (
-                <div className="mt-0.5 flex shrink-0">
-                  <div
-                    onClick={stopRowNavigation(onRename)}
-                    className={`hover:bg-black/10 p-1 -m-1 rounded`}
-                  >
-                    <FiCheck size={16} />
-                  </div>
-                  <div
-                    onClick={stopRowNavigation(() => {
-                      setChatName(chatSession.name);
-                      setIsRenamingChat(false);
-                    })}
-                    className={`hover:bg-black/10 p-1 -m-1 rounded ml-2`}
-                  >
-                    <FiX size={16} />
-                  </div>
-                </div>
-              ) : (
-                <div className="mt-0.5 flex shrink-0">
-                  <div
-                    onClick={stopRowNavigation(() => setIsRenamingChat(true))}
-                    className={`hover:bg-black/10 p-1 -m-1 rounded`}
-                  >
-                    <FiEdit size={16} />
-                  </div>
-                  <div
-                    onClick={stopRowNavigation(() =>
-                      setIsDeletionModalVisible(true)
-                    )}
-                    className={`hover:bg-black/10 p-1 -m-1 rounded ml-2`}
-                  >
-                    <FiTrash size={16} />
-                  </div>
-                </div>
-              ))}
-          </div>
-        </BasicSelectable>
-
-        {/* Outside the selectable, deliberately. Inside it, the time picked up
-            the hover and selected fill and read as part of the chat's name —
-            two lines of equal-looking text in one grey box. Out here it is a
-            caption under the row: smaller, italic, unfilled, and quiet enough
-            to be skipped by someone scanning for a conversation by title.
-            Indented to the title's left edge (icon + gap + the button's own
-            padding). The full timestamp is on hover. */}
-        {startedAt && !isRenamingChat && (
-          <p
-            className="mt-0.5 pl-7 text-[10px] italic leading-3 text-subtle"
-            title={fullSessionStart(chatSession.time_created)}
-          >
-            {startedAt}
-          </p>
+        {isSelected && (
+          <span
+            aria-hidden
+            className="absolute bottom-2 left-0 top-2 w-[3px] rounded-full bg-accent"
+          />
         )}
+        <div className="min-w-0 flex-1 text-left">
+          {isRenamingChat ? (
+            <input
+              autoFocus
+              value={chatName}
+              onClick={(e) => e.preventDefault()}
+              onChange={(e) => setChatName(e.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  onRename();
+                  event.preventDefault();
+                }
+              }}
+              className="w-full rounded-md border border-border bg-background px-1.5 py-0.5 text-sm text-emphasis outline-none focus:border-accent"
+            />
+          ) : (
+            <p
+              className={`truncate text-sm leading-5 text-emphasis ${
+                isSelected ? "font-semibold" : "font-medium"
+              }`}
+            >
+              {chatName || "Untitled chat"}
+            </p>
+          )}
+          {startedAt && (
+            <p
+              className="mt-0.5 truncate text-[11px] leading-4 tabular-nums text-subtle"
+              title={fullSessionStart(chatSession.time_created)}
+            >
+              {startedAt}
+            </p>
+          )}
+        </div>
+        <div
+          className={`mt-0.5 shrink-0 items-center gap-0.5 text-subtle ${
+            isSelected || isRenamingChat ? "flex" : "hidden group-hover:flex"
+          }`}
+        >
+          {isRenamingChat ? (
+            <>
+              <RowAction label="Save name" onClick={onRename}>
+                <FiCheck size={14} />
+              </RowAction>
+              <RowAction
+                label="Cancel rename"
+                onClick={() => {
+                  setChatName(chatSession.name);
+                  setIsRenamingChat(false);
+                }}
+              >
+                <FiX size={14} />
+              </RowAction>
+            </>
+          ) : (
+            <>
+              <RowAction
+                label="Rename chat"
+                onClick={() => setIsRenamingChat(true)}
+              >
+                <FiEdit size={14} />
+              </RowAction>
+              <RowAction
+                label="Delete chat"
+                onClick={() => setIsDeletionModalVisible(true)}
+              >
+                <FiTrash size={14} />
+              </RowAction>
+            </>
+          )}
+        </div>
       </Link>
     </>
   );

@@ -36,6 +36,7 @@ import {
   FiCpu,
   FiInfo,
   FiUploadCloud,
+  FiLock,
 } from "react-icons/fi";
 import { SiBookstack } from "react-icons/si";
 import Image from "next/image";
@@ -79,6 +80,13 @@ export const KeyIcon = ({
   className = defaultTailwindCSS,
 }: IconProps) => {
   return <Key size={size} className={className} />;
+};
+
+export const LockIcon = ({
+  size = 16,
+  className = defaultTailwindCSS,
+}: IconProps) => {
+  return <FiLock size={size} className={className} />;
 };
 
 export const UsersIcon = ({

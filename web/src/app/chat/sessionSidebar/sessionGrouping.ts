@@ -110,12 +110,12 @@ const DAY_MONTH_YEAR = new Intl.DateTimeFormat(undefined, {
 });
 
 /**
- * When a session was started, in the least text that still answers it.
+ * When a session was started, as the caption under its title: always a day
+ * and a clock time, so two conversations from the same morning can be told
+ * apart without hovering.
  *
- * Scaled to the group it will be read under: a row inside "Today" needs the
- * clock time and nothing else, one inside "Previous 30 days" needs the date
- * and would be actively confused by a time. The year appears only once a
- * session is old enough for it to be in doubt.
+ * The day is the shortest form that is unambiguous — "Today", "Yesterday", a
+ * day and month, and the year only once it could be in doubt.
  *
  * Empty string for a timestamp that will not parse — the row renders without
  * a date rather than with "Invalid Date" under a clinical conversation.
@@ -127,10 +127,14 @@ export function formatSessionStart(timeCreated: string, now: Date = new Date()):
   }
 
   const days = Math.max(calendarDaysAgo(created, now), 0);
-  if (days === 0) return TIME.format(created);
-  if (days === 1) return `Yesterday ${TIME.format(created)}`;
-  if (created.getFullYear() === now.getFullYear()) return DAY_MONTH.format(created);
-  return DAY_MONTH_YEAR.format(created);
+  const time = TIME.format(created);
+  if (days === 0) return `Today · ${time}`;
+  if (days === 1) return `Yesterday · ${time}`;
+  const day =
+    created.getFullYear() === now.getFullYear()
+      ? DAY_MONTH.format(created)
+      : DAY_MONTH_YEAR.format(created);
+  return `${day} · ${time}`;
 }
 
 /** The full timestamp, for a `title` a reader can hover when the short form

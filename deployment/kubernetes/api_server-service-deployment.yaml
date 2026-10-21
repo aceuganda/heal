@@ -28,10 +28,10 @@ spec:
     spec:
       containers:
       - name: api-server
-        image: khalifan1126/heal-backend:latest
-        # IfNotPresent, not Never: uses a node-built image when one is
-        # there, and otherwise pulls the image CI published. `Never` meant
-        # the cluster could never see a CI build at all.
+        # Logical name. `make deploy` pins it to registry@digest through
+        # kustomize, so a raw `kubectl apply -f` of this file fails to pull
+        # rather than running an unscanned `latest`.
+        image: heal-backend
         imagePullPolicy: IfNotPresent
         # `alembic upgrade head` is a no-op once production is stamped at
         # 0001_heal_baseline. NEVER let it run the rebaseline against
@@ -62,6 +62,25 @@ spec:
         envFrom:
         - configMapRef:
             name: env-configmap
+        # Credentials come from heal-secrets, not the ConfigMap; `env` wins
+        # over `envFrom`, so a key left in the ConfigMap is ignored.
+        env:
+        - name: POSTGRES_USER
+          valueFrom:
+            secretKeyRef:
+              name: heal-secrets
+              key: postgres_user
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: heal-secrets
+              key: postgres_password
+        - name: GEN_AI_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: heal-secrets
+              key: gen_ai_api_key
+              optional: true
         volumeMounts:
         # The file-connector volume went with the connectors. Its PVC is left
         # declared in persistent-volumes.yaml rather than deleted, because

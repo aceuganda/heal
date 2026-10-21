@@ -173,6 +173,11 @@ EMBEDDING_MODEL = _env_str("HEAL_EMBEDDING_MODEL", "thenlper/gte-small")
 # rather than trusted.
 EMBEDDING_DIM = _env_int("HEAL_EMBEDDING_DIM", 384)
 
+# Where embeddings run: "cpu", "cuda" (or "cuda:N"), or empty to use a GPU
+# when the image and node have one and the CPU otherwise. A cuda value needs
+# an image built with TORCH_VARIANT=cuda.
+EMBEDDING_DEVICE = _env_str("HEAL_EMBEDDING_DEVICE")
+
 # Candidates fetched from Qdrant before filtering.
 RETRIEVAL_TOP_K = _env_int("HEAL_RETRIEVAL_TOP_K", 20)
 

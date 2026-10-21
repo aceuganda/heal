@@ -117,6 +117,22 @@ def _hash_token(token: str) -> int:
     return int.from_bytes(digest, "big") % SPARSE_DIM
 
 
+def _resolve_device(requested: str) -> str:
+    """The torch device to embed on. A GPU asked for but absent is an error,
+    not a quiet fall back to CPU that nobody notices until indexing crawls."""
+    import torch
+
+    if not requested:
+        return "cuda" if torch.cuda.is_available() else "cpu"
+    if requested.startswith("cuda") and not torch.cuda.is_available():
+        raise ValueError(
+            f"HEAL_EMBEDDING_DEVICE={requested} but no GPU is usable here: torch "
+            f"{torch.__version__} (CUDA {torch.version.cuda}). Build the image with "
+            "TORCH_VARIANT=cuda and schedule it on a GPU node, or unset the variable."
+        )
+    return requested
+
+
 class SentenceTransformerEmbedder:
     """The real dense embedder. Loads the model on first use, then caches it."""
 
@@ -133,8 +149,9 @@ class SentenceTransformerEmbedder:
         if self._model is None:
             from sentence_transformers import SentenceTransformer
 
-            logger.info("Loading embedding model %s", self.model_name)
-            model = SentenceTransformer(self.model_name)
+            device = _resolve_device(config.EMBEDDING_DEVICE)
+            logger.info("Loading embedding model %s on %s", self.model_name, device)
+            model = SentenceTransformer(self.model_name, device=device)
             actual = model.get_sentence_embedding_dimension()
             if actual != self._dimension:
                 # Fail loudly. A silent mismatch writes unsearchable points

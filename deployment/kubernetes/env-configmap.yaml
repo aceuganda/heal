@@ -15,7 +15,7 @@ data:
 
   # Chat model. Ids come from the catalogue in backend/heal/llm/registry.py.
   GEN_AI_MODEL_PROVIDER: "openai"
-  GEN_AI_API_KEY: ""
+  # GEN_AI_API_KEY lives in heal-secrets (key gen_ai_api_key), not here.
   GEN_AI_API_ENDPOINT: ""
   GEN_AI_API_VERSION: ""
   HEAL_CHAT_MODEL: ""
@@ -40,6 +40,8 @@ data:
   KNOWLEDGE_ENABLED: "false"
   QDRANT_URL: ""
   QDRANT_API_KEY: ""
+  # Empty = GPU if usable, else CPU. "cuda" needs a TORCH_VARIANT=cuda image.
+  HEAL_EMBEDDING_DEVICE: ""
 
   # Other services
   POSTGRES_HOST: "relational-db-service"

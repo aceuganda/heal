@@ -85,38 +85,140 @@ under *Schema and migrations*.
 The database port is not published to the host in production. Use
 `docker compose exec relational_db psql -U postgres` for admin access.
 
-## Kubernetes
+## Kubernetes (k3s)
 
-The manifests in `kubernetes/` are a starting point, not a turnkey production
-setup — there is no replication or autoscaling in them.
+Deploys run from your machine with `make deploy`, entirely through the k3s
+API as the `heal-deployer` service account: no SSH, no sudo, no outside
+registry. Nothing builds or deploys from GitHub: GitHub holds the code, and
+every deployed commit must already be on its `main`.
 
-```bash
-kubectl apply -f kubernetes/
+```
+make deploy
+  1. gates   tree clean · HEAD on origin/main · deps pinned, no pre-releases
+             · base images pinned to x.y.z or a digest
+  2. scan    trivy: fixable CRITICAL/HIGH in shipped deps, leaked secrets
+  3. build   both images for DEPLOY_PLATFORM, tagged with the commit;
+             architecture checked; trivy scan + CycloneDX SBOM
+  4. ask     shows commit, images, platform, cluster, namespace;
+             type the namespace
+  5. push    to the registry inside k3s, through an API port-forward;
+             cosign sign + verify each digest, if keyed
+  6. apply   server-side dry run, apply, wait for rollout; a failed
+             rollout is undone automatically
+  7. record  deployment/.deploy/history.jsonl + the exact manifest applied
 ```
 
-### Images
+Other commands: `make deploy-check` (steps 1–2 only), `make deploy-doctor`,
+`make deploy-status`, `make deploy-rollback`.
 
-All images Heal builds are published under the **`khalifan1126`** Docker Hub
-namespace: `khalifan1126/heal-backend` and `khalifan1126/heal-web`. CI pushes
-them on a git tag, and the compose files and Kubernetes manifests pull the same
-names, so what runs in the cluster is what CI built.
+Tools on the deploying machine: `git`, `docker`, `kubectl`, `trivy`, `crane`,
+and `cosign` if you sign (`brew install kubectl trivy crane cosign`). The CLI
+itself needs only Python 3.
 
-CI needs two repository secrets to push: `DOCKER_USERNAME` (`khalifan1126`) and
-`DOCKER_TOKEN` (a Docker Hub access token). Without them the tag-triggered
-workflows fail at the login step.
+### Architecture
 
-Notes:
+Servers are almost always amd64; an Apple Silicon Mac builds arm64 unless told
+otherwise. Every build passes `--platform $DEPLOY_PLATFORM` (default
+`linux/amd64`, built under emulation on a Mac -- slower, same result) and is
+inspected afterwards: a wrong-architecture image stops the deploy before it
+ships, instead of crash-looping on the node with `exec format error`.
 
-- User auth is on by default here, on the assumption this is production. Either
-  provide the values in `secrets.yaml` or change `AUTH_TYPE` in
-  `env-configmap.yaml`.
-- `imagePullPolicy` is `IfNotPresent`. A node-built image is used when one is
-  present, and otherwise the image is pulled from Docker Hub. It was `Never`,
-  which meant the cluster could only ever run images built on the node itself
-  and could never see a CI build.
+### CPU or GPU backend
+
+The backend's PyTorch build is chosen at build time with `TORCH_VARIANT`:
+
+| | `cpu` (default) | `cuda` |
+|---|---|---|
+| torch from | PyTorch's CPU index (amd64); PyPI (arm64, already CPU-only) | PyPI, which ships the CUDA build on amd64 |
+| image size | ~2.5 GB smaller | includes the CUDA libraries |
+| set with | `DEPLOY_TORCH_VARIANT` in `deploy.env`, or `TORCH_VARIANT=` in the shell before a Compose build | same |
+
+The build checks which torch it ended up with and fails on a mismatch, so a
+`cpu` image never silently carries GPU libraries and a `cuda` image is never
+silently CPU-only. The variant is also baked in as `HEAL_TORCH_VARIANT`.
+
+At runtime `HEAL_EMBEDDING_DEVICE` picks where embeddings run: empty uses a
+GPU when one is usable and the CPU otherwise; `cpu` or `cuda[:N]` pins it.
+Asking for `cuda` where there is no usable GPU stops the API with an error
+naming the fix, rather than quietly running on the CPU.
+
+A `cuda` image only gets a GPU on a node that has the NVIDIA driver and
+container toolkit (k3s then registers an `nvidia` runtime class), the NVIDIA
+device plugin, and a pod spec with `runtimeClassName: nvidia` and an
+`nvidia.com/gpu` limit. None of that is in these manifests yet.
+
+### The registry inside k3s
+
+`kubernetes/registry/registry.yaml` runs a private registry that listens on
+the node's loopback (`localhost:5050`) only, so nothing on the network can
+reach it. The node pulls from it there; the deploy reaches it with `kubectl
+port-forward`, which goes through the API and needs the deployer's token, and
+pushes with `crane`. Only layers the registry lacks are sent, so after the
+first deploy a release is mostly the application layer. Images are deployed
+by digest.
+
+The registry keeps every pushed release. Unchanged layers are shared, so it
+grows by roughly the changed layers per deploy; its volume is 20 GiB.
+
+### One-time setup
+
+Everything lives in the `heal` namespace. On the server, from a copy of
+`deployment/kubernetes/` (fill in `env-configmap.yaml` first):
+
+```bash
+sudo ALLOW_FROM=<network>/<mask> TLS_SAN=<name you deploy against> ./setup-server.sh
+```
+
+It points containerd at the loopback registry, adds `TLS_SAN` to the API
+certificate, opens 6443 to `ALLOW_FROM` only (never the internet), applies
+the deployer account and the registry, creates `env-configmap` and
+`heal-secrets` (random database password) only if they are missing, and
+prints the CA path and the deploy token. Re-running it is safe.
+
+On your machine: copy the CA to `~/.config/heal-deploy/ca.crt`, copy
+`deploy.env.template` to `deploy.env`, set `DEPLOY_API_SERVER` and
+`DEPLOY_KUBE_TOKEN`, and run `make deploy-doctor`. It checks the tools, that
+the API accepts the token, and that the registry is running.
+
+Each command writes a short-lived owner-only kubeconfig from those settings
+and deletes it afterwards, so the token never appears on a command line. To
+revoke access, delete the `heal-deployer-token` Secret and re-run the script
+for a new one.
+
+### What the deployer can and cannot do
+
+It can create and update Deployments, StatefulSets, Services, PVCs and
+ConfigMaps in `heal`, read pods, logs and events, and port-forward to pods
+(how images reach the registry). It cannot read Secrets, touch any other
+namespace, or change its own permissions.
+
+`kustomization.yaml` is the list of what a deploy applies. `env-configmap.yaml`
+and `secrets.yaml` are left out on purpose: re-applying the repo templates
+would blank the cluster's real settings.
+
+### Exceptions to the scan
+
+A finding with no fixed release does not block (`--ignore-unfixed`). To accept
+a fixable one, add its ID to `.trivyignore` at the repo root with a reason and
+a revisit date; that file is reviewed like code.
+
+### Notes
+
+- The manifests name images `heal-backend` and `heal-web`; the deploy pins
+  them to `registry/image@sha256:…`. A raw `kubectl apply -f kubernetes/` now
+  fails to pull instead of running an unscanned `latest`.
+- User auth is on by default (`AUTH_TYPE` in `env-configmap.yaml`).
 - HTTPS is assumed to be terminated by your cluster's ingress.
+- There is no Qdrant manifest yet, so `KNOWLEDGE_ENABLED` must stay `false` in
+  the cluster's ConfigMap.
 - `kubectl delete -f kubernetes/` **erases the database.** To keep it, delete
   the specific manifests and leave `persistent-volumes.yaml` alone.
-- `file-connector-pvc` is still declared but no longer mounted; it went with the
-  connectors. It is left in place rather than deleted because removing a PVC
-  destroys data.
+- `file-connector-pvc` is still declared but no longer mounted; it is left in
+  place because removing a PVC destroys data.
+
+### Docker Hub images (Compose)
+
+The tag-triggered workflows still push `khalifan1126/heal-backend` and
+`khalifan1126/heal-web` to Docker Hub for the Compose deployment, using the
+`DOCKER_USERNAME` and `DOCKER_TOKEN` repository secrets. The k3s deploy does
+not use them.

@@ -2,3 +2,7 @@
 secrets.yaml
 
 /data
+
+# make deploy: per-cluster settings and local release records
+deploy.env
+.deploy/

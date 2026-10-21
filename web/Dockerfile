@@ -2,7 +2,7 @@
 # Node 24, matching web/.nvmrc. Next 16 requires >= 20.9, so 20-alpine would
 # still build -- but a local toolchain and an image on different majors is how
 # "works on my machine" starts.
-FROM node:24-alpine AS base
+FROM node:24.22.0-alpine3.24 AS base
 
 # Image version, normally overridden by the release workflow with the git tag.
 ARG HEAL_VERSION=0.3-dev

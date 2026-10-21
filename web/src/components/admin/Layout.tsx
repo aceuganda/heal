@@ -7,6 +7,7 @@ import {
   BookmarkIcon,
   NotebookIcon,
   ZoomInIcon,
+  LockIcon,
 } from "@/components/icons/icons";
 import { isAdminRole, User } from "@/lib/types";
 import {
@@ -159,6 +160,15 @@ export async function Layout({ children }: { children: React.ReactNode }) {
                       </div>
                     ),
                     link: "/admin/users",
+                  },
+                  {
+                    name: (
+                      <div className="flex">
+                        <LockIcon size={18} />
+                        <div className="ml-1">Your password</div>
+                      </div>
+                    ),
+                    link: "/admin/account",
                   },
                 ],
               },

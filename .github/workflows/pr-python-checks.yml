@@ -66,6 +66,9 @@ jobs:
         cd backend
         pytest tests/unit
 
+    - name: Run deploy CLI tests
+      run: pytest deployment/cli/tests -q
+
     # Nothing under deprecated/ may be imported by live code. The rule is
     # enforced as a test as well; this keeps it visible in the CI log.
     - name: Check deprecated code is not imported

@@ -1,0 +1,5 @@
+# Accepted findings for `make deploy`. One ID per line, each with the reason
+# and a date to revisit, e.g.:
+#
+#   # no fix upstream; path not reachable from Heal (revisit 2026-12-01)
+#   CVE-2024-00000

@@ -35,11 +35,37 @@ RUN apt-get update && \
 # The generous timeout and retry count are for the same reason: pip's 15s
 # default read timeout is not enough for a 263 MB wheel on a slow link.
 COPY ./requirements/default.txt /tmp/requirements.txt
+
+# PyTorch build: `cpu` (default) for CPU-only servers, `cuda` for a GPU node.
+# PyPI's x86_64 torch is the CUDA build -- ~2.5 GB of GPU libraries a CPU node
+# never loads -- so `cpu` installs torch from PyTorch's CPU index first and the
+# install below finds it already satisfied. arm64 PyPI wheels are CPU-only, so
+# the index is only needed on amd64. Versions come from default.txt.
+ARG TORCH_VARIANT=cpu
+ARG TORCH_CPU_INDEX=https://download.pytorch.org/whl/cpu
+ARG TARGETARCH
+RUN --mount=type=cache,target=/root/.cache/pip,sharing=locked \
+    case "$TORCH_VARIANT" in cpu|cuda) ;; \
+        *) echo "TORCH_VARIANT must be cpu or cuda, got '$TORCH_VARIANT'" >&2; exit 1 ;; \
+    esac && \
+    if [ "$TORCH_VARIANT" = cpu ] && [ "$TARGETARCH" = amd64 ]; then \
+        pip install --timeout 120 --retries 10 --index-url "$TORCH_CPU_INDEX" \
+            $(grep -E '^(torch|torchvision)==' /tmp/requirements.txt); \
+    fi
+
 RUN --mount=type=cache,target=/root/.cache/pip,sharing=locked \
     pip install --upgrade \
         --timeout 120 \
         --retries 10 \
         -r /tmp/requirements.txt
+
+# Proves the variant held through the full install. A swap to the other torch
+# build would otherwise surface only at runtime, as a GPU that is never used or
+# a 2.5 GB image that did not need to be.
+RUN python -c "import sys, torch; cuda = torch.version.cuda; \
+sys.exit(0 if (cuda is None) == ('${TORCH_VARIANT}' == 'cpu') else \
+f'TORCH_VARIANT=${TORCH_VARIANT} but torch {torch.__version__} has CUDA {cuda}')"
+ENV HEAL_TORCH_VARIANT=${TORCH_VARIANT}
 
 # The embedding model, baked in at build time.
 #

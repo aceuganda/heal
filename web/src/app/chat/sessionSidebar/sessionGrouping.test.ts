@@ -111,23 +111,22 @@ describe("groupSessionsByDateRange", () => {
 });
 
 describe("formatSessionStart", () => {
-  it("shows only the clock for a session started today", () => {
-    // Under a "Today" heading, the date would be noise.
+  it("names today and gives the time", () => {
     const formatted = formatSessionStart(at(2026, 8, 2, 9, 5), NOW);
-    expect(formatted).toMatch(/^\d{1,2}[:.]\d{2}/);
+    expect(formatted).toMatch(/^Today · \d{1,2}[:.]\d{2}/);
     expect(formatted).not.toMatch(/Sep/);
   });
 
   it("names yesterday and still gives the time", () => {
     expect(formatSessionStart(at(2026, 8, 1, 23, 50), NOW)).toMatch(
-      /^Yesterday \d{1,2}[:.]\d{2}/
+      /^Yesterday · \d{1,2}[:.]\d{2}/
     );
   });
 
-  it("drops the clock once a date is what matters", () => {
+  it("gives the date and the time for an older session", () => {
     const formatted = formatSessionStart(at(2026, 7, 28, 9, 5), NOW);
     expect(formatted).toMatch(/28/);
-    expect(formatted).not.toMatch(/09[:.]05/);
+    expect(formatted).toMatch(/ · 0?9[:.]05/);
   });
 
   it("adds the year only when it is in doubt", () => {

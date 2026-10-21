@@ -53,5 +53,5 @@ spec:
       accessModes: ["ReadWriteOnce"]
       resources:
         requests:
-          # Adjust the storage request size as needed.
-          storage: 1Gi
+          # Fixed once the StatefulSet exists; grow it by expanding the PVC.
+          storage: 10Gi

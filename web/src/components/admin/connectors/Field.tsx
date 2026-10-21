@@ -10,7 +10,8 @@ import {
 import * as Yup from "yup";
 import { FormBodyBuilder } from "./types";
 import { DefaultDropdown, StringOrNumberOption } from "@/components/Dropdown";
-import { FiPlus, FiX } from "react-icons/fi";
+import { FiEye, FiEyeOff, FiPlus, FiX } from "react-icons/fi";
+import { useState } from "react";
 
 export function SectionHeader({
   children,
@@ -55,17 +56,20 @@ export function TextFormField({
   autoCompleteDisabled?: boolean;
   error?: string;
 }) {
-  return (
-    <div className="mb-4">
-      <Label>{label}</Label>
-      {subtext && <SubLabel>{subtext}</SubLabel>}
-      <Field
-        as={isTextArea ? "textarea" : "input"}
-        type={type}
-        name={name}
-        id={name}
-        className={
-          `
+  // Password fields get a show/hide toggle; a mistyped password on a phone
+  // keyboard is otherwise only discovered after a failed login.
+  const isPassword = type === "password";
+  const [revealed, setRevealed] = useState(false);
+  const inputType = isPassword && revealed ? "text" : type;
+
+  const field = (
+    <Field
+      as={isTextArea ? "textarea" : "input"}
+      type={inputType}
+      name={name}
+      id={name}
+      className={
+        `
         border 
         border-border 
         rounded 
@@ -73,14 +77,36 @@ export function TextFormField({
         py-2 
         px-3 
         mt-1
-        ${isTextArea ? " h-28" : ""}
+        ${isTextArea ? " h-28" : ""}${isPassword ? " pr-10" : ""}
       ` + (disabled ? " bg-background-strong" : " bg-background-emphasis")
-        }
-        disabled={disabled}
-        placeholder={placeholder}
-        autoComplete={autoCompleteDisabled ? "off" : undefined}
-        {...(onChange ? { onChange } : {})}
-      />
+      }
+      disabled={disabled}
+      placeholder={placeholder}
+      autoComplete={autoCompleteDisabled ? "off" : undefined}
+      {...(onChange ? { onChange } : {})}
+    />
+  );
+
+  return (
+    <div className="mb-4">
+      <Label>{label}</Label>
+      {subtext && <SubLabel>{subtext}</SubLabel>}
+      {isPassword ? (
+        <div className="relative">
+          {field}
+          <button
+            type="button"
+            onClick={() => setRevealed((shown) => !shown)}
+            aria-label={revealed ? "Hide password" : "Show password"}
+            aria-pressed={revealed}
+            className="absolute right-2 top-1/2 mt-0.5 -translate-y-1/2 p-1 text-subtle hover:text-emphasis"
+          >
+            {revealed ? <FiEyeOff size={16} /> : <FiEye size={16} />}
+          </button>
+        </div>
+      ) : (
+        field
+      )}
       {error ? (
         <ManualErrorMessage>{error}</ManualErrorMessage>
       ) : (

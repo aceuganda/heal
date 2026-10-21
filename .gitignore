@@ -4,3 +4,16 @@
 .mypy_cache
 .idea
 /deployment/data/nginx/app.conf
+.DS_Store
+
+# Python caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+
+# Cluster credentials and signing keys -- never commit these
+*.kubeconfig
+heal-deployer.yaml
+k3s.yaml
+cosign.key

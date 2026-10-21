@@ -27,10 +27,8 @@ spec:
     spec:
       containers:
       - name: web-server
-        image: khalifan1126/heal-web:latest
-        # See the note in api_server-service-deployment.yaml. The repo is
-        # heal-web, matching what CI publishes -- it was heal-frontend
-        # here and heal-web everywhere else.
+        # Logical name, pinned by `make deploy`; see api_server-service-deployment.yaml.
+        image: heal-web
         imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 3000

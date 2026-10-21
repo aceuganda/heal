@@ -1,8 +1,11 @@
-"""Tests for tokenisation and the sparse lexical vector.
+"""Tests for tokenisation, the sparse lexical vector, and device selection.
 
 The sparse half exists for one reason: drug codes and dosages are strings to
 match, not concepts to embed. These tests pin that behaviour.
 """
+import sys
+from typing import Callable
+
 import pytest
 
 from heal.knowledge import embedder
@@ -111,3 +114,49 @@ class TestHashCollisions:
 
         assert len(vector.indices) == len(set(vector.indices))
         assert vector.indices == sorted(vector.indices)
+
+
+class _FakeTorch:
+    """Just the surface `_resolve_device` reads, without importing torch."""
+
+    __version__ = "2.0.1+cpu"
+
+    def __init__(self, gpu: bool) -> None:
+        self.cuda = type("cuda", (), {"is_available": staticmethod(lambda: gpu)})
+        self.version = type("version", (), {"cuda": "11.7" if gpu else None})
+
+
+class TestEmbeddingDevice:
+    @pytest.fixture
+    def torch_with(self, monkeypatch: pytest.MonkeyPatch) -> Callable[[bool], None]:
+        def install(gpu: bool) -> None:
+            monkeypatch.setitem(sys.modules, "torch", _FakeTorch(gpu))
+
+        return install
+
+    def test_auto_uses_the_gpu_when_there_is_one(
+        self, torch_with: Callable[[bool], None]
+    ) -> None:
+        torch_with(True)
+        assert embedder._resolve_device("") == "cuda"
+
+    def test_auto_falls_back_to_cpu_on_a_cpu_image(
+        self, torch_with: Callable[[bool], None]
+    ) -> None:
+        torch_with(False)
+        assert embedder._resolve_device("") == "cpu"
+
+    def test_an_explicit_device_is_used_as_given(
+        self, torch_with: Callable[[bool], None]
+    ) -> None:
+        torch_with(True)
+        assert embedder._resolve_device("cpu") == "cpu"
+        assert embedder._resolve_device("cuda:1") == "cuda:1"
+
+    def test_asking_for_a_gpu_without_one_fails_loudly(
+        self, torch_with: Callable[[bool], None]
+    ) -> None:
+        """A quiet CPU fallback would show up only as indexing that crawls."""
+        torch_with(False)
+        with pytest.raises(ValueError, match="TORCH_VARIANT=cuda"):
+            embedder._resolve_device("cuda")

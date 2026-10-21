@@ -27,6 +27,9 @@ services:
     build:
       context: ../../backend
       dockerfile: Dockerfile
+      args:
+        # cpu, or cuda for a GPU host. See backend/Dockerfile.
+        TORCH_VARIANT: ${TORCH_VARIANT:-cpu}
     # `alembic upgrade head` is a no-op once production is stamped at
     # 0001_heal_baseline. NEVER let it run the rebaseline against production --
     # see docs/architecture-decisions.md, "Database migrations".
