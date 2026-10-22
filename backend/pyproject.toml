@@ -34,6 +34,9 @@ extend-exclude = "^/deprecated/"
 
 [tool.pytest.ini_options]
 testpaths = ["tests/unit"]
+# `heal` and `heal_app` live here. Plain `pytest` (as CI runs it) does not put
+# the working directory on sys.path; `python -m pytest` does, which hid this.
+pythonpath = ["."]
 # pytest-asyncio strict mode: async tests must carry @pytest.mark.asyncio, so
 # an accidentally-sync test cannot pass by never being awaited.
 asyncio_mode = "strict"
