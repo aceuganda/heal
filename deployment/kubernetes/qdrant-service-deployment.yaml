@@ -1,0 +1,71 @@
+# The vector store. ClusterIP only: nothing outside the cluster reaches it.
+apiVersion: v1
+kind: Service
+metadata:
+  name: qdrant-service
+spec:
+  selector:
+    app: qdrant
+  ports:
+    - name: http
+      protocol: TCP
+      port: 6333
+      targetPort: 6333
+  type: ClusterIP
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: qdrant-statefulset
+spec:
+  serviceName: qdrant-service
+  replicas: 1
+  selector:
+    matchLabels:
+      app: qdrant
+  template:
+    metadata:
+      labels:
+        app: qdrant
+    spec:
+      containers:
+      - name: qdrant
+        # Keep in step with docker-compose.prod.yml and qdrant-client.
+        image: qdrant/qdrant:v1.19.0
+        env:
+        # Not optional: Qdrant has no auth by default, so a missing key keeps
+        # the pod from starting rather than serving an open store.
+        - name: QDRANT__SERVICE__API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: heal-secrets
+              key: qdrant_api_key
+        - name: QDRANT__TELEMETRY_DISABLED
+          value: "true"
+        ports:
+        - containerPort: 6333
+        # Health endpoints are exempt from the API key.
+        readinessProbe:
+          httpGet:
+            path: /readyz
+            port: 6333
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        livenessProbe:
+          httpGet:
+            path: /livez
+            port: 6333
+          initialDelaySeconds: 30
+          periodSeconds: 30
+        volumeMounts:
+        - mountPath: /qdrant/storage
+          name: qdrant-storage
+  volumeClaimTemplates:
+  - metadata:
+      name: qdrant-storage
+    spec:
+      accessModes: ["ReadWriteOnce"]
+      resources:
+        requests:
+          # Fixed once the StatefulSet exists; grow it by expanding the PVC.
+          storage: 10Gi

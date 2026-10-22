@@ -212,8 +212,13 @@ a revisit date; that file is reviewed like code.
   fails to pull instead of running an unscanned `latest`.
 - User auth is on by default (`AUTH_TYPE` in `env-configmap.yaml`).
 - HTTPS is assumed to be terminated by your cluster's ingress.
-- There is no Qdrant manifest yet, so `KNOWLEDGE_ENABLED` must stay `false` in
-  the cluster's ConfigMap.
+- Qdrant runs as `qdrant-statefulset` behind the ClusterIP `qdrant-service`
+  (10 GiB volume). It will not start until `heal-secrets` has
+  `qdrant_api_key`; on a cluster set up before Qdrant, add it once on the
+  server (the deployer cannot write Secrets):
+  `sudo k3s kubectl -n heal patch secret heal-secrets -p "{\"stringData\":{\"qdrant_api_key\":\"$(openssl rand -hex 32)\"}}"`.
+  Set `QDRANT_URL=http://qdrant-service:6333` in `env-configmap` and leave
+  `KNOWLEDGE_ENABLED=false` until the corpus is ingested.
 - `kubectl delete -f kubernetes/` **erases the database.** To keep it, delete
   the specific manifests and leave `persistent-volumes.yaml` alone.
 - `file-connector-pvc` is still declared but no longer mounted; it is left in

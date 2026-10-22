@@ -36,10 +36,9 @@ data:
 
   # Knowledge / retrieval. Phase 1 ships with this off; `false` reproduces
   # Phase 1 behaviour exactly, so Phase 2 can be cut without a rollback.
-  # Qdrant runs unauthenticated by default, so the key is required when on.
+  # QDRANT_API_KEY lives in heal-secrets (key qdrant_api_key), not here.
   KNOWLEDGE_ENABLED: "false"
-  QDRANT_URL: ""
-  QDRANT_API_KEY: ""
+  QDRANT_URL: "http://qdrant-service:6333"
   # Empty = GPU if usable, else CPU. "cuda" needs a TORCH_VARIANT=cuda image.
   HEAL_EMBEDDING_DEVICE: ""
 

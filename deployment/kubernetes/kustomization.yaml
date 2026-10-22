@@ -7,6 +7,7 @@ kind: Kustomization
 resources:
   - persistent-volumes.yaml
   - postgres-service-deployment.yaml
+  - qdrant-service-deployment.yaml
   - api_server-service-deployment.yaml
   - web_server-service-deployment.yaml
   - nginx-configmap.yaml

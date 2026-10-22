@@ -81,6 +81,12 @@ spec:
               name: heal-secrets
               key: gen_ai_api_key
               optional: true
+        - name: QDRANT_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: heal-secrets
+              key: qdrant_api_key
+              optional: true
         volumeMounts:
         # The file-connector volume went with the connectors. Its PVC is left
         # declared in persistent-volumes.yaml rather than deleted, because

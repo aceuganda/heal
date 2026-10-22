@@ -49,3 +49,35 @@ def test_setup_script_parses_and_never_applies_secrets_yaml() -> None:
     # Settings and secrets are only ever created when absent.
     assert "get configmap env-configmap" in text
     assert "get secret heal-secrets" in text
+
+
+def _env(container: dict) -> dict[str, dict]:
+    return {e["name"]: e for e in container.get("env", [])}
+
+
+def test_qdrant_is_deployed_internal_only_and_keyed() -> None:
+    kustomization = yaml.safe_load((BASE_DIR / "kustomization.yaml").read_text())
+    assert "qdrant-service-deployment.yaml" in kustomization["resources"]
+
+    by_kind = {d["kind"]: d for d in docs("qdrant-service-deployment.yaml")}
+    assert by_kind["Service"]["spec"]["type"] == "ClusterIP"
+    (container,) = by_kind["StatefulSet"]["spec"]["template"]["spec"]["containers"]
+    assert container["image"] == "qdrant/qdrant:v1.19.0"
+    ref = _env(container)["QDRANT__SERVICE__API_KEY"]["valueFrom"]["secretKeyRef"]
+    assert ref["name"] == "heal-secrets"
+    assert ref["key"] == "qdrant_api_key"
+    assert not ref.get("optional", False)
+
+
+def test_api_server_shares_the_qdrant_key_and_url() -> None:
+    (deployment,) = [
+        d for d in docs("api_server-service-deployment.yaml") if d["kind"] == "Deployment"
+    ]
+    (container,) = deployment["spec"]["template"]["spec"]["containers"]
+    ref = _env(container)["QDRANT_API_KEY"]["valueFrom"]["secretKeyRef"]
+    assert (ref["name"], ref["key"]) == ("heal-secrets", "qdrant_api_key")
+
+    (configmap,) = docs("env-configmap.yaml")
+    assert configmap["data"]["QDRANT_URL"] == "http://qdrant-service:6333"
+    assert "QDRANT_API_KEY" not in configmap["data"]
+    assert "qdrant_api_key" in SCRIPT.read_text()
