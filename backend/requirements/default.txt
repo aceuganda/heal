@@ -17,6 +17,7 @@ langchain-core==1.6.13
 langchain-litellm==0.11.1
 litellm==1.106.2
 Mako==1.4.3
+msgpack==1.2.1
 openai==2.54.0
 psycopg2-binary==2.9.9
 pycryptodome==3.19.1
@@ -29,10 +30,12 @@ qdrant-client==1.19.0
 requests==2.34.2
 safetensors==0.8.0
 sentence-transformers==6.2.0
+setuptools==84.2.1
 SQLAlchemy[mypy]==2.0.15
 starlette==1.9.0
 supervisor==4.2.5
 tiktoken==0.14.0
 torch==2.14.1
 transformers==5.20.2
+urllib3==2.8.0
 uvicorn==0.54.0
