@@ -96,6 +96,13 @@ class TestDeploy:
         entry = json.loads((cfg.state_dir / "history.jsonl").read_text())
         assert entry["checked"] is False
 
+    def test_unchecked_deploy_confirms_the_namespace_itself(
+        self, cfg: Config, forwarded: list[str]
+    ) -> None:
+        runner = _runner()
+        assert cli.cmd_deploy_unchecked(runner, cfg) == 0
+        assert forwarded == ["heal"] and runner.ran("crane push")
+
     def test_signing_verifies_each_digest_before_deploying(self, cfg: Config) -> None:
         runner = _runner()
         signed = replace(cfg, cosign_key="cosign.key", cosign_pubkey="cosign.pub")

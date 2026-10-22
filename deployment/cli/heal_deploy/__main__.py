@@ -167,7 +167,12 @@ def cmd_deploy(
 
 
 def cmd_deploy_unchecked(runner: Runner, cfg: Config) -> int:
-    return cmd_deploy(runner, cfg, checked=False)
+    # No prompt either: the namespace comes from deploy.env.
+    def confirm(question: str) -> str:
+        print(question + cfg.namespace)
+        return cfg.namespace
+
+    return cmd_deploy(runner, cfg, ask=confirm, checked=False)
 
 
 def _record(cfg: Config, entry: dict) -> None:

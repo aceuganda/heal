@@ -48,8 +48,9 @@ the first pilot release.
 
 - **`make deploy-unchecked`.** Builds and deploys without the gates (clean
   tree, HEAD on origin/main, pins) or the trivy scans, for a redeploy right
-  after a passing `make deploy-check`. It still asks for the namespace, signs
-  if keyed and rolls back on failure. Risk: nothing stops uncommitted or
+  after a passing `make deploy-check`. It does not ask for the namespace: it
+  deploys straight to `DEPLOY_NAMESPACE`. It still signs if keyed and rolls
+  back on failure. Risk: nothing stops uncommitted or
   unscanned code from shipping; the history entry records `"checked": false`.
 
 - **`make deploy-logs` and `make deploy-restart`.** Follow the API or web logs
