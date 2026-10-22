@@ -122,10 +122,16 @@ SentenceTransformer('${HEAL_EMBEDDING_MODEL}')" && \
 # with the Dask worker pool, so the file is normally absent now. The line stays
 # guarded rather than deleted so the mitigation survives if tornado ever
 # returns as somebody else's transitive dependency.
+#
+# pip goes last: nothing installs at runtime, and pip/_vendor carries its own
+# older msgpack, urllib3 and setuptools (pkg_resources) that trivy flags even
+# though the real installs are patched. The ensurepip wheels go with it.
 RUN apt-get remove -y --allow-remove-essential perl-base cmake libldap-2.5-0 && \
     apt-get autoremove -y && \
     rm -rf /var/lib/apt/lists/* && \
-    rm -f /usr/local/lib/python3.11/site-packages/tornado/test/test.key
+    rm -f /usr/local/lib/python3.11/site-packages/tornado/test/test.key && \
+    pip uninstall -y pip && \
+    rm -rf /usr/local/lib/python3.11/ensurepip/_bundled
 
 # Set up application files
 WORKDIR /app
