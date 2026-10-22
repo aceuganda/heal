@@ -44,18 +44,17 @@ RUN --mount=type=cache,target=/root/.cache/pip,sharing=locked \
     pip install --upgrade pip==26.2.2 setuptools==84.2.1 wheel==0.48.0
 
 # PyTorch build: `cpu` (default) for CPU-only servers, `cuda` for a GPU node.
-# PyPI's x86_64 torch is the CUDA build -- ~2.5 GB of GPU libraries a CPU node
-# never loads -- so `cpu` installs torch from PyTorch's CPU index first and the
-# install below finds it already satisfied. arm64 PyPI wheels are CPU-only, so
-# the index is only needed on amd64. Versions come from default.txt.
+# PyPI's Linux torch is the CUDA build on both x86_64 and (since 2.9) arm64 --
+# GBs of GPU libraries a CPU node never loads -- so `cpu` installs torch from
+# PyTorch's CPU index first and the install below finds it already satisfied.
+# Versions come from default.txt.
 ARG TORCH_VARIANT=cpu
 ARG TORCH_CPU_INDEX=https://download.pytorch.org/whl/cpu
-ARG TARGETARCH
 RUN --mount=type=cache,target=/root/.cache/pip,sharing=locked \
     case "$TORCH_VARIANT" in cpu|cuda) ;; \
         *) echo "TORCH_VARIANT must be cpu or cuda, got '$TORCH_VARIANT'" >&2; exit 1 ;; \
     esac && \
-    if [ "$TORCH_VARIANT" = cpu ] && [ "$TARGETARCH" = amd64 ]; then \
+    if [ "$TORCH_VARIANT" = cpu ]; then \
         pip install --timeout 120 --retries 10 --index-url "$TORCH_CPU_INDEX" \
             $(grep -E '^torch==' /tmp/requirements.txt); \
     fi
