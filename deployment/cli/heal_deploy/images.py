@@ -107,12 +107,14 @@ def scan(runner: Runner, cfg: Config, ref: str, sbom: Path) -> None:
 
 
 def sign(runner: Runner, cfg: Config, digest_ref: str) -> None:
-    # --tlog-upload=false keeps image names out of the public Rekor log.
+    # --tlog-upload=false keeps image names out of the public Rekor log;
+    # cosign v3 only accepts it with --use-signing-config=false.
     runner.run(
         [
             "cosign",
             "sign",
             "--yes",
+            "--use-signing-config=false",
             "--tlog-upload=false",
             "--key",
             cfg.cosign_key,

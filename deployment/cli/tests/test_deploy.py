@@ -94,7 +94,7 @@ class TestDeploy:
         )
         apply = min(i for i, c in enumerate(runner.calls) if "apply" in c)
         assert verify < apply
-        assert runner.ran("--tlog-upload=false")
+        assert runner.ran("--use-signing-config=false --tlog-upload=false")
 
     def test_failed_push_applies_nothing(self, cfg: Config) -> None:
         runner = _runner()

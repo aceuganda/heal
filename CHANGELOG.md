@@ -36,6 +36,10 @@ the first pilot release.
 
 ### Fixed
 
+- **Deploy signing with cosign v3.** `make deploy` failed at the signing step
+  because cosign 3 rejects `--tlog-upload=false` on its own. The deploy CLI now
+  also passes `--use-signing-config=false`, so signatures still stay out of the
+  public Rekor log.
 - **Web build.** `tailwindcss` goes back to v3.4. The v4 bump needed a PostCSS
   and config migration and fixed no vulnerability. The unused
   `@headlessui/tailwindcss` plugin is removed from the Tailwind config.
