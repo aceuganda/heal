@@ -21,6 +21,7 @@ from heal_deploy.runner import Runner
 
 BASE_DIR = REPO_ROOT / "deployment" / "kubernetes"
 DEPLOYMENTS = ("api-server-deployment", "web-server-deployment")
+SHORT_NAMES = {"api": DEPLOYMENTS[0], "web": DEPLOYMENTS[1]}
 ROLLOUT_TIMEOUT = "5m"
 REGISTRY_DEPLOYMENT = "heal-registry"
 
@@ -262,3 +263,27 @@ def status(runner: Runner, cfg: Config) -> None:
     runner.run(kubectl(cfg, "get", "deployments,statefulsets,pods", "-o", "wide"))
     for name in DEPLOYMENTS:
         runner.run(kubectl(cfg, "rollout", "history", f"deployment/{name}"))
+
+
+def logs(runner: Runner, cfg: Config, service: str) -> None:
+    runner.run(
+        kubectl(
+            cfg, "logs", f"deployment/{SHORT_NAMES[service]}", "--tail=200", "--follow"
+        )
+    )
+
+
+def restart(runner: Runner, cfg: Config) -> None:
+    """New pods with the same images, so ConfigMap and Secret edits take effect."""
+    for name in DEPLOYMENTS:
+        runner.run(kubectl(cfg, "rollout", "restart", f"deployment/{name}"))
+    for name in DEPLOYMENTS:
+        runner.run(
+            kubectl(
+                cfg,
+                "rollout",
+                "status",
+                f"deployment/{name}",
+                f"--timeout={ROLLOUT_TIMEOUT}",
+            )
+        )

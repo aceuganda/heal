@@ -22,6 +22,11 @@ the first pilot release.
 
 ### Added
 
+- **`make deploy-logs` and `make deploy-restart`.** Follow the API or web logs
+  on the cluster (`SERVICE=web` for the frontend) and restart both deployments
+  after editing `env-configmap` or `heal-secrets`, so the change takes effect
+  without a new build. A restart asks you to type the namespace first.
+
 - **Account settings for everyone, with a profile and two levels of
   verification.**
   - **Account settings page:** every user now has one at `/account`, opened

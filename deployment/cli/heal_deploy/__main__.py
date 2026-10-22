@@ -171,18 +171,44 @@ def cmd_rollback(runner: Runner, cfg: Config, ask: Callable[[str], str] = input)
     return 0
 
 
+def cmd_logs(runner: Runner, cfg: Config, service: str = "api") -> int:
+    try:
+        cluster.logs(runner, cfg, service)
+    except KeyboardInterrupt:
+        pass
+    return 0
+
+
+def cmd_restart(runner: Runner, cfg: Config, ask: Callable[[str], str] = input) -> int:
+    answer = ask(f"Type the namespace ({cfg.namespace}) to restart: ")
+    if answer.strip() != cfg.namespace:
+        print("Not confirmed; nothing was restarted.")
+        return 1
+    cluster.restart(runner, cfg)
+    return 0
+
+
 COMMANDS: dict[str, Callable[[Runner, Config], int]] = {
     "doctor": cmd_doctor,
     "check": cmd_check,
     "deploy": cmd_deploy,
     "status": cmd_status,
     "rollback": cmd_rollback,
+    "logs": cmd_logs,
+    "restart": cmd_restart,
 }
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="heal-deploy", description=__doc__)
     parser.add_argument("command", choices=COMMANDS)
+    parser.add_argument(
+        "service",
+        nargs="?",
+        choices=cluster.SHORT_NAMES,
+        default="api",
+        help="logs only: which deployment to follow",
+    )
     args = parser.parse_args(argv)
     try:
         cfg = load()
@@ -191,7 +217,10 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     try:
         with cluster.credentials(cfg) as connected:
-            return COMMANDS[args.command](Runner(REPO_ROOT), connected)
+            runner = Runner(REPO_ROOT)
+            if args.command == "logs":
+                return cmd_logs(runner, connected, args.service)
+            return COMMANDS[args.command](runner, connected)
     except (CommandFailed, cluster.ForwardError, RuntimeError) as error:
         print(f"\nStopped: {error}", file=sys.stderr)
         return 1

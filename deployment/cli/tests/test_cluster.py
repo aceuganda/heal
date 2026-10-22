@@ -133,3 +133,18 @@ class TestRegistryForward:
     def test_can_i(self, cfg: Config, answer: str, expected: bool) -> None:
         runner = FakeRunner(outputs={"auth can-i": answer})
         assert cluster.can_i(runner, cfg, "update", "deployments") is expected
+
+
+class TestLogsAndRestart:
+    def test_logs_follows_the_chosen_deployment(self, cfg: Config) -> None:
+        runner = FakeRunner()
+        cluster.logs(runner, cfg, "web")
+        assert runner.ran("logs deployment/web-server-deployment --tail=200 --follow")
+
+    def test_restart_restarts_both_then_waits(self, cfg: Config) -> None:
+        runner = FakeRunner()
+        cluster.restart(runner, cfg)
+        restarts = [i for i, c in enumerate(runner.calls) if "rollout restart" in c]
+        waits = [i for i, c in enumerate(runner.calls) if "rollout status" in c]
+        assert len(restarts) == len(waits) == 2
+        assert max(restarts) < min(waits)

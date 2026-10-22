@@ -302,6 +302,14 @@ deploy-status: ## Show what is running on the cluster and its rollout history
 deploy-rollback: ## Roll the API and web back to their previous release
 	$(DEPLOY) rollback
 
+.PHONY: deploy-logs
+deploy-logs: ## Follow cluster logs: make deploy-logs [SERVICE=api|web]
+	$(DEPLOY) logs $(or $(SERVICE),api)
+
+.PHONY: deploy-restart
+deploy-restart: ## Restart API and web on the cluster so env/secret edits apply
+	$(DEPLOY) restart
+
 .PHONY: test-deploy
 test-deploy: venv ## Run the deploy CLI's unit tests
 	$(PY) -m pytest deployment/cli/tests -q

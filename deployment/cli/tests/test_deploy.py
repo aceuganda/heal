@@ -149,3 +149,16 @@ class TestRollback:
         runner = FakeRunner()
         assert cli.cmd_rollback(runner, cfg, ask=lambda _: "y") == 1
         assert not runner.ran("rollout undo")
+
+
+class TestRestart:
+    def test_wrong_confirmation_restarts_nothing(self, cfg: Config) -> None:
+        runner = FakeRunner()
+        assert cli.cmd_restart(runner, cfg, ask=lambda _: "nope") == 1
+        assert not runner.calls
+
+    def test_confirmed_restart_rolls_both(self, cfg: Config) -> None:
+        runner = FakeRunner()
+        assert cli.cmd_restart(runner, cfg, ask=lambda _: cfg.namespace) == 0
+        assert runner.ran("rollout restart deployment/api-server-deployment")
+        assert runner.ran("rollout restart deployment/web-server-deployment")
