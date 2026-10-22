@@ -9,7 +9,7 @@ class FakeScrollClient:
 
     def __init__(self, pages, exists: bool = True) -> None:
         self.pages = pages
-        self.deletes = []
+        self.deletes: list[dict] = []
         self.exists = exists
 
     def collection_exists(self, name) -> bool:

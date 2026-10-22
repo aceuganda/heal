@@ -419,7 +419,9 @@ def delete_source(
     from qdrant_client import models as qm
 
     client = client or build_client()
-    must = [qm.FieldCondition(key="source_id", match=qm.MatchValue(value=source_id))]
+    must: list[qm.Condition] = [
+        qm.FieldCondition(key="source_id", match=qm.MatchValue(value=source_id))
+    ]
     if version is not None:
         must.append(
             qm.FieldCondition(key="version", match=qm.MatchValue(value=version))

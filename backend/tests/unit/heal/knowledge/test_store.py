@@ -434,7 +434,7 @@ class TestSparseRescaling:
         fake_client.dense_results = []
         fake_client.sparse_results = [make_point("s", 8.4)]
 
-        found = build(fake_client, fake_embedder).candidates("q")
+        found = build(fake_client, fake_embedder).candidates("dolutegravir")
 
         assert found[0].sparse_score == 8.4
 
@@ -447,6 +447,6 @@ class TestSparseRescaling:
         fake_client.dense_results = [make_point("a", 0.8)]
         fake_client.sparse_results = [make_point("a", 0.5)]
 
-        found = build(fake_client, fake_embedder).candidates("q")
+        found = build(fake_client, fake_embedder).candidates("dolutegravir")
 
         assert found[0].score == pytest.approx(0.6 * 0.8 + 0.4 * 0.5)

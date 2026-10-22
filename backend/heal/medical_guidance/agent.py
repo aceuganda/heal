@@ -18,8 +18,8 @@ from uuid import UUID
 from heal import config
 from heal.chat.prompt_builder import PromptBuilder
 from heal.chat.stream_processing import StreamProcessor
-from heal.knowledge.models import SearchOutcome
 from heal.knowledge.models import RetrievedChunk
+from heal.knowledge.models import SearchOutcome
 from heal.knowledge.models import SourceRef
 from heal.llm.registry import default_model
 from heal.llm.service import stream_with_failover

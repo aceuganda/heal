@@ -184,6 +184,31 @@ the first pilot release.
 
 ### Fixed
 
+- **Security: the all-chats export required no login.** `GET
+  /chat/user-chats`, which returns every user's conversations for clinical
+  review, had no authentication check, so anyone who could reach the API could
+  download them. It is now admin-only, which is all the admin Sessions page
+  needs. Any deployment that ran the earlier code exposed this endpoint.
+
+- **The Luganda translation endpoint returns only the translation.** It used to
+  serialise the whole stored message row; the screen only ever read
+  `luganda_message`.
+
+- **The Python checks pass again.** mypy had been failing on this branch,
+  mostly on imports from Danswer code nothing runs any more, and stopped there
+  without reporting the rest. The fixes:
+  - **Dead code moved:** 118 modules no entry point loads (the old connectors,
+    the Slack bot, Vespa, the old indexing and search paths), their unit
+    tests, `tests/regression` and `backend/scripts` moved to
+    `backend/deprecated/` under their old paths. Nothing was deleted, and
+    `heal_app.main` and the migrations load exactly what they did before.
+  - **Real type errors fixed:** chat-session ids typed as `int` where they
+    are UUIDs, and two untyped handlers.
+  - **mypy config:** tests keep their fakes. The fake-versus-real-type checks
+    are off for `tests/` only; live code keeps the strict settings.
+  - **Stale test fixed:** two `test_store` tests searched for `"q"`, which the
+    tokenizer drops as a one-letter word, so no sparse query ran.
+
 - **An answer no longer fails at the last moment and only shows up after a
   reload.** The final line of the chat stream carries the cited passages, and
   each one has a UUID id. Python's JSON encoder refused that id, so the stream

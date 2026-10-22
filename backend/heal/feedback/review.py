@@ -20,8 +20,8 @@ where it is.
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from heal.feedback.aggregate import aggregate
 from heal.feedback.aggregate import Aggregate
+from heal.feedback.aggregate import aggregate
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session

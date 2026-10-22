@@ -29,7 +29,7 @@ def list_users_page(
     """
     stmt = select(User)
     if email_filter:
-        stmt = stmt.where(User.email.ilike(f"%{email_filter}%"))
+        stmt = stmt.where(User.__table__.c.email.ilike(f"%{email_filter}%"))
     stmt = stmt.order_by(User.email).limit(limit).offset(offset)
     return db_session.scalars(stmt).unique().all()
 
@@ -38,5 +38,5 @@ def count_users_matching(db_session: Session, email_filter: str = "") -> int:
     """Count for the same filter the page uses, so the totals agree."""
     stmt = select(func.count(User.id))
     if email_filter:
-        stmt = stmt.where(User.email.ilike(f"%{email_filter}%"))
+        stmt = stmt.where(User.__table__.c.email.ilike(f"%{email_filter}%"))
     return int(db_session.scalar(stmt) or 0)

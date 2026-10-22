@@ -7,6 +7,18 @@ disallow_untyped_defs = true
 # block removals on errors in code that is already retired.
 exclude = ["^deprecated/"]
 
+# Tests stand fakes in for real types on purpose (no network, no ORM), so the
+# checks that compare a fake to the real class are off here; the rest stay on.
+[[tool.mypy.overrides]]
+module = ["tests.*"]
+disallow_untyped_defs = false
+disable_error_code = ["arg-type", "list-item", "union-attr"]
+
+# Live dependencies that ship no type information.
+[[tool.mypy.overrides]]
+module = ["docx", "sentence_transformers", "regex"]
+ignore_missing_imports = true
+
 [tool.ruff]
 ignore = []
 line-length = 130

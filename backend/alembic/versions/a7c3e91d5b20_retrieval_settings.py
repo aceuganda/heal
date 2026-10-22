@@ -13,6 +13,8 @@ Additive only: no column is dropped or retyped on upgrade.
 Revision ID: a7c3e91d5b20
 Revises: f3b6d20c47a1
 """
+from typing import Any
+
 import sqlalchemy as sa
 from alembic import op
 
@@ -22,7 +24,7 @@ branch_labels = None
 depends_on = None
 
 # (column, type, CHECK expression or None)
-_COLUMNS = (
+_COLUMNS: tuple[tuple[str, sa.types.TypeEngine[Any], str | None], ...] = (
     ("min_retrieval_score", sa.Float(), "{c} >= 0 AND {c} <= 1"),
     ("hybrid_alpha", sa.Float(), "{c} >= 0 AND {c} <= 1"),
     ("hybrid_search", sa.Boolean(), None),

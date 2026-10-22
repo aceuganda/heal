@@ -47,21 +47,21 @@ from heal.knowledge.settings import ENV_VARS as RETRIEVAL_ENV_VARS
 from heal.knowledge.settings import resolve
 from heal.knowledge.settings import RetrievalSettings
 from heal.knowledge.settings import SettingUsed
+from heal.knowledge.store import KnowledgeStore
+from heal.knowledge.store import QdrantKnowledgeStore
+from heal.knowledge.store import select_context
+from heal.llm import all_models
 from heal.llm import defaults as saved_defaults
+from heal.llm import get_model
+from heal.llm import to_provider_messages
+from heal.llm.registry import default_model
+from heal.llm.service import build_llm
 from heal.llm.settings import BOUNDS as GENERATION_BOUNDS
 from heal.llm.settings import ENV_VARS as GENERATION_ENV_VARS
 from heal.llm.settings import GenerationSettings
 from heal.llm.settings import resolve as resolve_generation
 from heal.llm.settings import SettingUsed as GenerationSettingUsed
 from heal.llm.settings import VERBOSITY_LEVELS
-from heal.knowledge.store import KnowledgeStore
-from heal.knowledge.store import QdrantKnowledgeStore
-from heal.knowledge.store import select_context
-from heal.llm import all_models
-from heal.llm.registry import default_model
-from heal.llm.service import build_llm
-from heal.llm import get_model
-from heal.llm import to_provider_messages
 from heal.logger import get_logger
 from heal.medical_guidance import audit
 from heal.medical_guidance.routes import emergency_preamble

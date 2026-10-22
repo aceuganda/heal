@@ -97,7 +97,7 @@ async def create_user(
     _reject_unassignable(request.role)
 
     try:
-        created = await user_manager.create(
+        created: User = await user_manager.create(
             UserCreate(email=request.email, password=request.password)
         )
     except UserAlreadyExists:

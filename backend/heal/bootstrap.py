@@ -39,6 +39,7 @@ async def ensure_bootstrap_admin() -> None:
         return
 
     try:
+        from pydantic import EmailStr
         from sqlalchemy.ext.asyncio import AsyncSession
 
         from heal_app.auth.schemas import UserCreate
@@ -73,7 +74,9 @@ async def ensure_bootstrap_admin() -> None:
             manager = UserManager(user_db)
             # Role is not passed: create() assigns SUPER_ADMIN because this is
             # the first account, which is exactly the rule we want applied.
-            created = await manager.create(UserCreate(email=email, password=password))
+            created: User = await manager.create(
+                UserCreate(email=EmailStr(email), password=password)
+            )
             # Read inside the block. The commit inside create() expires the
             # instance, so touching it after the session closes triggers a
             # refresh -- async IO from a sync context, which raises

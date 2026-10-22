@@ -3,6 +3,7 @@ from uuid import UUID
 from fastapi import APIRouter
 from fastapi import Depends
 from fastapi import HTTPException
+from fastapi.responses import JSONResponse
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
@@ -11,6 +12,7 @@ from heal.chat.export import download_chat_sessions_helper
 from heal.chat.message_flow import stream_chat_message
 from heal.language import get_language_service
 from heal.language import TranslationError
+from heal_app.auth.users import current_admin_user
 from heal_app.auth.users import current_user
 from heal_app.chat.chat_utils import create_chat_chain
 from heal_app.db.chat import create_chat_session
@@ -243,7 +245,7 @@ def upd_chat_message(
     payload: TranslateChatMessagePayload,
     user: User | None = Depends(current_chat_user),
     db_session: Session = Depends(get_session),
-):
+) -> dict[str, str | None]:
     """Translate to luganda"""
     user_id = user.id if user is not None else None
     chat_message = get_chat_message(
@@ -263,11 +265,14 @@ def upd_chat_message(
 
     db_session.commit()
 
-    return chat_message
+    # Only what the screen reads, not the whole message row.
+    return {"luganda_message": chat_message.luganda_message}
 
 
 @router.get("/user-chats")
 def download_chat_sessions(
+    _: User | None = Depends(current_admin_user),
     db_session: Session = Depends(get_session),
-):
+) -> JSONResponse:
+    """Every user's chats, for clinical review: admins only."""
     return download_chat_sessions_helper(db_session=db_session)
