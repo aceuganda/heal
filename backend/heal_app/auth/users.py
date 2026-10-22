@@ -32,6 +32,7 @@ from heal_app.auth.schemas import role_at_least
 from heal_app.auth.schemas import UserCreate
 from heal_app.auth.schemas import UserRole
 from heal_app.configs.app_configs import AUTH_TYPE
+from heal_app.configs.app_configs import COOKIE_SECURE
 from heal_app.configs.app_configs import DISABLE_AUTH
 from heal_app.configs.app_configs import EMAIL_FROM
 from heal_app.configs.app_configs import REQUIRE_EMAIL_VERIFICATION
@@ -236,7 +237,9 @@ async def get_user_manager(
     yield UserManager(user_db)
 
 
-cookie_transport = CookieTransport(cookie_max_age=SESSION_EXPIRE_TIME_SECONDS)
+cookie_transport = CookieTransport(
+    cookie_max_age=SESSION_EXPIRE_TIME_SECONDS, cookie_secure=COOKIE_SECURE
+)
 
 
 def get_database_strategy(

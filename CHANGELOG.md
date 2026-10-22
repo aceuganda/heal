@@ -20,6 +20,15 @@ the first pilot release.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Login works on a plain-http deployment.** The session cookie was always
+  marked Secure, so on an `http://` address the browser dropped it: login
+  returned 204 and every next request was 403. Secure now follows the scheme
+  of `WEB_DOMAIN` — set `WEB_DOMAIN` to the address people actually open.
+  Over http, sessions and passwords cross the network unencrypted; serve
+  https before real users.
+
 ### Added
 
 - **`make deploy-secrets` sets `heal-secrets` from your machine.** One hidden

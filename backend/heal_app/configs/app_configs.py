@@ -33,6 +33,15 @@ DISABLE_GENERATIVE_AI = os.environ.get("DISABLE_GENERATIVE_AI", "").lower() == "
 WEB_DOMAIN = os.environ.get("WEB_DOMAIN") or "http://localhost:3000"
 
 
+def cookie_secure(web_domain: str) -> bool:
+    # A Secure cookie over plain http is dropped by the browser (localhost
+    # excepted), so login "succeeds" and every next request is a 403.
+    return web_domain.lower().startswith("https://")
+
+
+COOKIE_SECURE = cookie_secure(WEB_DOMAIN)
+
+
 #####
 # Auth Configs
 #####
