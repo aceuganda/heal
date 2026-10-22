@@ -109,7 +109,9 @@ make deploy
 ```
 
 Other commands: `make deploy-check` (steps 1–2 only), `make deploy-doctor`,
-`make deploy-status`, `make deploy-rollback`.
+`make deploy-status`, `make deploy-rollback`. `make deploy-unchecked` skips
+steps 1–2 and the image scan in step 3, for a rebuild right after a passing
+`make deploy-check`; its history entry says `"checked": false`.
 
 Tools on the deploying machine: `git`, `docker`, `kubectl`, `trivy`, `crane`,
 and `cosign` if you sign (`brew install kubectl trivy crane cosign`). The CLI

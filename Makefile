@@ -286,6 +286,10 @@ DEPLOY := DEPLOY_KUBE_TOKEN="$${DEPLOY_KUBE_TOKEN:-$$(security find-generic-pass
 deploy: ## Gate, scan, build, push and roll out to k3s (asks before pushing)
 	$(DEPLOY) deploy
 
+.PHONY: deploy-unchecked
+deploy-unchecked: ## Like deploy, but skip the gates and trivy scans (run deploy-check first)
+	$(DEPLOY) deploy-unchecked
+
 .PHONY: deploy-check
 deploy-check: ## Run the deploy gates and dependency scan, build nothing
 	$(DEPLOY) check

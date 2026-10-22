@@ -85,6 +85,17 @@ class TestDeploy:
         assert entry["images"]["heal-web"] == f"localhost:5050/heal-web@{DIGEST}"
         assert Path(entry["manifest"]).exists()
 
+    def test_unchecked_deploy_skips_gates_and_scans(
+        self, cfg: Config, forwarded: list[str]
+    ) -> None:
+        runner = _runner()
+        runner.outputs["status"] = " M web/app.tsx"
+        assert cli.cmd_deploy(runner, cfg, ask=lambda _: "heal", checked=False) == 0
+        assert not runner.ran("trivy")
+        assert runner.ran("docker build") and runner.ran("crane push")
+        entry = json.loads((cfg.state_dir / "history.jsonl").read_text())
+        assert entry["checked"] is False
+
     def test_signing_verifies_each_digest_before_deploying(self, cfg: Config) -> None:
         runner = _runner()
         signed = replace(cfg, cosign_key="cosign.key", cosign_pubkey="cosign.pub")

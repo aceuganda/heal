@@ -84,20 +84,33 @@ def cmd_check(runner: Runner, cfg: Config) -> int:
     return 0 if run_gates(runner, cfg) else 1
 
 
-def cmd_deploy(runner: Runner, cfg: Config, ask: Callable[[str], str] = input) -> int:
-    if not run_gates(runner, cfg):
+def cmd_deploy(
+    runner: Runner,
+    cfg: Config,
+    ask: Callable[[str], str] = input,
+    checked: bool = True,
+) -> int:
+    # checked=False skips the gates and every trivy scan; the operator says
+    # they already ran `make deploy-check`. The history entry records it.
+    if checked and not run_gates(runner, cfg):
         return 1
+    if not checked:
+        print("warn gates and vulnerability scans skipped")
 
     sha = runner.capture(["git", "rev-parse", "HEAD"])
     tag = sha[:12]
     built = {}
     for service in images.SERVICES:
         ref = images.build(runner, cfg, service, tag)
-        images.scan(
-            runner, cfg, ref, cfg.state_dir / "sbom" / f"{tag}-{service.image}.cdx.json"
-        )
+        if checked:
+            images.scan(
+                runner,
+                cfg,
+                ref,
+                cfg.state_dir / "sbom" / f"{tag}-{service.image}.cdx.json",
+            )
         built[service] = ref
-    print("ok   images built and scanned")
+    print("ok   images built" + (" and scanned" if checked else ""))
 
     print(
         f"\nAbout to push and deploy commit {tag}\n"
@@ -106,6 +119,7 @@ def cmd_deploy(runner: Runner, cfg: Config, ask: Callable[[str], str] = input) -
         f"  cluster    {cfg.api_server_url}\n"
         f"  namespace  {cfg.namespace}\n"
         f"  signed     {'yes' if cfg.signing else 'NO'}\n"
+        f"  checked    {'yes' if checked else 'NO'}\n"
     )
     try:
         answer = ask(f"Type the namespace ({cfg.namespace}) to continue: ")
@@ -143,12 +157,17 @@ def cmd_deploy(runner: Runner, cfg: Config, ask: Callable[[str], str] = input) -
             "torch": cfg.torch_variant,
             "images": pinned,
             "signed": cfg.signing,
+            "checked": checked,
             "manifest": str(manifest),
             "outcome": "deployed" if succeeded else "rolled back",
         },
     )
     print("Deployed." if succeeded else "Deploy failed and was rolled back.")
     return 0 if succeeded else 1
+
+
+def cmd_deploy_unchecked(runner: Runner, cfg: Config) -> int:
+    return cmd_deploy(runner, cfg, checked=False)
 
 
 def _record(cfg: Config, entry: dict) -> None:
@@ -192,6 +211,7 @@ COMMANDS: dict[str, Callable[[Runner, Config], int]] = {
     "doctor": cmd_doctor,
     "check": cmd_check,
     "deploy": cmd_deploy,
+    "deploy-unchecked": cmd_deploy_unchecked,
     "status": cmd_status,
     "rollback": cmd_rollback,
     "logs": cmd_logs,
