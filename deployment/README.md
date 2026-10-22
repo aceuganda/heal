@@ -213,7 +213,7 @@ a revisit date; that file is reviewed like code.
 - User auth is on by default (`AUTH_TYPE` in `env-configmap.yaml`).
 - HTTPS is assumed to be terminated by your cluster's ingress.
 - Qdrant runs as `qdrant-statefulset` behind the ClusterIP `qdrant-service`
-  (10 GiB volume). It will not start until `heal-secrets` has
+  (5 GiB volume). It will not start until `heal-secrets` has
   `qdrant_api_key`; on a cluster set up before Qdrant, add it once on the
   server (the deployer cannot write Secrets):
   `sudo k3s kubectl -n heal patch secret heal-secrets -p "{\"stringData\":{\"qdrant_api_key\":\"$(openssl rand -hex 32)\"}}"`.

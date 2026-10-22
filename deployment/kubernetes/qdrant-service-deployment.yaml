@@ -68,4 +68,4 @@ spec:
       resources:
         requests:
           # Fixed once the StatefulSet exists; grow it by expanding the PVC.
-          storage: 10Gi
+          storage: 5Gi

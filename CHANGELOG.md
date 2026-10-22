@@ -23,7 +23,7 @@ the first pilot release.
 ### Added
 
 - **Qdrant runs on k3s.** `make deploy` now applies a Qdrant StatefulSet
-  (`qdrant/qdrant:v1.19.0`, 10 GiB volume) behind an internal-only
+  (`qdrant/qdrant:v1.19.0`, 5 GiB volume) behind an internal-only
   `qdrant-service`. Its API key is `qdrant_api_key` in `heal-secrets`, shared
   with the API server; the pod refuses to start without it.
   **Migration:** on the existing server, add the key before deploying (command
