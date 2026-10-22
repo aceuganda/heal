@@ -1,0 +1,56 @@
+/*
+ * Animation for AfricaPulseLoader.
+ *
+ * Per-dot timing (animation-delay, animation-duration) is computed in the
+ * component from each dot's distance to the point cloud's centroid, and is
+ * set inline so the JS timing constants stay the single source of truth.
+ * This file only defines the shape of the pulse itself, plus the
+ * prefers-reduced-motion fallback.
+ */
+
+.heal-pulse-dot {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation-name: heal-impulse;
+  animation-timing-function: ease-in-out;
+  animation-iteration-count: infinite;
+  will-change: transform;
+}
+
+/* Rest most of the cycle; a quick, clinical brighten-and-scale near the
+   start of each dot's (delayed) timeline, then settle back down. */
+@keyframes heal-impulse {
+  0%,
+  100% {
+    transform: scale(1);
+    fill: var(--heal-dot-rest, #cbd5da);
+  }
+  6% {
+    transform: scale(2.2);
+    fill: var(--heal-dot-peak, #2dd4bf);
+  }
+  20% {
+    transform: scale(1);
+    fill: var(--heal-dot-rest, #cbd5da);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* No travelling wave: every dot breathes gently and in sync instead. */
+  .heal-pulse-dot {
+    animation-name: heal-impulse-reduced !important;
+    animation-duration: 2.4s !important;
+    animation-delay: 0s !important;
+    fill: var(--heal-dot-rest, #cbd5da);
+  }
+
+  @keyframes heal-impulse-reduced {
+    0%,
+    100% {
+      opacity: 0.45;
+    }
+    50% {
+      opacity: 0.9;
+    }
+  }
+}

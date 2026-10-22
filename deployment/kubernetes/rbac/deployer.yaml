@@ -1,0 +1,63 @@
+# The identity `make deploy` uses, in the one namespace everything lives in.
+# Applied once by setup-server.sh. It can roll out Heal's workloads and
+# port-forward to the in-cluster registry -- nothing outside `heal`, and no
+# read access to Secrets. Not part of kustomization.yaml, so the deployer
+# cannot widen its own access.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: heal
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: heal-deployer
+  namespace: heal
+---
+# Long-lived token for the kubeconfig. Revoke by deleting this Secret.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: heal-deployer-token
+  namespace: heal
+  annotations:
+    kubernetes.io/service-account.name: heal-deployer
+type: kubernetes.io/service-account-token
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: heal-deployer
+  namespace: heal
+rules:
+  - apiGroups: ["apps"]
+    resources: ["deployments", "statefulsets"]
+    verbs: ["get", "list", "watch", "create", "update", "patch"]
+  # rollout status / history / undo read ReplicaSets.
+  - apiGroups: ["apps"]
+    resources: ["replicasets", "controllerrevisions"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["services", "persistentvolumeclaims", "configmaps"]
+    verbs: ["get", "list", "watch", "create", "update", "patch"]
+  - apiGroups: [""]
+    resources: ["pods", "pods/log", "events"]
+    verbs: ["get", "list", "watch"]
+  # Pushing images: a port-forward to the registry pod, through the API.
+  - apiGroups: [""]
+    resources: ["pods/portforward"]
+    verbs: ["create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: heal-deployer
+  namespace: heal
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: heal-deployer
+subjects:
+  - kind: ServiceAccount
+    name: heal-deployer
+    namespace: heal

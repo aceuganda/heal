@@ -1,12 +1,10 @@
-import { InfoIcon, TrashIcon } from "@/components/icons/icons";
-import {
-  deleteCCPair,
-  scheduleDeletionJobForConnector,
-} from "@/lib/documentDeletion";
+import { InfoIcon } from "@/components/icons/icons";
+import { deleteCCPair } from "@/lib/documentDeletion";
 import { ConnectorIndexingStatus } from "@/lib/types";
 import { PopupSpec } from "../Popup";
 import { useState } from "react";
 import { DeleteButton } from "@/components/DeleteButton";
+import { ConfirmDeleteModal } from "@/components/ConfirmDeleteModal";
 
 interface Props<ConnectorConfigType, ConnectorCredentialType> {
   connectorIndexingStatus: ConnectorIndexingStatus<
@@ -23,6 +21,8 @@ export function DeleteColumn<ConnectorConfigType, ConnectorCredentialType>({
   onUpdate,
 }: Props<ConnectorConfigType, ConnectorCredentialType>) {
   const [deleteHovered, setDeleteHovered] = useState<boolean>(false);
+  const [isDeleteConfirmationOpen, setIsDeleteConfirmationOpen] =
+    useState(false);
 
   const connector = connectorIndexingStatus.connector;
   const credential = connectorIndexingStatus.credential;
@@ -33,13 +33,21 @@ export function DeleteColumn<ConnectorConfigType, ConnectorCredentialType>({
       onMouseEnter={() => setDeleteHovered(true)}
       onMouseLeave={() => setDeleteHovered(false)}
     >
+      {isDeleteConfirmationOpen && (
+        <ConfirmDeleteModal
+          title="Remove connector?"
+          description="This schedules removal of the connector and the content it indexed. This action cannot be undone."
+          onCancel={() => setIsDeleteConfirmationOpen(false)}
+          onConfirm={() => {
+            deleteCCPair(connector.id, credential.id, setPopup, onUpdate);
+            setIsDeleteConfirmationOpen(false);
+          }}
+          confirmLabel="Remove connector"
+        />
+      )}
       {connectorIndexingStatus.is_deletable ? (
         <div className="cursor-pointer mx-auto flex">
-          <DeleteButton
-            onClick={() =>
-              deleteCCPair(connector.id, credential.id, setPopup, onUpdate)
-            }
-          />
+          <DeleteButton onClick={() => setIsDeleteConfirmationOpen(true)} />
         </div>
       ) : (
         <div>

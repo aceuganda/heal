@@ -49,7 +49,7 @@ export const ThreeDotsLoader = () => {
         <ThreeDots
           height="30"
           width="50"
-          color="#3b82f6"
+          color="#0f766e"
           ariaLabel="grid-loading"
           radius="12.5"
           wrapperStyle={{}}

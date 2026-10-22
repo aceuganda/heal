@@ -3,12 +3,40 @@ plugins = "sqlalchemy.ext.mypy.plugin"
 mypy_path = "$MYPY_CONFIG_FILE_DIR"
 explicit_package_bases = true
 disallow_untyped_defs = true
+# `deprecated/` is frozen text that nothing imports. Type-checking it would
+# block removals on errors in code that is already retired.
+exclude = ["^deprecated/"]
+
+# Tests stand fakes in for real types on purpose (no network, no ORM), so the
+# checks that compare a fake to the real class are off here; the rest stay on.
+[[tool.mypy.overrides]]
+module = ["tests.*"]
+disallow_untyped_defs = false
+disable_error_code = ["arg-type", "list-item", "union-attr"]
+
+# Live dependencies that ship no type information.
+[[tool.mypy.overrides]]
+module = ["docx", "sentence_transformers", "regex"]
+ignore_missing_imports = true
 
 [tool.ruff]
 ignore = []
 line-length = 130
+exclude = ["deprecated"]
 select = [
     "E",
     "F",
     "W",
 ]
+
+[tool.black]
+extend-exclude = "^/deprecated/"
+
+[tool.pytest.ini_options]
+testpaths = ["tests/unit"]
+# `heal` and `heal_app` live here. Plain `pytest` (as CI runs it) does not put
+# the working directory on sys.path; `python -m pytest` does, which hid this.
+pythonpath = ["."]
+# pytest-asyncio strict mode: async tests must carry @pytest.mark.asyncio, so
+# an accidentally-sync test cannot pass by never being awaited.
+asyncio_mode = "strict"

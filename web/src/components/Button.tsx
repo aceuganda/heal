@@ -23,8 +23,8 @@ export const Button = ({
         "py-1 px-2 border border-transparent text-sm " +
         "font-medium rounded-md text-white " +
         "focus:outline-none focus:ring-2 " +
-        "focus:ring-offset-2 focus:ring-red-500 mx-auto " +
-        (disabled ? "bg-gray-700 " : "bg-red-800 hover:bg-red-900 ") +
+        "focus:ring-offset-2 focus:ring-accent mx-auto " +
+        (disabled ? "bg-gray-700 " : "bg-accent hover:bg-accent-hover ") +
         className
       }
       onClick={onClick}

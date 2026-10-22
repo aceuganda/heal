@@ -27,8 +27,9 @@ spec:
     spec:
       containers:
       - name: web-server
-        image: heal-frontend:latest
-        imagePullPolicy: Never
+        # Logical name, pinned by `make deploy`; see api_server-service-deployment.yaml.
+        image: heal-web
+        imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 3000
         # There are some extra values since this is shared between services

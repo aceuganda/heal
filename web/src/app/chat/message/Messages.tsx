@@ -1,33 +1,61 @@
 import {
   FiCheck,
+  FiChevronRight,
   FiCopy,
+  FiGlobe,
   // FiCpu,
   FiThumbsDown,
   FiThumbsUp,
-  FiUser,
 } from "react-icons/fi";
 import { FeedbackType } from "../types";
+import { FeedbackControl } from "./FeedbackControl";
 import { useState } from "react";
 import ReactMarkdown from "react-markdown";
 import { DanswerDocument } from "@/lib/search/interfaces";
 import { SearchSummary, ShowHideDocsButton } from "./SearchSummary";
 import { SourceIcon } from "@/components/SourceIcon";
-import { ThreeDots } from "react-loader-spinner";
-import Image from "next/image";
+import { AnswerProgress } from "./AnswerProgress";
+import { DotMark } from "@/components/splash/DotMark";
+import { ThoughtCloudIcon } from "@/components/icons/icons";
+import { citationKeyFromHref, linkifyCitations } from "./citationMarkers";
 
 export const Hoverable: React.FC<{
   children: JSX.Element;
   onClick?: () => void;
-}> = ({ children, onClick }) => {
+  active?: boolean;
+}> = ({ children, onClick, active }) => {
   return (
     <div
-      className="hover:bg-neutral-300 p-2 rounded h-fit cursor-pointer"
+      className={
+        "p-2 rounded h-fit cursor-pointer " +
+        (active
+          ? "bg-heal-teal-50 text-accent"
+          : "text-emphasis hover:bg-neutral-300")
+      }
       onClick={onClick}
     >
       {children}
     </div>
   );
 };
+
+/** One `[1]` inside the answer, as a button that opens the cited passage. */
+const InlineCitation = ({
+  citationKey,
+  onClick,
+}: {
+  citationKey: string;
+  onClick: () => void;
+}) => (
+  <button
+    type="button"
+    onClick={onClick}
+    aria-label={`Open reference ${citationKey}`}
+    className="mx-0.5 align-super rounded text-[0.7em] font-semibold leading-none text-accent hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+  >
+    [{citationKey}]
+  </button>
+);
 
 export const AIMessage = ({
   messageId,
@@ -39,11 +67,15 @@ export const AIMessage = ({
   isComplete,
   hasDocs,
   handleFeedback,
+  handleComment,
+  feedbackGiven,
   isCurrentlyShowingRetrieved,
   handleShowRetrieved,
   handleTranslation,
   handleSearchQueryEdit,
-  messageIdTranslating
+  messageIdTranslating,
+  onCitationClick,
+  liveMark = false,
 }: {
   messageId: number | null;
   content: string | JSX.Element | null | undefined;
@@ -53,29 +85,50 @@ export const AIMessage = ({
   citedDocuments?: [string, DanswerDocument][] | null;
   isComplete?: boolean;
   hasDocs?: boolean;
-  handleFeedback?: (feedbackType: FeedbackType) => void;
+  handleFeedback?: (rating: number) => void;
+  handleComment?: (comment: string) => void;
+  feedbackGiven?: number;
   handleTranslation: (id: number | null) => void;
   isCurrentlyShowingRetrieved?: boolean;
   handleShowRetrieved?: (messageNumber: number | null) => void;
   handleSearchQueryEdit?: (query: string) => void;
   messageIdTranslating?: number | null;
+  onCitationClick?: (citationKey: string, document: DanswerDocument) => void;
+  /** Keep the avatar mark breathing. Only the newest answer gets this; the
+   *  rest assemble once and hold, so a long chat is not dozens of loops. */
+  liveMark?: boolean;
 }) => {
   const [copyClicked, setCopyClicked] = useState(false);
+
+  // Marker -> the passage it points at. Only markers with an entry here are
+  // made clickable, so an invented `[9]` stays plain text rather than becoming
+  // a link to nothing -- which is the same call the backend makes when it
+  // drops a marker past the passages it supplied.
+  const citationLookup = new Map(citedDocuments || []);
+  const renderedContent =
+    typeof content === "string"
+      ? linkifyCitations(content, new Set(citationLookup.keys()))
+      : content;
+
   return (
-    <div className={"py-5 px-5 flex -mr-6 w-full"}>
-      <div className="sm:mx-auto w-searchbar-xs 2xl:w-searchbar-sm 3xl:w-searchbar relative">
-        <div className="sm:ml-8 ml-[0.5rem]">
+    // Tight on purpose. A health worker is reading this mid-consultation on a
+    // phone, and every row of padding is a line of the answer pushed off the
+    // screen — but the gutter stays wide enough that the text is not running
+    // into the edge of the display.
+    <div className="flex w-full px-3 py-3 sm:px-6">
+      <div className="mx-auto w-full max-w-3xl">
+        <div>
           <div className="flex">
-            <div className="p-1 bg-ai rounded-lg h-fit my-auto">
-              <div className="text-inverted">
-                <Image
-                  width={16}
-                  height={16}
-                  alt="Heal"
-                  src="/logo.png"
-                  className="my-auto mx-auto"
-                />
-              </div>
+            {/* The animated mark itself, no disc around it: it sits on the
+                page like the logo does on the splash. While an answer is
+                pending this is also the loading signal. */}
+            <div className="h-7 w-7 shrink-0" style={{ lineHeight: 0 }}>
+              <DotMark
+                loop={liveMark || isComplete === false}
+                role={isComplete === false ? "status" : "img"}
+                label={isComplete === false ? "Preparing your answer" : "Heal"}
+                fallbackSizePx={28}
+              />
             </div>
 
             <div className="font-bold text-emphasis ml-2 my-auto">Heal</div>
@@ -96,7 +149,10 @@ export const AIMessage = ({
               )} */}
           </div>
 
-          <div className="w-message-xs 2xl:w-message-sm 3xl:w-message-default break-words mt-1 sm:ml-8">
+          {/* Translucent over the warm canvas with a white hairline edge: the
+              answer reads as a surface without a card's hard border or
+              shadow. */}
+          <div className="mt-1.5 max-w-2xl break-words rounded-2xl rounded-tl-md border border-white/70 bg-white/55 px-4 py-3 text-emphasis shadow-[0_1px_3px_rgba(31,41,51,0.03)] backdrop-blur-[1px] sm:ml-8">
             {query !== undefined &&
               handleShowRetrieved !== undefined &&
               isCurrentlyShowingRetrieved !== undefined && (
@@ -114,111 +170,126 @@ export const AIMessage = ({
 
             {content ? (
               <>
-                {typeof content === "string" ? (
+                {typeof renderedContent === "string" ? (
                   <ReactMarkdown
                     className="prose max-w-full"
                     components={{
-                      a: ({ node, ...props }) => (
-                        <a
-                          {...props}
-                          className="text-blue-500 hover:text-blue-700"
-                          target="_blank"
-                          rel="noopener noreferrer"
-                        />
-                      ),
+                      a: ({ node, href, children, ...props }) => {
+                        // A rewritten citation marker rather than a real link.
+                        const citationKey = citationKeyFromHref(href);
+                        if (citationKey) {
+                          const cited = citationLookup.get(citationKey);
+                          // Only rewritten when the source exists, so this is
+                          // belt and braces: show the marker, never a dead link.
+                          return cited ? (
+                            <InlineCitation
+                              citationKey={citationKey}
+                              onClick={() =>
+                                onCitationClick?.(citationKey, cited)
+                              }
+                            />
+                          ) : (
+                            <span>[{citationKey}]</span>
+                          );
+                        }
+                        return (
+                          <a
+                            {...props}
+                            href={href}
+                            className="text-link hover:text-accent-hover"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                          >
+                            {children}
+                          </a>
+                        );
+                      },
                     }}
                   >
-                    {content}
+                    {renderedContent}
                   </ReactMarkdown>
                 ) : (
                   content
                 )}
               </>
             ) : isComplete ? null : (
-              <div className="text-sm my-auto">
-                <ThreeDots
-                  height="30"
-                  width="50"
-                  color="#3b82f6"
-                  ariaLabel="grid-loading"
-                  radius="12.5"
-                  wrapperStyle={{}}
-                  wrapperClass=""
-                  visible={true}
-                />
-              </div>
+              // An assistant message with no text yet: the answer is on its
+              // way but nothing has streamed, which is exactly the silence
+              // AnswerProgress exists to fill.
+              <AnswerProgress className="my-auto" showMark={false} />
             )}
             {citedDocuments && citedDocuments.length > 0 && (
               <div className="mt-2">
-                <b className="text-sm text-emphasis">Sources:</b>
+                <b className="text-sm text-emphasis">References</b>
                 <div className="flex flex-wrap gap-2">
                   {citedDocuments
                     .filter(([_, document]) => document.semantic_identifier)
                     .map(([citationKey, document], ind) => {
-                      const display = (
-                        <div className="max-w-350 text-ellipsis flex text-sm border border-border py-1 px-2 rounded flex">
-                          <div className="mr-1 my-auto">
-                            <SourceIcon
-                              sourceType={document.source_type}
-                              iconSize={16}
-                            />
-                          </div>
-                          [{citationKey}] {document!.semantic_identifier}
-                        </div>
+                      return (
+                        <button
+                          // Keyed by marker, not document_id: that is
+                          // `source_id:version`, so two passages cited from one
+                          // guideline share it. Markers are unique per message.
+                          key={citationKey}
+                          type="button"
+                          onClick={() =>
+                            onCitationClick?.(citationKey, document)
+                          }
+                          className="group flex max-w-full items-center rounded-lg border border-border bg-background px-2.5 py-1.5 text-left text-xs text-emphasis transition-colors hover:border-heal-teal-200 hover:bg-hover-light"
+                        >
+                          <SourceIcon
+                            sourceType={document.source_type}
+                            iconSize={15}
+                          />
+                          <span className="ml-1.5 line-clamp-1">
+                            [{citationKey}] {document.semantic_identifier}
+                          </span>
+                          <FiChevronRight
+                            className="ml-1 shrink-0 text-subtle group-hover:text-accent"
+                            size={15}
+                          />
+                        </button>
                       );
-                      if (document.link) {
-                        return (
-                          <a
-                            key={document.document_id}
-                            href={document.link}
-                            target="_blank"
-                            className="cursor-pointer hover:bg-hover"
-                          >
-                            {display}
-                          </a>
-                        );
-                      } else {
-                        return (
-                          <div
-                            key={document.document_id}
-                            className="cursor-default"
-                          >
-                            {display}
-                          </div>
-                        );
-                      }
                     })}
                 </div>
               </div>
             )}
           </div>
           {handleFeedback && (
-            <div className="flex flex-col gap-y-3 items-start">
-              {language === 'luganda' && messageId && !luganda_message &&
+            <div className="flex flex-col gap-y-1.5 items-start">
+              {language === "luganda" && messageId && !luganda_message && (
                 <button
                   onClick={() => handleTranslation(messageId)}
-                  className="text-blue-500 text-[10px] ml-8 "
+                  className="ml-8 flex items-center gap-1 text-[10px] text-link"
                 >
-                  {messageIdTranslating && messageIdTranslating === messageId ? "translating..." : "Translate to Luganda"}
-                </button>}
-              <div className="flex flex-row gap-x-0.5 ml-8 mt-1">
-                <Hoverable
-                  onClick={() => {
-                    if (typeof content === "string") {
-                      navigator.clipboard.writeText(content.toString());
-                      setCopyClicked(true);
-                      setTimeout(() => setCopyClicked(false), 3000);
-                    }
-                  }}
-                >
-                  {copyClicked ? <FiCheck /> : <FiCopy />}
-                </Hoverable>
-                <Hoverable onClick={() => handleFeedback("like")}>
-                  <FiThumbsUp />
-                </Hoverable>
-                <Hoverable>
-                  <FiThumbsDown onClick={() => handleFeedback("dislike")} />
-                </Hoverable>
+                  <FiGlobe size={12} aria-hidden="true" />
+                  {messageIdTranslating && messageIdTranslating === messageId
+                    ? "translating..."
+                    : "Translate to Luganda"}
+                </button>
+              )}
+              {/* Pulled close under the answer it belongs to: these controls
+                  rate the message above them, and a wide gap makes them read
+                  as belonging to whatever comes next. */}
+              <div className="ml-8 mt-0.5 flex flex-col gap-1.5">
+                <div className="flex flex-row gap-x-0.5">
+                  <Hoverable
+                    onClick={() => {
+                      if (typeof content === "string") {
+                        navigator.clipboard.writeText(content.toString());
+                        setCopyClicked(true);
+                        setTimeout(() => setCopyClicked(false), 3000);
+                      }
+                    }}
+                  >
+                    {copyClicked ? <FiCheck /> : <FiCopy />}
+                  </Hoverable>
+                </div>
+                <FeedbackControl
+                  rating={feedbackGiven}
+                  onRate={handleFeedback}
+                  onComment={(comment) => handleComment?.(comment)}
+                />
               </div>
             </div>
           )}
@@ -234,7 +305,7 @@ export const HumanMessage = ({
   language,
   luganda_message,
   handleTranslation,
-  messageIdTranslating
+  messageIdTranslating,
 }: {
   id: number | null;
   content: string | JSX.Element | null | undefined;
@@ -244,20 +315,18 @@ export const HumanMessage = ({
   messageIdTranslating?: number | null;
 }) => {
   return (
-    <div className="py-5 px-5 flex flex-col -mr-6 w-full">
-      <div className="sm:mx-auto w-searchbar-xs 2xl:w-searchbar-sm 3xl:w-searchbar">
-        <div className="sm:ml-8 ml-[0.5rem]">
+    <div className="flex w-full flex-col px-3 py-3 sm:px-6">
+      <div className="mx-auto w-full max-w-3xl">
+        <div>
           <div className="flex">
-            <div className="p-1 bg-user rounded-lg h-fit">
-              <div className="text-inverted">
-                <FiUser size={16} className="my-auto mx-auto" />
-              </div>
+            <div className="flex h-7 w-7 shrink-0 items-center justify-center text-default">
+              <ThoughtCloudIcon size={20} className="text-default" />
             </div>
 
             <div className="font-bold text-emphasis ml-2 my-auto">You</div>
           </div>
-          <div className="mx-auto mt-1 ml-8 w-searchbar-xs 2xl:w-searchbar-sm 3xl:w-searchbar-default flex flex-wrap">
-            <div className="w-message-xs 2xl:w-message-sm 3xl:w-message-default break-words">
+          <div className="mt-1.5 ml-8 flex flex-wrap">
+            <div className="max-w-2xl break-words rounded-2xl rounded-tl-md border border-heal-teal-100/40 bg-heal-teal-50/35 px-4 py-3 text-emphasis">
               {typeof content === "string" ? (
                 <ReactMarkdown
                   className="prose max-w-full"
@@ -265,7 +334,7 @@ export const HumanMessage = ({
                     a: ({ node, ...props }) => (
                       <a
                         {...props}
-                        className="text-blue-500 hover:text-blue-700"
+                        className="text-link hover:text-accent-hover"
                         target="_blank"
                         rel="noopener noreferrer"
                       />
@@ -280,14 +349,18 @@ export const HumanMessage = ({
             </div>
           </div>
         </div>
-        <div className="flex flex-col gap-y-3 items-start">
-          {language === 'luganda' && id && !luganda_message &&
+        <div className="flex flex-col gap-y-1.5 items-start">
+          {language === "luganda" && id && !luganda_message && (
             <button
               onClick={() => handleTranslation(id)}
-              className="text-blue-500 ml-16 text-[10px]"
+              className="ml-16 flex items-center gap-1 text-[10px] text-link"
             >
-              {messageIdTranslating && messageIdTranslating === id ? "translating..." : "Translate to Luganda"}
-            </button>}
+              <FiGlobe size={12} aria-hidden="true" />
+              {messageIdTranslating && messageIdTranslating === id
+                ? "translating..."
+                : "Translate to Luganda"}
+            </button>
+          )}
         </div>
       </div>
     </div>

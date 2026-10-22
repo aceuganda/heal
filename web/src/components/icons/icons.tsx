@@ -36,6 +36,7 @@ import {
   FiCpu,
   FiInfo,
   FiUploadCloud,
+  FiLock,
 } from "react-icons/fi";
 import { SiBookstack } from "react-icons/si";
 import Image from "next/image";
@@ -79,6 +80,13 @@ export const KeyIcon = ({
   className = defaultTailwindCSS,
 }: IconProps) => {
   return <Key size={size} className={className} />;
+};
+
+export const LockIcon = ({
+  size = 16,
+  className = defaultTailwindCSS,
+}: IconProps) => {
+  return <FiLock size={size} className={className} />;
 };
 
 export const UsersIcon = ({
@@ -579,3 +587,28 @@ export const ZendeskIcon = ({
     <Image src={zendeskIcon} alt="Logo" width="96" height="96" />
   </div>
 );
+
+/** A comic thought balloon: a puffy cloud trailing two bubbles. Drawn here
+ *  because neither icon set ships one. Stroke follows `currentColor`. */
+export const ThoughtCloudIcon = ({
+  size = 16,
+  className = defaultTailwindCSS,
+}: IconProps) => {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.6}
+      strokeLinejoin="round"
+      className={className}
+      aria-hidden="true"
+    >
+      <path d="M7 15.5a3.5 3.5 0 0 1-.6-6.95A4.5 4.5 0 0 1 14.8 6.6a3.75 3.75 0 0 1 4.7 4.15A2.75 2.75 0 0 1 18.25 15.5A3 3 0 0 1 12.6 16.2A3 3 0 0 1 7 15.5Z" />
+      <circle cx="6" cy="19.2" r="1.4" />
+      <circle cx="3.4" cy="21.8" r="0.85" />
+    </svg>
+  );
+};

@@ -33,12 +33,12 @@ spec:
         - name: POSTGRES_USER
           valueFrom:
             secretKeyRef:
-              name: danswer-secrets
+              name: heal-secrets
               key: postgres_user
         - name: POSTGRES_PASSWORD
           valueFrom:
             secretKeyRef:
-              name: danswer-secrets
+              name: heal-secrets
               key: postgres_password
         ports:
         - containerPort: 5432
@@ -53,5 +53,5 @@ spec:
       accessModes: ["ReadWriteOnce"]
       resources:
         requests:
-          # Adjust the storage request size as needed.
-          storage: 1Gi
+          # Fixed once the StatefulSet exists; grow it by expanding the PVC.
+          storage: 10Gi

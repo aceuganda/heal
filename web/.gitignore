@@ -35,6 +35,12 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
+# Service worker output from the retired next-pwa plugin. Nothing generates
+# these any more, but the rules stay so a re-enabled PWA build does not commit
+# its artifacts by accident.
 sw.*
 workbox-*
 swe-worker-*
+
+# ...except the hand-written unregister worker, which IS source. See docs/pwa.md.
+!public/sw.js

@@ -10,7 +10,9 @@ import Image from "next/image";
 import { EmailPasswordForm } from "../login/EmailPasswordForm";
 import { Card, Title, Text } from "@tremor/react";
 import Link from "next/link";
-import AddToHomeScreen from '../../../components/AddToHomeScreen'
+// Install prompt commented out, not removed — see CHANGELOG. The component
+// and its per-browser instructions stay in the tree.
+// import AddToHomeScreen from '../../../components/AddToHomeScreen'
 
 const Page = async () => {
   // catch cases where the backend is completely unreachable here
@@ -77,7 +79,9 @@ const Page = async () => {
           </Card>
         </div>
       </div>
-      <AddToHomeScreen/>
+      {/* Install prompt paused. Restore by uncommenting this and the import
+          above. */}
+      {/* <AddToHomeScreen/> */}
     </main>
   );
 };

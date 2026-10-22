@@ -31,8 +31,9 @@ export function ChatLayout({
   documentSidebarInitialWidth?: number;
 }) {
   const searchParams = useSearchParams();
-  const chatIdRaw = searchParams.get("chatId");
-  const chatId = chatIdRaw ? parseInt(chatIdRaw) : null;
+  // A UUID, so it is carried as an opaque string. parseInt() here used to
+  // turn a session id into NaN silently.
+  const chatId = searchParams.get("chatId");
 
   const selectedChatSession = chatSessions.find(
     (chatSession) => chatSession.id === chatId
@@ -47,7 +48,7 @@ export function ChatLayout({
       <ApiKeyModal />
       <InstantSSRAutoRefresh />
 
-      <div className="flex relative bg-background text-default overflow-x-hidden">
+      <div className="relative flex min-h-screen overflow-x-hidden bg-canvas text-default">
         <ChatSidebar
           existingChats={chatSessions}
           currentChatId={chatId}

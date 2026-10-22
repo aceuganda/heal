@@ -1,78 +1,224 @@
-<!-- DANSWER_METADATA={"link": "https://github.com/danswer-ai/danswer/blob/main/deployment/README.md"} -->
+# Deploying Heal
 
-# Deploying Danswer
-The two options provided here are the easiest ways to get Danswer up and running.
+Heal is five services:
 
-- Docker Compose is simpler and default values are already preset to run right out of the box with a single command.
-As everything is running on a single machine, this may not be as scalable depending on your hardware, traffic and needs.
+```
+  nginx  ->  web_server (Next.js)  ->  api_server (FastAPI)  ->  relational_db (PostgreSQL)
+                                              |
+                                              +-------------->  qdrant (approved sources)
+```
 
-- Kubernetes deployment is also provided. Depending on your existing infrastructure, this may be more suitable for
-production deployment but there are a few caveats.
-  - User auth is turned on by default for Kubernetes (with the assumption this is for production use)
-  so you must either update the deployments to turn off user auth or provide the values shown in the example
-  secrets.yaml file.
-  - The example provided assumes a blank slate for existing Kubernetes deployments/services. You may need to adjust the
-  deployments or services according to your setup. This may require existing Kubernetes knowledge or additional
-  setup time.
+All five start together. Nothing else
+runs: there is no scheduler, no queue, no worker pool and no supervisor. See
+`docs/runtime-architecture.md` for which services run at each stage, and
+`docs/architecture-decisions.md` for why.
 
-All the features of Danswer are fully available regardless of the deployment option.
+The Danswer-era stack — Vespa (`index`), the `background` supervisord fleet and
+`model_server` — is frozen in `deployment/deprecated/` and in
+`docker_compose/docker-compose.dev.yml`. None of it is deployed.
 
-For information on setting up connectors, check out https://docs.danswer.dev/connectors/overview
+## Local
 
+From the repository root:
 
-## Docker Compose:
-Docker Compose provides the easiest way to get Danswer up and running.
+```bash
+make up          # build and start all five services; web on :3000
+make api-logs    # tail the API server
+make smoke       # check every service answers
+make down        # stop, keeping volumes
+```
 
-Requirements: Docker and docker compose
+There is no second command for the vector store and no knowledge profile:
+`make up` starts it, the API creates the collection on boot, and documents are
+uploaded and indexed at <http://localhost:3000/admin/sources>.
 
-1. To run Danswer, navigate to `docker_compose` directory and run the following:
-   - `docker compose -f docker-compose.dev.yml -p danswer-stack up -d --pull always --force-recreate`
-      - or run: `docker compose -f docker-compose.dev.yml -p danswer-stack up -d --build --force-recreate`
-to build from source
-   - Downloading images or packages/requirements may take 15+ minutes depending on your internet connection.
+## Docker Compose, production
 
+Requirements: Docker and Docker Compose.
 
-2. To shut down the deployment, run:
-   - To stop the containers: `docker compose -f docker-compose.dev.yml -p danswer-stack stop`
-   - To delete the containers: `docker compose -f docker-compose.dev.yml -p danswer-stack down`
+1. **Configure.** In `docker_compose/`, copy `env.prod.template` to `.env` and
+   fill it in, and copy `env.nginx.template` to `.env.nginx`.
 
+   Two settings decide whether Luganda works at all:
+   `TRANSLATION_EN_URL` and `TRANSLATION_LUG_URL`. There is no default baked
+   into the image, so if they are unset Luganda chat fails with a config error
+   naming the variable. English chat is unaffected.
 
-3. To completely remove Danswer run:
-   - **WARNING, this will also erase your indexed data and users**
-   - `docker compose -f docker-compose.dev.yml -p danswer-stack down -v`
+2. **TLS.** Pick one:
+   - *Certbot in the stack* — keep `NGINX_CONF_TEMPLATE=app.conf.template`,
+     run `chmod +x init-letsencrypt.sh && ./init-letsencrypt.sh` once, then add
+     `--profile letsencrypt` to every compose command.
+   - *TLS terminated upstream* — set
+     `NGINX_CONF_TEMPLATE=app.conf.template.no-letsencrypt` and omit the
+     profile. This replaces the old `docker-compose.prod-no-letsencrypt.yml`.
 
+3. **Start.**
 
-Additional steps for user auth and https if you do want to use Docker Compose for production:
+   ```bash
+   cd docker_compose
+   docker compose -f docker-compose.prod.yml -p heal-stack up -d
+   # with certbot:
+   docker compose -f docker-compose.prod.yml --profile letsencrypt -p heal-stack up -d
+   ```
 
-1. Set up a `.env` file in this directory with relevant environment variables.
-   - Refer to `env.prod.template`
-   - To turn on user auth, set:
-     - GOOGLE_OAUTH_CLIENT_ID=\<your GCP API client ID\>
-     - GOOGLE_OAUTH_CLIENT_SECRET=\<associated client secret\>
-     - Refer to https://developers.google.com/identity/gsi/web/guides/get-google-api-clientid
+   The first build pulls a large Python image and may take 15+ minutes.
 
-2. Set up https:
-   - Set up a `.env.nginx` file in this directory based on `env.nginx.template`.
-   - `chmod +x init-letsencrypt.sh` + `./init-letsencrypt.sh` to set up https certificate.
+4. **Stop.**
 
-3. Follow the above steps but replacing dev with prod.
+   ```bash
+   docker compose -f docker-compose.prod.yml -p heal-stack stop   # stop
+   docker compose -f docker-compose.prod.yml -p heal-stack down   # remove containers
+   ```
 
+   `down -v` additionally deletes the volumes. **That erases the database —
+   every user account and every chat.** Take a `pg_dump` first.
 
-## Kubernetes:
-Depending on your deployment needs Kubernetes may be more suitable. The yamls provided will work out of the box but the
-intent is for you to customize the deployment to fit your own needs. There is no data replication or auto-scaling built
-in for the provided example.
+### Database
 
-Requirements: a Kubernetes cluster and kubectl
+`api_server` runs `alembic upgrade head` on start. This is a no-op against a
+database already at head. The history is the inherited chain with Heal's
+migrations appended; it has not been squashed into a new baseline. If one is
+ever written, `upgrade` must never be what applies it to production —
+production is **stamped**, not upgraded. See `docs/architecture-decisions.md`
+under *Schema and migrations*.
 
-**NOTE: This setup does not explicitly enable https, the assumption is you would have this already set up for your
-prod cluster**
+The database port is not published to the host in production. Use
+`docker compose exec relational_db psql -U postgres` for admin access.
 
-1. To run Danswer, navigate to `kubernetes` directory and run the following:
-   - `kubectl apply -f .`
+## Kubernetes (k3s)
 
-2. To remove Danswer, run:
-   - **WARNING, this will also erase your indexed data and users**
-   - `kubectl delete -f .`
-   - To not delete the persistent volumes (Document indexes and Users), specify the specific `.yaml` files instead of 
-   `.` without specifying delete on persistent-volumes.yaml.
+Deploys run from your machine with `make deploy`, entirely through the k3s
+API as the `heal-deployer` service account: no SSH, no sudo, no outside
+registry. Nothing builds or deploys from GitHub: GitHub holds the code, and
+every deployed commit must already be on its `main`.
+
+```
+make deploy
+  1. gates   tree clean · HEAD on origin/main · deps pinned, no pre-releases
+             · base images pinned to x.y.z or a digest
+  2. scan    trivy: fixable CRITICAL/HIGH in shipped deps, leaked secrets
+  3. build   both images for DEPLOY_PLATFORM, tagged with the commit;
+             architecture checked; trivy scan + CycloneDX SBOM
+  4. ask     shows commit, images, platform, cluster, namespace;
+             type the namespace
+  5. push    to the registry inside k3s, through an API port-forward;
+             cosign sign + verify each digest, if keyed
+  6. apply   server-side dry run, apply, wait for rollout; a failed
+             rollout is undone automatically
+  7. record  deployment/.deploy/history.jsonl + the exact manifest applied
+```
+
+Other commands: `make deploy-check` (steps 1–2 only), `make deploy-doctor`,
+`make deploy-status`, `make deploy-rollback`.
+
+Tools on the deploying machine: `git`, `docker`, `kubectl`, `trivy`, `crane`,
+and `cosign` if you sign (`brew install kubectl trivy crane cosign`). The CLI
+itself needs only Python 3.
+
+### Architecture
+
+Servers are almost always amd64; an Apple Silicon Mac builds arm64 unless told
+otherwise. Every build passes `--platform $DEPLOY_PLATFORM` (default
+`linux/amd64`, built under emulation on a Mac -- slower, same result) and is
+inspected afterwards: a wrong-architecture image stops the deploy before it
+ships, instead of crash-looping on the node with `exec format error`.
+
+### CPU or GPU backend
+
+The backend's PyTorch build is chosen at build time with `TORCH_VARIANT`:
+
+| | `cpu` (default) | `cuda` |
+|---|---|---|
+| torch from | PyTorch's CPU index (amd64); PyPI (arm64, already CPU-only) | PyPI, which ships the CUDA build on amd64 |
+| image size | ~2.5 GB smaller | includes the CUDA libraries |
+| set with | `DEPLOY_TORCH_VARIANT` in `deploy.env`, or `TORCH_VARIANT=` in the shell before a Compose build | same |
+
+The build checks which torch it ended up with and fails on a mismatch, so a
+`cpu` image never silently carries GPU libraries and a `cuda` image is never
+silently CPU-only. The variant is also baked in as `HEAL_TORCH_VARIANT`.
+
+At runtime `HEAL_EMBEDDING_DEVICE` picks where embeddings run: empty uses a
+GPU when one is usable and the CPU otherwise; `cpu` or `cuda[:N]` pins it.
+Asking for `cuda` where there is no usable GPU stops the API with an error
+naming the fix, rather than quietly running on the CPU.
+
+A `cuda` image only gets a GPU on a node that has the NVIDIA driver and
+container toolkit (k3s then registers an `nvidia` runtime class), the NVIDIA
+device plugin, and a pod spec with `runtimeClassName: nvidia` and an
+`nvidia.com/gpu` limit. None of that is in these manifests yet.
+
+### The registry inside k3s
+
+`kubernetes/registry/registry.yaml` runs a private registry that listens on
+the node's loopback (`localhost:5050`) only, so nothing on the network can
+reach it. The node pulls from it there; the deploy reaches it with `kubectl
+port-forward`, which goes through the API and needs the deployer's token, and
+pushes with `crane`. Only layers the registry lacks are sent, so after the
+first deploy a release is mostly the application layer. Images are deployed
+by digest.
+
+The registry keeps every pushed release. Unchanged layers are shared, so it
+grows by roughly the changed layers per deploy; its volume is 20 GiB.
+
+### One-time setup
+
+Everything lives in the `heal` namespace. On the server, from a copy of
+`deployment/kubernetes/` (fill in `env-configmap.yaml` first):
+
+```bash
+sudo ALLOW_FROM=<network>/<mask> TLS_SAN=<name you deploy against> ./setup-server.sh
+```
+
+It points containerd at the loopback registry, adds `TLS_SAN` to the API
+certificate, opens 6443 to `ALLOW_FROM` only (never the internet), applies
+the deployer account and the registry, creates `env-configmap` and
+`heal-secrets` (random database password) only if they are missing, and
+prints the CA path and the deploy token. Re-running it is safe.
+
+On your machine: copy the CA to `~/.config/heal-deploy/ca.crt`, copy
+`deploy.env.template` to `deploy.env`, set `DEPLOY_API_SERVER` and
+`DEPLOY_KUBE_TOKEN`, and run `make deploy-doctor`. It checks the tools, that
+the API accepts the token, and that the registry is running.
+
+Each command writes a short-lived owner-only kubeconfig from those settings
+and deletes it afterwards, so the token never appears on a command line. To
+revoke access, delete the `heal-deployer-token` Secret and re-run the script
+for a new one.
+
+### What the deployer can and cannot do
+
+It can create and update Deployments, StatefulSets, Services, PVCs and
+ConfigMaps in `heal`, read pods, logs and events, and port-forward to pods
+(how images reach the registry). It cannot read Secrets, touch any other
+namespace, or change its own permissions.
+
+`kustomization.yaml` is the list of what a deploy applies. `env-configmap.yaml`
+and `secrets.yaml` are left out on purpose: re-applying the repo templates
+would blank the cluster's real settings.
+
+### Exceptions to the scan
+
+A finding with no fixed release does not block (`--ignore-unfixed`). To accept
+a fixable one, add its ID to `.trivyignore` at the repo root with a reason and
+a revisit date; that file is reviewed like code.
+
+### Notes
+
+- The manifests name images `heal-backend` and `heal-web`; the deploy pins
+  them to `registry/image@sha256:…`. A raw `kubectl apply -f kubernetes/` now
+  fails to pull instead of running an unscanned `latest`.
+- User auth is on by default (`AUTH_TYPE` in `env-configmap.yaml`).
+- HTTPS is assumed to be terminated by your cluster's ingress.
+- There is no Qdrant manifest yet, so `KNOWLEDGE_ENABLED` must stay `false` in
+  the cluster's ConfigMap.
+- `kubectl delete -f kubernetes/` **erases the database.** To keep it, delete
+  the specific manifests and leave `persistent-volumes.yaml` alone.
+- `file-connector-pvc` is still declared but no longer mounted; it is left in
+  place because removing a PVC destroys data.
+
+### Docker Hub images (Compose)
+
+The tag-triggered workflows still push `khalifan1126/heal-backend` and
+`khalifan1126/heal-web` to Docker Hub for the Compose deployment, using the
+`DOCKER_USERNAME` and `DOCKER_TOKEN` repository secrets. The k3s deploy does
+not use them.

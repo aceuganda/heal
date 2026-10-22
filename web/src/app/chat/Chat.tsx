@@ -1,7 +1,10 @@
 "use client";
 
+import useSWR from "swr";
+import Link from "next/link";
+import { fetcher } from "@/lib/fetcher";
 import { useEffect, useRef, useState } from "react";
-import { FiRefreshCcw, FiSend, FiStopCircle } from "react-icons/fi";
+import { FiBookOpen, FiRefreshCcw, FiSend, FiStopCircle } from "react-icons/fi";
 import { AIMessage, HumanMessage } from "./message/Messages";
 import { AnswerPiecePacket, DanswerDocument } from "@/lib/search/interfaces";
 import {
@@ -13,7 +16,6 @@ import {
   StreamingError,
 } from "./interfaces";
 import { useRouter } from "next/navigation";
-import { FeedbackType } from "./types";
 import {
   createChatSession,
   getCitedDocumentsFromMessage,
@@ -25,25 +27,31 @@ import {
   processRawChatHistory,
   sendMessage,
 } from "./lib";
-import { ThreeDots } from "react-loader-spinner";
-import { FeedbackModal } from "./modal/FeedbackModal";
-import { DocumentSidebar } from "./documentSidebar/DocumentSidebar";
+import { AnswerProgress } from "./message/AnswerProgress";
 import { Persona } from "../admin/personas/interfaces";
 import { ChatPersonaSelector } from "./ChatPersonaSelector";
 import { useFilters } from "@/lib/hooks";
-import { DocumentSet, Tag, ValidSources } from "@/lib/types";
+import { DocumentSet, Tag, User, ValidSources } from "@/lib/types";
 import { ChatFilters } from "./modifiers/ChatFilters";
 import { buildFilters } from "@/lib/search/utils";
 import { SelectedDocuments } from "./modifiers/SelectedDocuments";
 import { usePopup } from "@/components/admin/connectors/Popup";
-import { ResizableSection } from "@/components/resizable/ResizableSection";
 import { DanswerInitializingLoader } from "@/components/DanswerInitializingLoader";
 import { ChatIntro } from "./ChatIntro";
 import { HEADER_PADDING } from "@/lib/constants";
 import { SearchLanguageSelector } from "@/components/search/SearchLanguageSelector";
+import { chatErrorMessage, errorDetail } from "./errors";
 import { handleLugandaTranslation } from "./lib";
+import { ReferenceDrawer, SelectedReference } from "./reference/ReferenceDrawer";
 
 const MAX_INPUT_HEIGHT = 200;
+
+/** Empty space kept below the last message, on top of the composer's own
+ *  measured height. Enough that the end of an answer can be scrolled clear of
+ *  the input and read with room under it, rather than sitting exactly on the
+ *  line where the composer begins. The `min-h` fallbacks on the spacer are
+ *  this plus a default composer, for the frame before it is measured. */
+const SCROLL_PAST_END = 72;
 
 export const Chat = ({
   existingChatSessionId,
@@ -56,7 +64,7 @@ export const Chat = ({
   documentSidebarInitialWidth,
   shouldhideBeforeScroll,
 }: {
-  existingChatSessionId: number | null;
+  existingChatSessionId: string | null;
   existingChatSessionPersonaId: number | undefined;
   availableSources: ValidSources[];
   availableDocumentSets: DocumentSet[];
@@ -82,6 +90,7 @@ export const Chat = ({
   useEffect(() => {
     textareaRef.current?.focus();
     setChatSessionId(existingChatSessionId);
+    setSelectedReference(null);
 
     async function initialSessionFetch() {
       if (existingChatSessionId === null) {
@@ -145,10 +154,13 @@ export const Chat = ({
   }
 
 
-  const [chatSessionId, setChatSessionId] = useState<number | null>(
+  const [chatSessionId, setChatSessionId] = useState<string | null>(
     existingChatSessionId
   );
   const [message, setMessage] = useState("");
+  // Whitespace is not a question. One derived value so the Enter key, the
+  // send button's enabled state and its colour cannot drift apart.
+  const canSend = message.trim().length > 0;
   const [messageHistory, setMessageHistory] = useState<Message[]>([]);
   const [isStreaming, setIsStreaming] = useState(false);
   const [messageIdTranslating, setMessageIdTranslating] = useState<number | null>(null);
@@ -168,13 +180,27 @@ export const Chat = ({
     }
     setMessageIdTranslating(messageId)
     try {
-      const respStream = await handleLugandaTranslation(messageId);
-      const respText = await respStream.text();
-      const resp = JSON.parse(respText);
-      await updateLugandaPart(messageId, resp.luganda_message);
+      const response = await handleLugandaTranslation(messageId);
+      if (!response.ok) {
+        setPopup({
+          message: await errorDetail(
+            response,
+            "Translation is temporarily unavailable. Please try again."
+          ),
+          type: "error",
+        });
+        return;
+      }
+      const resp = await response.json();
+      updateLugandaPart(messageId, resp.luganda_message);
     } catch (e) {
-      console.log(e)
-      setMessageIdTranslating(null)
+      console.log(e);
+      setPopup({
+        message: "Couldn't reach the translation service. Please try again.",
+        type: "error",
+      });
+    } finally {
+      setMessageIdTranslating(null);
     }
 
   }
@@ -192,6 +218,27 @@ export const Chat = ({
   const [selectedDocuments, setSelectedDocuments] = useState<DanswerDocument[]>(
     []
   );
+  const [selectedReference, setSelectedReference] =
+    useState<SelectedReference | null>(null);
+  // Set when an answer came from the cloud model because the internal one was
+  // unreachable. Sticky until dismissed: it is the explanation for a change in
+  // the answers, so it should outlast the turn that caused it.
+  const [modelNotice, setModelNotice] = useState(false);
+  // Why this account cannot ask questions right now, if it cannot: the access
+  // policy or an admin's chat pause. Said once above the input instead of as
+  // an error on every message.
+  const { data: me } = useSWR<User>("/api/manage/me", fetcher);
+  const accessNotice =
+    me?.access_blocked_reason ||
+    (me?.chat_blocked
+      ? "An administrator has paused chat for your account."
+      : null);
+  const latestAssistantMessage = [...messageHistory]
+    .reverse()
+    .find((chatMessage) => chatMessage.type === "assistant");
+  const recentReferences = latestAssistantMessage
+    ? getCitedDocumentsFromMessage(latestAssistantMessage)
+    : [];
 
   const [selectedPersona, setSelectedPersona] = useState<Persona | undefined>(
     existingChatSessionPersonaId !== undefined
@@ -225,9 +272,9 @@ export const Chat = ({
     isCancelledRef.current = isCancelled;
   }, [isCancelled]);
 
-  const [currentFeedback, setCurrentFeedback] = useState<
-    [FeedbackType, number] | null
-  >(null);
+  // The rating each message was given, keyed by messageId, so the stars show
+  // the user their click registered.
+  const [givenFeedback, setGivenFeedback] = useState<Record<number, number>>({});
 
   // auto scroll as message comes out
   const scrollableDivRef = useRef<HTMLDivElement>(null);
@@ -237,6 +284,31 @@ export const Chat = ({
       handleAutoScroll(endDivRef, scrollableDivRef);
     }
   });
+
+  /**
+   * The composer overlays the message list, so the list needs a spacer exactly
+   * as tall as it is or the last answer ends up underneath it.
+   *
+   * Measured rather than guessed. The composer's height is not one number: the
+   * textarea grows with a long question, the failover notice adds a line, and
+   * the recent-references row appears and disappears with the answer. The
+   * fixed min-heights that used to stand in for it were right for one of those
+   * states and short for the rest — and the text it hid was the end of a
+   * clinical answer.
+   */
+  const composerRef = useRef<HTMLDivElement>(null);
+  const [composerHeight, setComposerHeight] = useState(0);
+  useEffect(() => {
+    const node = composerRef.current;
+    if (!node || typeof ResizeObserver === "undefined") {
+      return;
+    }
+    const observer = new ResizeObserver(([entry]) =>
+      setComposerHeight(entry.target.getBoundingClientRect().height)
+    );
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, []);
 
   // scroll to bottom initially
   const [hasPerformedInitialScroll, setHasPerformedInitialScroll] = useState(
@@ -296,12 +368,21 @@ export const Chat = ({
     messageIdToResend,
     queryOverride,
   }: { messageIdToResend?: number; queryOverride?: string } = {}) => {
-    let currChatSessionId: number;
+    // Nothing to ask, so nothing happens — and, importantly, no chat session
+    // is created. Pressing Enter on an empty composer used to fall through to
+    // the textarea's own handling and insert a newline; `message` was then
+    // truthy, so the next Enter sent "\n" and opened a conversation with it.
+    // A resend carries its own text and is not subject to this.
+    if (messageIdToResend === undefined && !message.trim()) {
+      return;
+    }
+
+    let currChatSessionId: string;
     let isNewSession = chatSessionId === null;
     if (isNewSession) {
       currChatSessionId = await createChatSession(livePersona?.id || 0);
     } else {
-      currChatSessionId = chatSessionId as number;
+      currChatSessionId = chatSessionId as string;
     }
     setChatSessionId(currChatSessionId);
 
@@ -320,7 +401,11 @@ export const Chat = ({
       return;
     }
 
-    const currMessage = messageToResend ? messageToResend.message : message;
+    // Trimmed: trailing newlines from the composer are not part of the
+    // question, and they are what the model sees.
+    const currMessage = messageToResend
+      ? messageToResend.message
+      : message.trim();
     const currMessageHistory =
       messageToResendIndex !== null
         ? messageHistory.slice(0, messageToResendIndex)
@@ -346,6 +431,7 @@ export const Chat = ({
     let documents: DanswerDocument[] = selectedDocuments;
     let error: string | null = null;
     let finalMessage: BackendMessage | null = null;
+    let streamStarted = false;
     try {
       const lastSuccessfulMessageId =
         getLastSuccessfulMessageId(currMessageHistory);
@@ -366,9 +452,10 @@ export const Chat = ({
             (document) =>
               document.db_doc_id !== undefined && document.db_doc_id !== null
           )
-          .map((document) => document.db_doc_id as number),
+          .map((document) => document.db_doc_id as string),
         queryOverride,
       })) {
+        streamStarted = true;
         for (const packet of packetBunch) {
           if (Object.hasOwn(packet, "answer_piece")) {
             answer += (packet as AnswerPiecePacket).answer_piece;
@@ -381,6 +468,10 @@ export const Chat = ({
               // we have to use -1)
               setSelectedMessageForDocDisplay(-1);
             }
+          } else if (Object.hasOwn(packet, "model_notice")) {
+            // The answer is fine; it just came from the cloud model because
+            // the internal one did not respond. Shown once, above the input.
+            setModelNotice(true);
           } else if (Object.hasOwn(packet, "error")) {
             error = (packet as StreamingError).error;
           } else if (Object.hasOwn(packet, "message_id")) {
@@ -413,8 +504,9 @@ export const Chat = ({
           break;
         }
       }
-    } catch (e: any) {
-      const errorMsg = e.message;
+    } catch (e: unknown) {
+      console.log(e);
+      const errorMsg = chatErrorMessage(e, streamStarted);
       setMessageHistory([
         ...currMessageHistory,
         {
@@ -454,7 +546,7 @@ export const Chat = ({
 
   const onFeedback = async (
     messageId: number,
-    feedbackType: FeedbackType,
+    rating: number | null,
     feedbackDetails: string
   ) => {
     if (chatSessionId === null) {
@@ -463,43 +555,34 @@ export const Chat = ({
 
     const response = await handleChatFeedback(
       messageId,
-      feedbackType,
+      rating,
       feedbackDetails
     );
 
     if (response.ok) {
+      if (rating !== null) {
+        setGivenFeedback((prev) => ({ ...prev, [messageId]: rating }));
+      }
       setPopup({
         message: "Thanks for your feedback!",
         type: "success",
       });
     } else {
-      const responseJson = await response.json();
-      const errorMsg = responseJson.detail || responseJson.message;
+      const errorMsg = await errorDetail(response, "please try again.");
       setPopup({
-        message: `Failed to submit feedback - ${errorMsg}`,
+        message: `Couldn't save your feedback - ${errorMsg}`,
         type: "error",
       });
     }
   };
 
   return (
-    <div className="flex w-full overflow-x-hidden" ref={masterFlexboxRef}>
+    <div className="flex w-full min-w-0 overflow-x-hidden" ref={masterFlexboxRef}>
       {popup}
-      {currentFeedback && (
-        <FeedbackModal
-          feedbackType={currentFeedback[0]}
-          onClose={() => setCurrentFeedback(null)}
-          onSubmit={(feedbackDetails) => {
-            onFeedback(currentFeedback[1], currentFeedback[0], feedbackDetails);
-            setCurrentFeedback(null);
-          }}
-        />
-      )}
-
       {documentSidebarInitialWidth !== undefined ? (
         <>
 
-          <div className="w-full sm:relative">
+          <div className="relative min-w-0 flex-1">
             <div
               className={`w-full h-screen ${HEADER_PADDING} flex flex-col overflow-y-auto relative`}
               ref={scrollableDivRef}
@@ -541,7 +624,7 @@ export const Chat = ({
 
               <div
                 className={
-                  "mt-4 pt-12 sm:pt-0 sm:mx-8 mx-2" +
+                  "mt-3 pt-2" +
                   (hasPerformedInitialScroll ? "" : " invisible")
                 }
               >
@@ -584,18 +667,32 @@ export const Chat = ({
                           isComplete={
                             i !== messageHistory.length - 1 || !isStreaming
                           }
+                          liveMark={i === messageHistory.length - 1}
                           hasDocs={
                             (message.documents &&
                               message.documents.length > 0) === true
                           }
+                          feedbackGiven={
+                            message.messageId !== null
+                              ? givenFeedback[message.messageId]
+                              : undefined
+                          }
                           handleFeedback={
                             i === messageHistory.length - 1 && isStreaming
                               ? undefined
-                              : (feedbackType) =>
-                                setCurrentFeedback([
-                                  feedbackType,
+                              : (rating) =>
+                                onFeedback(
                                   message.messageId as number,
-                                ])
+                                  rating,
+                                  ""
+                                )
+                          }
+                          handleComment={(comment) =>
+                            onFeedback(
+                              message.messageId as number,
+                              null,
+                              comment
+                            )
                           }
                           handleSearchQueryEdit={
                             i === messageHistory.length - 1 && !isStreaming
@@ -637,6 +734,9 @@ export const Chat = ({
                               }
                             }
                           }}
+                          onCitationClick={(citationKey, document) =>
+                            setSelectedReference({ citationKey, document })
+                          }
                         />
                       </div>
                     );
@@ -648,7 +748,7 @@ export const Chat = ({
                           messageId={message.messageId}
                           handleTranslation={handleMessageTranslation}
                           content={
-                            <p className="text-red-700 text-sm my-auto">
+                            <p className="text-error text-sm my-auto">
                               {message.message}
                             </p>
                           }
@@ -665,35 +765,107 @@ export const Chat = ({
                       <AIMessage
                         messageId={null}
                         handleTranslation={handleMessageTranslation}
+                        isComplete={false}
                         content={
-                          <div className="text-sm my-auto">
-                            <ThreeDots
-                              height="30"
-                              width="50"
-                              color="#3b82f6"
-                              ariaLabel="grid-loading"
-                              radius="12.5"
-                              wrapperStyle={{}}
-                              wrapperClass=""
-                              visible={true}
-                            />
-                          </div>
+                          <AnswerProgress className="my-auto" showMark={false} />
                         }
                       />
                     </div>
                   )}
 
-                {/* Some padding at the bottom so the search bar has space at the bottom to not cover the last message*/}
-                <div className={`min-h-[200px] w-full`}></div>
+                {/* As tall as the composer that overlays this list, plus some
+                    slack, so the last answer clears it and the list can be
+                    scrolled a little past its final line rather than stopping
+                    with that line jammed against the input. The class is the
+                    first-paint fallback, before the observer has measured
+                    anything; after that the measured height wins. */}
+                <div
+                  className="w-full min-h-[196px] sm:min-h-[160px]"
+                  style={
+                    composerHeight
+                      ? {
+                          minHeight: `${Math.ceil(composerHeight) + SCROLL_PAST_END}px`,
+                        }
+                      : undefined
+                  }
+                />
 
                 <div ref={endDivRef} />
               </div>
             </div>
 
-            <div className="absolute bottom-0 max-sm:left-0 sm:z-10 w-full bg-background border-t border-border">
-              <div className="w-full pb-4 pt-2">
-                <div className="flex">
-                  <div className="w- 2xl:w-searchbar-sm 3xl:w-searchbar sm:mx-auto px-4 pt-1 flex">
+            {/* The composer sits ON the page rather than on a bar laid over
+                it. It used to be 95% white with a hard rule along the top —
+                on the warm canvas the chat actually uses, that read as a
+                paler slab pasted over the bottom of the screen. Now the ground
+                is the canvas colour, fading up to nothing, so an answer
+                scrolling underneath dissolves into the page instead of
+                stopping at a line. The blur is what keeps text off the input
+                legible through the transparent part of the fade. */}
+            <div
+              ref={composerRef}
+              className="absolute bottom-0 max-sm:left-0 sm:z-10 w-full bg-gradient-to-b from-canvas/0 via-canvas/90 to-canvas backdrop-blur-[2px]"
+            >
+              {accessNotice && (
+                <div
+                  role="status"
+                  className="mx-auto flex w-full max-w-3xl flex-wrap items-center gap-x-3 gap-y-1 px-4 pt-2 text-xs text-amber-900 sm:px-6"
+                >
+                  <span>{accessNotice}</span>
+                  <Link
+                    href="/account"
+                    className="font-medium text-accent hover:underline"
+                  >
+                    Account settings
+                  </Link>
+                </div>
+              )}
+              {modelNotice && (
+                <div className="mx-auto flex w-full max-w-3xl flex-wrap items-center gap-x-3 gap-y-1 px-4 pt-2 text-xs text-subtle sm:px-6">
+                  <span>Internal model unreachable — using the cloud model.</span>
+                  <button
+                    type="button"
+                    onClick={() => setModelNotice(false)}
+                    className="font-medium text-accent hover:underline"
+                  >
+                    Keep using it
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setModelNotice(false);
+                      router.refresh();
+                    }}
+                    className="font-medium text-accent hover:underline"
+                  >
+                    Retry the internal model
+                  </button>
+                </div>
+              )}
+              {/* The composer is the one thing permanently occupying screen
+                  space, so its padding costs a line of every answer above it.
+                  Trimmed to what still reads as a distinct bar. */}
+              <div className="w-full pb-2 pt-1.5">
+                <div className="mx-auto flex w-full max-w-3xl items-end px-3 py-1 sm:px-6">
+                  <div className="relative min-w-0 flex-1">
+                    {/* The field is the card, not the textarea. The border,
+                        background and focus ring live out here so the language
+                        pills sit INSIDE the same surface as the text — they
+                        used to be absolutely positioned over the textarea,
+                        paid for with a pt-12 that had to be kept in sync by
+                        hand or the pills landed on the user's first line.
+                        focus-within is also the only focus indicator this
+                        composer has ever had; the textarea itself is
+                        outline-none. */}
+                    <div className="relative rounded-2xl border border-border bg-background shadow-sm transition-shadow duration-150 focus-within:border-heal-teal-400 focus-within:shadow-md focus-within:ring-2 focus-within:ring-accent/25">
+                      <div className="px-2 pt-2">
+                        <SearchLanguageSelector
+                          language={language}
+                          setLanguage={(language: string) => {
+                            setLanguage(language)
+                          }}
+                        />
+                      </div>
                     {/* {selectedDocuments.length > 0 ? (
                       <SelectedDocuments
                         selectedDocuments={selectedDocuments}
@@ -706,40 +878,32 @@ export const Chat = ({
                         availableTags={availableTags}
                       />
                     )} */}
-                    <SearchLanguageSelector
-                      language={language}
-                      setLanguage={(language: string) => {
-                        setLanguage(language)
-                      }}
-                    />
-                  </div>
-                </div>
-
-                <div className="flex justify-start sm:justify-center py-2 max-w-screen-lg sm:mx-auto mb-2">
-                  <div className="w-full shrink relative px-4 w-searchbar-xs 2xl:w-searchbar-sm 3xl:w-searchbar sm:mx-auto">
                     <textarea
                       ref={textareaRef}
                       autoFocus
+                      // Transparent and borderless: the wrapper above draws
+                      // the field. min-h is now one comfortable line rather
+                      // than the 80px that was reserving room for the pills.
                       className={`
-                    opacity-100
+                    heal-composer-input
                     w-full
                     shrink
-                    border 
-                    border-border 
-                    rounded-lg 
-                    outline-none 
-                    placeholder-gray-400 
+                    border-0
+                    bg-transparent
+                    outline-none
+                    placeholder-subtle
                     pl-4
-                    pr-12 
-                    py-4 
+                    pr-12
+                    pt-1
+                    pb-3
                     overflow-hidden
-                    h-14
+                    min-h-[44px]
                     ${(textareaRef?.current?.scrollHeight || 0) >
                           MAX_INPUT_HEIGHT
                           ? "overflow-y-auto"
                           : ""
-                        } 
-                    whitespace-normal 
+                        }
+                    whitespace-normal
                     break-word
                     overscroll-contain
                     resize-none
@@ -751,67 +915,108 @@ export const Chat = ({
                       value={message}
                       onChange={(e) => setMessage(e.target.value)}
                       onKeyDown={(event) => {
-                        if (
-                          event.key === "Enter" &&
-                          !event.shiftKey &&
-                          message
-                        ) {
-                          onSubmit();
+                        // Enter always means "send" here, so it never reaches
+                        // the textarea — including on an empty field, where
+                        // letting it through inserted the newline that made
+                        // the next Enter send a blank message. Shift+Enter is
+                        // still how a line break is typed.
+                        if (event.key === "Enter" && !event.shiftKey) {
                           event.preventDefault();
+                          if (canSend) {
+                            onSubmit();
+                          }
                         }
                       }}
                       suppressContentEditableWarning={true}
                     />
-                    <div className="absolute bottom-4 right-10">
-                      <div
-                        className={"cursor-pointer"}
-                        onClick={() => {
-                          if (!isStreaming) {
-                            if (message) {
-                              onSubmit();
-                            }
-                          } else {
-                            setIsCancelled(true);
+                      {/* The button is the button. These classes used to sit
+                          on the icon itself, which left the control with no
+                          accessible name and a hit area the size of an svg. */}
+                      <div className="absolute bottom-2.5 right-2.5">
+                        <button
+                          type="button"
+                          aria-label={
+                            isStreaming ? "Stop generating" : "Send message"
                           }
-                        }}
-                      >
-                        {isStreaming ? (
-                          <FiStopCircle
-                            size={18}
-                            className={
-                              "text-emphasis w-9 h-9 p-2 rounded-lg hover:bg-hover"
+                          disabled={!isStreaming && !canSend}
+                          className={
+                            "flex h-9 w-9 items-center justify-center rounded-xl transition-colors " +
+                            (isStreaming
+                              ? "text-emphasis hover:bg-hover"
+                              : canSend
+                                ? "bg-accent text-white hover:bg-accent-hover"
+                                : "cursor-not-allowed bg-background-strong text-subtle")
+                          }
+                          onClick={() => {
+                            if (!isStreaming) {
+                              if (canSend) {
+                                onSubmit();
+                              }
+                            } else {
+                              setIsCancelled(true);
                             }
-                          />
-                        ) : (
-                          <FiSend
-                            size={18}
-                            className={
-                              "text-emphasis w-9 h-9 p-2 rounded-lg " +
-                              (message ? "bg-blue-200" : "")
-                            }
-                          />
-                        )}
+                          }}
+                        >
+                          {isStreaming ? (
+                            <FiStopCircle size={18} aria-hidden="true" />
+                          ) : (
+                            <FiSend size={18} aria-hidden="true" />
+                          )}
+                        </button>
                       </div>
                     </div>
                   </div>
                 </div>
+
+                {recentReferences.length > 0 && (
+                  <div className="mx-auto w-full max-w-3xl px-3 pb-2 sm:px-6">
+                    {/* Scrolls sideways without a visible track: this row is
+                        two chips on a phone, and a scrollbar under the
+                        composer reads as a second control rather than as
+                        overflow. */}
+                    <div className="flex items-center gap-2 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                      <span className="flex shrink-0 items-center gap-1.5 text-[11px] font-medium uppercase tracking-wide text-subtle">
+                        <FiBookOpen size={13} aria-hidden="true" />
+                        Recent references
+                      </span>
+                      {recentReferences.slice(0, 2).map(([citationKey, document]) => (
+                        <button
+                          // See Messages.tsx: document_id is shared by every
+                          // passage from one guideline, the marker is not.
+                          key={citationKey}
+                          type="button"
+                          // Full name on hover; the chip truncates. Nullable
+                          // on the wire, and `title={null}` is a type error.
+                          title={document.semantic_identifier ?? undefined}
+                          onClick={() => setSelectedReference({ citationKey, document })}
+                          className="group flex max-w-[13rem] shrink-0 items-center gap-2 rounded-full border border-border bg-background py-1 pl-1 pr-3 text-xs text-emphasis shadow-sm transition-colors hover:border-heal-teal-200 hover:bg-hover-light"
+                        >
+                          {/* The marker as a badge rather than "[1] " run into
+                              the title — at this size the brackets were being
+                              read as part of the guideline's name. */}
+                          <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-background-strong text-[10px] font-semibold text-emphasis transition-colors group-hover:bg-heal-teal-100 group-hover:text-accent">
+                            {citationKey}
+                          </span>
+                          <span className="truncate">
+                            {document.semantic_identifier}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           </div>
-          <div className='max-sm:hidden' >
-            <ResizableSection
-              intialWidth={documentSidebarInitialWidth}
-              minWidth={300}
-              maxWidth={maxDocumentSidebarWidth || undefined}
-            >
-              <DocumentSidebar
-                selectedMessage={aiMessage}
-                selectedDocuments={selectedDocuments}
-                setSelectedDocuments={setSelectedDocuments}
-                isLoading={isFetchingChatMessages}
-              />
-            </ResizableSection>
-          </div>
+          {selectedReference && (
+            <ReferenceDrawer
+              reference={selectedReference}
+              onClose={() => setSelectedReference(null)}
+            />
+          )}
+          {/* The document-selection sidebar is retired: Phase 1 answers are
+              not grounded in a document library, so there is nothing to pick
+              from. It returns with the approved-source browser in Phase 2. */}
         </>
       ) : (
         <div className="mx-auto h-full flex flex-col">

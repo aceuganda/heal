@@ -20,8 +20,31 @@ module.exports = {
         "2xl": "1420px",
         "3xl": "1700px",
       },
+      // The stack, not just the variable. Tailwind's default `sans` is
+      // replaced here, so a bare `var(--font-sans)` with nothing behind it
+      // would drop the whole app to the browser's default serif on any load
+      // where the font file has not arrived yet -- which on the connections
+      // this is deployed over is not a rare case. See src/app/layout.tsx for
+      // why IBM Plex.
       fontFamily: {
-        sans: ["var(--font-inter)"],
+        sans: [
+          "var(--font-sans)",
+          "system-ui",
+          "-apple-system",
+          "Segoe UI",
+          "Roboto",
+          "Helvetica Neue",
+          "Arial",
+          "sans-serif",
+        ],
+        mono: [
+          "var(--font-mono)",
+          "ui-monospace",
+          "SFMono-Regular",
+          "Menlo",
+          "Consolas",
+          "monospace",
+        ],
       },
       width: {
         "message-xs": "350px",
@@ -37,39 +60,90 @@ module.exports = {
         "document-sidebar": "1000px",
       },
       colors: {
-        link: "#3b82f6", // blue-500
-        subtle: "#6b7280", // gray-500
-        default: "#4b5563", // gray-600
-        emphasis: "#374151", // gray-700
-        strong: "#111827", // gray-900
-        inverted: "#ffffff", // white
-        background: "#f9fafb", // gray-50
-        "background-emphasis": "#f6f7f8",
-        "background-strong": "#eaecef",
-        border: "#e5e7eb", // gray-200
-        "border-light": "#f3f4f6", // gray-100
-        "border-strong": "#9ca3af", // gray-400
-        "hover-light": "#f3f4f6", // gray-100
-        hover: "#e5e7eb", // gray-200
-        popup: "#ffffff", // white
-        accent: "#6671d0",
-        "accent-hover": "#6671d0",
-        highlight: {
-          text: "#fef9c3", // yellow-100
+        // ---------------------------------------------------------------
+        // Heal palette: quiet clinical teal and calm blue-ink neutrals.
+        // Red is deliberately reserved for warnings and destructive states.
+        // ---------------------------------------------------------------
+        heal: {
+          red: {
+            50: "#fef3f2",
+            100: "#fee4e2",
+            200: "#fecdca",
+            300: "#fda29b",
+            400: "#f97066",
+            500: "#f04438",
+            600: "#d92d20", // primary action
+            700: "#b42318", // pressed / hover
+            800: "#912018",
+            900: "#7a271a",
+          },
+          teal: {
+            50: "#f0fdfa",
+            100: "#ccfbf1",
+            200: "#99f6e4",
+            300: "#5eead4",
+            400: "#2dd4bf",
+            500: "#14b8a6",
+            600: "#0d9488",
+            700: "#0f766e",
+            800: "#115e59",
+            900: "#134e4a",
+          },
+          ink: {
+            50: "#f8fafb",
+            100: "#f1f5f6",
+            200: "#e2e8eb",
+            300: "#cbd5da",
+            400: "#94a3ab",
+            500: "#64727c",
+            600: "#52606a",
+            700: "#3d4a53",
+            800: "#29353d",
+            900: "#1f2933",
+            950: "#11181c",
+          },
         },
-        error: "#ef4444", // red-500
-        success: "#059669", // emerald-600
-        user: "#fb7185", // yellow-400
-        ai: "#60a5fa", // blue-400
+
+        // Semantic tokens. Components use these, not the ramps above, so a
+        // palette change stays a one-file change.
+        link: "#0f766e", // heal.teal.700
+        subtle: "#94a3ab", // heal.ink.400
+        default: "#64727c", // heal.ink.500
+        emphasis: "#3d4a53", // heal.ink.700
+        strong: "#1f2933", // heal.ink.900
+        inverted: "#ffffff",
+        background: "#ffffff",
+        "background-emphasis": "#f8fafb",
+        "background-strong": "#f1f5f6", // heal.ink.100
+        // The warm ground the chat and the splash sit on. Not white: it is
+        // what makes a white message card read as a card. Anything overlaying
+        // the chat has to be built from this and not from `background`, or it
+        // shows up as a paler slab laid over the page.
+        canvas: "#f5f4f0",
+        border: "#e2e8eb",
+        "border-light": "#f1f5f6",
+        "border-strong": "#cbd5da", // heal.ink.300
+        "hover-light": "#f0fdfa", // heal.teal.50
+        hover: "#f1f5f6", // heal.ink.100
+        popup: "#ffffff",
+        accent: "#0f766e", // heal.teal.700
+        "accent-hover": "#115e59", // heal.teal.800
+        highlight: {
+          text: "#ccfbf1", // heal.teal.100
+        },
+        error: "#b42318", // heal.red.700
+        success: "#047857", // emerald-700
+        user: "#0f766e", // heal.teal.700
+        ai: "#1f2933", // heal.ink.900
         // light mode
         tremor: {
           brand: {
-            faint: "#eff6ff", // blue-50
-            muted: "#bfdbfe", // blue-200
-            subtle: "#60a5fa", // blue-400
-            DEFAULT: "#3b82f6", // blue-500
-            emphasis: "#1d4ed8", // blue-700
-            inverted: "#ffffff", // white
+            faint: "#f0fdfa", // heal.teal.50
+            muted: "#99f6e4", // heal.teal.200
+            subtle: "#2dd4bf", // heal.teal.400
+            DEFAULT: "#0f766e", // heal.teal.700
+            emphasis: "#115e59", // heal.teal.800
+            inverted: "#ffffff",
           },
           background: {
             muted: "#f9fafb", // gray-50
@@ -84,22 +158,22 @@ module.exports = {
             DEFAULT: "#e5e7eb", // gray-200
           },
           content: {
-            subtle: "#9ca3af", // gray-400
-            DEFAULT: "#4b5563", // gray-600
-            emphasis: "#374151", // gray-700
-            strong: "#111827", // gray-900
-            inverted: "#ffffff", // white
+            subtle: "#9a9a9e", // heal.ink.400
+            DEFAULT: "#6e6e73", // heal.ink.500
+            emphasis: "#333336", // heal.ink.700
+            strong: "#141416", // heal.ink.900
+            inverted: "#ffffff",
           },
         },
         // dark mode
         "dark-tremor": {
           brand: {
-            faint: "#0B1229", // custom
-            muted: "#172554", // blue-950
-            subtle: "#1e40af", // blue-800
-            DEFAULT: "#3b82f6", // blue-500
-            emphasis: "#60a5fa", // blue-400
-            inverted: "#030712", // gray-950
+            faint: "#102f2c", // heal.teal, deepened for dark surfaces
+            muted: "#134e4a", // heal.teal.900
+            subtle: "#115e59", // heal.teal.800
+            DEFAULT: "#0d9488", // heal.teal.600
+            emphasis: "#5eead4", // heal.teal.300
+            inverted: "#0a0a0b", // heal.ink.950
           },
           background: {
             muted: "#131A2B", // custom

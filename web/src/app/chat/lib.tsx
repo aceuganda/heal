@@ -4,6 +4,7 @@ import {
   Filters,
 } from "@/lib/search/interfaces";
 import { handleStream } from "@/lib/search/streamingUtils";
+import { ChatRequestError, errorDetail } from "./errors";
 import { FeedbackType } from "./types";
 import { RefObject } from "react";
 import {
@@ -11,11 +12,12 @@ import {
   ChatSession,
   DocumentsResponse,
   Message,
+  ReferenceGloss,
   RetrievalType,
   StreamingError,
 } from "./interfaces";
 
-export async function createChatSession(personaId: number): Promise<number> {
+export async function createChatSession(personaId: number): Promise<string> {
   const createChatSessionResponse = await fetch(
     "/api/chat/create-chat-session",
     {
@@ -41,10 +43,10 @@ export async function createChatSession(personaId: number): Promise<number> {
 export interface SendMessageRequest {
   message: string;
   parentMessageId: number | null;
-  chatSessionId: number;
+  chatSessionId: string;
   promptId: number | null | undefined;
   filters: Filters | null;
-  selectedDocumentIds: number[] | null;
+  selectedDocumentIds: string[] | null;
   queryOverride?: string;
   language?: string;
 }
@@ -57,7 +59,7 @@ export async function* sendMessage({
   filters,
   selectedDocumentIds,
   queryOverride,
-  language
+  language,
 }: SendMessageRequest) {
   const documentsAreSelected =
     selectedDocumentIds && selectedDocumentIds.length > 0;
@@ -74,22 +76,25 @@ export async function* sendMessage({
       search_doc_ids: documentsAreSelected ? selectedDocumentIds : null,
       retrieval_options: !documentsAreSelected
         ? {
-          run_search:
-            promptId === null || promptId === undefined || queryOverride
-              ? "always"
-              : "auto",
-          real_time: true,
-          filters: filters,
-        }
+            run_search:
+              promptId === null || promptId === undefined || queryOverride
+                ? "always"
+                : "auto",
+            real_time: true,
+            filters: filters,
+          }
         : null,
       query_override: queryOverride,
-      language: language
+      language: language,
     }),
   });
   if (!sendMessageResponse.ok) {
-    const errorJson = await sendMessageResponse.json();
-    const errorMsg = errorJson.message || errorJson.detail || "";
-    throw Error(`Failed to send message - ${errorMsg}`);
+    throw new ChatRequestError(
+      await errorDetail(
+        sendMessageResponse,
+        "Heal could not answer that just now. Please try again."
+      )
+    );
   }
 
   yield* handleStream<
@@ -97,7 +102,7 @@ export async function* sendMessage({
   >(sendMessageResponse);
 }
 
-export async function nameChatSession(chatSessionId: number, message: string) {
+export async function nameChatSession(chatSessionId: string, message: string) {
   const response = await fetch("/api/chat/rename-chat-session", {
     method: "PUT",
     headers: {
@@ -114,7 +119,7 @@ export async function nameChatSession(chatSessionId: number, message: string) {
 
 export async function handleChatFeedback(
   messageId: number,
-  feedback: FeedbackType,
+  rating: number | null,
   feedbackDetails: string
 ) {
   const response = await fetch("/api/chat/create-chat-message-feedback", {
@@ -124,16 +129,43 @@ export async function handleChatFeedback(
     },
     body: JSON.stringify({
       chat_message_id: messageId,
-      is_positive: feedback === "like",
-      feedback_text: feedbackDetails,
+      rating,
+      // null, not "", so a rating with no comment is distinguishable from one
+      // where someone opened the box and typed nothing.
+      feedback_text: feedbackDetails.trim() || null,
     }),
   });
   return response;
 }
 
-export async function handleLugandaTranslation(
-  messageId: number
-) {
+/**
+ * A plain-language explanation of one cited passage.
+ *
+ * Fetched when the drawer opens rather than with the answer: most citations
+ * are never opened, and generating for all of them would make every answer
+ * wait on work nobody reads.
+ *
+ * Returns null on any failure. The gloss is a reading aid on top of the
+ * passage, never a replacement for it, so a drawer with no gloss is a degraded
+ * view rather than a broken one -- there is nothing here worth an error toast.
+ */
+export async function fetchReferenceGloss(
+  searchDocId: string
+): Promise<ReferenceGloss | null> {
+  try {
+    const response = await fetch(`/api/chat/reference/${searchDocId}/gloss`);
+    if (!response.ok) {
+      console.log(`Failed to fetch reference gloss - ${response.status}`);
+      return null;
+    }
+    return (await response.json()) as ReferenceGloss;
+  } catch (e) {
+    console.log(`Failed to fetch reference gloss - ${e}`);
+    return null;
+  }
+}
+
+export async function handleLugandaTranslation(messageId: number) {
   const response = await fetch("/api/chat/translate-chat-message", {
     method: "POST",
     headers: {
@@ -147,7 +179,7 @@ export async function handleLugandaTranslation(
 }
 
 export async function renameChatSession(
-  chatSessionId: number,
+  chatSessionId: string,
   newName: string
 ) {
   const response = await fetch(`/api/chat/rename-chat-session`, {
@@ -164,7 +196,7 @@ export async function renameChatSession(
   return response;
 }
 
-export async function deleteChatSession(chatSessionId: number) {
+export async function deleteChatSession(chatSessionId: string) {
   const response = await fetch(
     `/api/chat/delete-chat-session/${chatSessionId}`,
     {
@@ -197,8 +229,8 @@ export function handleAutoScroll(
   if (endRef && endRef.current && scrollableRef && scrollableRef.current) {
     if (
       scrollableRef.current.scrollHeight -
-      scrollableRef.current.scrollTop -
-      buffer <=
+        scrollableRef.current.scrollTop -
+        buffer <=
       scrollableRef.current.clientHeight
     ) {
       endRef.current.scrollIntoView({ behavior: "smooth" });
@@ -258,37 +290,6 @@ export function getCitedDocumentsFromMessage(message: Message) {
     }
   });
   return documentsWithCitationKey;
-}
-
-export function groupSessionsByDateRange(chatSessions: ChatSession[]) {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0); // Set to start of today for accurate comparison
-
-  const groups: Record<string, ChatSession[]> = {
-    Today: [],
-    "Previous 7 Days": [],
-    "Previous 30 Days": [],
-    "Over 30 days ago": [],
-  };
-
-  chatSessions.forEach((chatSession) => {
-    const chatSessionDate = new Date(chatSession.time_created);
-
-    const diffTime = today.getTime() - chatSessionDate.getTime();
-    const diffDays = diffTime / (1000 * 3600 * 24); // Convert time difference to days
-
-    if (diffDays < 1) {
-      groups["Today"].push(chatSession);
-    } else if (diffDays <= 7) {
-      groups["Previous 7 Days"].push(chatSession);
-    } else if (diffDays <= 30) {
-      groups["Previous 30 Days"].push(chatSession);
-    } else {
-      groups["Over 30 days ago"].push(chatSession);
-    }
-  });
-
-  return groups;
 }
 
 export function getLastSuccessfulMessageId(messageHistory: Message[]) {
@@ -353,11 +354,11 @@ export function processRawChatHistory(rawMessages: BackendMessage[]) {
         // this is identical to what is computed at streaming time
         ...(messageInfo.message_type === "assistant"
           ? {
-            retrievalType: retrievalType,
-            query: messageInfo.rephrased_query,
-            documents: messageInfo?.context_docs?.top_documents || [],
-            citations: messageInfo?.citations || {},
-          }
+              retrievalType: retrievalType,
+              query: messageInfo.rephrased_query,
+              documents: messageInfo?.context_docs?.top_documents || [],
+              citations: messageInfo?.citations || {},
+            }
           : {}),
       };
     });

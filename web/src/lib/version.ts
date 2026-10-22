@@ -1,8 +1,8 @@
 import { buildUrl } from "./utilsSS";
-import getConfig from "next/config";
 
-const { publicRuntimeConfig } = getConfig();
-const version = publicRuntimeConfig?.version;
+// Next 16 removed `next/config` and `publicRuntimeConfig`. next.config.js now
+// inlines the same value through `env`, which is substituted at build time.
+const version = process.env.HEAL_VERSION;
 
 // Maybe improve type-safety by creating a 'VersionType' instead of generic string
 export const getBackendVersion = async (): Promise<string | null> => {
@@ -23,5 +23,7 @@ export const getBackendVersion = async (): Promise<string | null> => {
 
 // Frontend?
 export const getWebVersion = (): string | null => {
-  return version;
+  // `process.env` is `string | undefined`; the old publicRuntimeConfig read was
+  // untyped, so this narrowing is new rather than a behaviour change.
+  return version ?? null;
 };

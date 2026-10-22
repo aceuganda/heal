@@ -2,28 +2,26 @@
 
 import {
   FiLogOut,
-  FiMessageSquare,
   FiMoreHorizontal,
   FiPlusSquare,
   FiSearch,
+  FiSettings,
+  FiUser,
   FiTool,
 } from "react-icons/fi";
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { User } from "@/lib/types";
+import { isAdminRole, User } from "@/lib/types";
 import { logout } from "@/lib/user";
 import { BasicClickable, BasicSelectable } from "@/components/BasicClickable";
-import Image from "next/image";
 import { ChatSessionDisplay } from "./SessionDisplay";
 import { ChatSession } from "../interfaces";
-import { groupSessionsByDateRange } from "../lib";
-import { HEADER_PADDING } from "@/lib/constants";
-
+import { groupSessionsByDateRange, SESSION_GROUPS } from "./sessionGrouping";
 
 interface ChatSidebarProps {
   existingChats: ChatSession[];
-  currentChatId: number | null;
+  currentChatId: string | null;
   user: User | null;
 }
 
@@ -37,7 +35,7 @@ export const ChatSidebar = ({
   const groupedChatSessions = groupSessionsByDateRange(existingChats);
 
   const [userInfoVisible, setUserInfoVisible] = useState(false);
-  const [menuHider, setMenuHider] = useState(false);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const userInfoRef = useRef<HTMLDivElement>(null);
 
   const handleLogout = () => {
@@ -67,32 +65,46 @@ export const ChatSidebar = ({
     };
   }, []);
 
+  useEffect(() => {
+    const toggleSidebar = () => setIsSidebarOpen((isOpen) => !isOpen);
+    window.addEventListener("toggle-chat-sidebar", toggleSidebar);
+
+    return () =>
+      window.removeEventListener("toggle-chat-sidebar", toggleSidebar);
+  }, []);
+
+  // Mirrors open state back to the header's toggle button, which owns the
+  // close control now (see Header.tsx), so its icon/label stay in sync even
+  // when the sidebar closes itself (mobile overlay, New Chat).
+  useEffect(() => {
+    window.dispatchEvent(
+      new CustomEvent("chat-sidebar-state", { detail: isSidebarOpen })
+    );
+  }, [isSidebarOpen]);
+
   return (
     <div className="relative">
-      <div onClick={() => { setMenuHider(!menuHider) }} className={`${menuHider ? "left-[100%] top-[5.25rem] " : "top-[5.25rem] left-[1rem]"} sm:hidden  flex w-[35px] h-[35px] absolute  z-50`}>
-        <Image
-          alt={'Menu'}
-          src={menuHider ? '/cancel.svg' : '/humbager.svg'}
-          fill
-          className="relative"
+      {isSidebarOpen && (
+        <button
+          type="button"
+          className="fixed inset-0 top-16 z-30 cursor-default bg-ink-900/10 sm:hidden"
+          onClick={() => setIsSidebarOpen(false)}
+          aria-label="Close chat history"
         />
-      </div>
-      <div
+      )}
+      <aside
         className={`
-        w-72
-        2xl:w-80
-        ${HEADER_PADDING}
-        border-r 
-        border-border 
-        ${menuHider ? " flex max-sm:z-10  max-sm:relative  max-sm:bg-white" : "hidden sm:flex "}
-        flex-col 
-        h-screen
-        transition-transform`}
+          fixed bottom-0 left-0 top-16 z-40 w-72 flex-col border-r border-border bg-background pt-3 shadow-xl transition-transform
+          sm:relative sm:top-auto sm:bottom-auto sm:z-auto sm:h-screen sm:pt-[84px] sm:shadow-none
+          ${isSidebarOpen ? "flex" : "hidden"}
+        `}
         id="chat-sidebar"
       >
-
-
-        <Link href="/chat" className="mx-3 mt-5">
+        <Link
+          href="/chat"
+          className="mx-3 mt-3"
+          onClick={() => setIsSidebarOpen(false)}
+        >
           <BasicClickable fullWidth>
             <div className="flex text-sm">
               <FiPlusSquare className="my-auto mr-2" /> New Chat
@@ -100,38 +112,35 @@ export const ChatSidebar = ({
           </BasicClickable>
         </Link>
         <div className="mt-1 pb-1 mb-1 ml-3 overflow-y-auto h-full">
-          {Object.entries(groupedChatSessions).map(
-            ([dateRange, chatSessions]) => {
-              if (chatSessions.length > 0) {
-                return (
-                  <div key={dateRange}>
-                    <div className="text-xs text-subtle flex pb-0.5 mb-1.5 mt-5 font-bold">
-                      {dateRange}
-                    </div>
-                    {chatSessions.map((chat) => {
-                      const isSelected = currentChatId === chat.id;
-                      return (
-                        <div key={chat.id} className="mr-3">
-                          <ChatSessionDisplay
-                            chatSession={chat}
-                            isSelected={isSelected}
-                          />
-                        </div>
-                      );
-                    })}
-                  </div>
-                );
-              }
+          {/* Walked in SESSION_GROUPS order rather than the record's own, so
+              the headings are Today-first by definition and not by however
+              the grouping happened to build its object. */}
+          {SESSION_GROUPS.map((dateRange) => {
+            const chatSessions = groupedChatSessions[dateRange];
+            if (chatSessions.length === 0) {
+              return null;
             }
+            return (
+              <div key={dateRange}>
+                <div className="text-xs text-subtle flex pb-0.5 mb-1.5 mt-5 font-bold">
+                  {dateRange}
+                </div>
+                {chatSessions.map((chat) => (
+                  <div key={chat.id} className="mr-3">
+                    <ChatSessionDisplay
+                      chatSession={chat}
+                      isSelected={currentChatId === chat.id}
+                    />
+                  </div>
+                ))}
+              </div>
+            );
+          })}
+          {existingChats.length === 0 && (
+            <p className="mr-3 mt-6 text-xs leading-5 text-subtle">
+              No chats yet. Ask a clinical question and it will be saved here.
+            </p>
           )}
-          {/* {existingChats.map((chat) => {
-          const isSelected = currentChatId === chat.id;
-          return (
-            <div key={chat.id} className="mr-3">
-              <ChatSessionDisplay chatSession={chat} isSelected={isSelected} />
-            </div>
-          );
-        })} */}
         </div>
 
         <div
@@ -153,16 +162,18 @@ export const ChatSidebar = ({
                   <FiSearch className="my-auto mr-2" />
                   Heal Search
                 </Link> */}
+                {/* Everyone gets their own account; only admins get the
+                    admin panel below it. */}
                 <Link
-                  href="/chat"
+                  href="/account"
                   className="flex py-3 px-4 cursor-pointer hover:bg-hover"
                 >
-                  <FiMessageSquare className="my-auto mr-2" />
-                  Heal Chat
+                  <FiUser className="my-auto mr-2" />
+                  Account settings
                 </Link>
-                {(!user || user.role === "admin") && (
+                {(!user || isAdminRole(user.role)) && (
                   <Link
-                    href="/admin/indexing/status"
+                    href="/admin/sources"
                     className="flex py-3 px-4 cursor-pointer border-t border-border hover:bg-hover"
                   >
                     <FiTool className="my-auto mr-2" />
@@ -185,8 +196,8 @@ export const ChatSidebar = ({
                 onClick={() => setUserInfoVisible(!userInfoVisible)}
                 className="flex h-8"
               >
-                <div className="my-auto mr-2 bg-user rounded-lg px-1.5">
-                  {user && user.email ? user.email[0].toUpperCase() : "A"}
+                <div className="my-auto mr-2 flex h-8 w-8 shrink-0 items-center justify-center text-default">
+                  <FiSettings size={17} aria-hidden="true" />
                 </div>
                 <p className="my-auto">
                   {user ? user.email : "Anonymous Possum"}
@@ -196,7 +207,7 @@ export const ChatSidebar = ({
             </BasicSelectable>
           </div>
         </div>
-      </div>
+      </aside>
     </div>
   );
 };

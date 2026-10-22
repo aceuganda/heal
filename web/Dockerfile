@@ -1,9 +1,13 @@
-FROM node:20-alpine AS base
+# syntax=docker/dockerfile:1
+# Node 24, matching web/.nvmrc. Next 16 requires >= 20.9, so 20-alpine would
+# still build -- but a local toolchain and an image on different majors is how
+# "works on my machine" starts.
+FROM node:24.22.0-alpine3.24 AS base
 
-# Default DANSWER_VERSION, typically overriden during builds by GitHub Actions.
-ARG DANSWER_VERSION=0.3-dev
-ENV DANSWER_VERSION=${DANSWER_VERSION}
-RUN echo "DANSWER_VERSION: ${DANSWER_VERSION}"
+# Image version, normally overridden by the release workflow with the git tag.
+ARG HEAL_VERSION=0.3-dev
+ENV HEAL_VERSION=${HEAL_VERSION}
+RUN echo "HEAL_VERSION: ${HEAL_VERSION}"
 
 # Step 1. Install dependencies only when needed
 FROM base AS deps
@@ -12,9 +16,17 @@ RUN apk add --no-cache libc6-compat
 WORKDIR /app
 
 # Install dependencies based on the preferred package manager
+#
+# The package manager cache is a BuildKit cache mount, so it persists between
+# builds and survives a failed one without adding to the image. Same reason as
+# the backend's pip cache: on a slow link a network timeout used to discard
+# every package already fetched, and the retry started from zero.
 COPY package.json yarn.lock* package-lock.json* pnpm-lock.yaml* ./
-RUN \
-  if [ -f yarn.lock ]; then yarn --frozen-lockfile; \
+RUN --mount=type=cache,target=/root/.npm,sharing=locked \
+    --mount=type=cache,target=/usr/local/share/.cache/yarn,sharing=locked \
+  npm config set fetch-retries 10 && \
+  npm config set fetch-retry-maxtimeout 120000 && \
+  if [ -f yarn.lock ]; then yarn --frozen-lockfile --network-timeout 600000; \
   elif [ -f package-lock.json ]; then npm ci; \
   elif [ -f pnpm-lock.yaml ]; then yarn global add pnpm && pnpm i --frozen-lockfile; \
   else echo "Lockfile not found." && exit 1; \
@@ -35,7 +47,12 @@ ENV NEXT_TELEMETRY_DISABLED 1
 ARG NEXT_PUBLIC_DISABLE_STREAMING
 ENV NEXT_PUBLIC_DISABLE_STREAMING=${NEXT_PUBLIC_DISABLE_STREAMING}
 
-RUN npm run build
+# Next's webpack cache, kept across builds for the same reason as the npm cache
+# above: without it every image build recompiles from cold, which is most of the
+# build time. `output: standalone` means the runner stage copies only
+# .next/standalone and .next/static, so nothing from this mount reaches the image.
+RUN --mount=type=cache,target=/app/.next/cache,sharing=locked \
+    npm run build
 
 # Step 3. Production image, copy all the files and run next
 FROM base AS runner

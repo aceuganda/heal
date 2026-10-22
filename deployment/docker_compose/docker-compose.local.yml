@@ -1,0 +1,218 @@
+# Local stack. `make up` starts all of it -- there is no second command and no
+# opt-in profile.
+#
+# Five services: api_server, web_server, relational_db, qdrant, nginx.
+#
+# Not here, and why:
+#   index         Vespa. Nothing on the boot path or the chat path reaches it;
+#                 Qdrant replaced it.
+#   background    the supervisord fleet (indexing loop, Celery, Beat, Dask,
+#                 Slack listener). Heal configures no connectors, so every one
+#                 of its poll cycles found nothing. Ingest is admin-triggered.
+#   model_server  the embedding model is small enough to load in-process; a
+#                 second container for it bought nothing.
+
+services:
+  api_server:
+    image: khalifan1126/heal-backend:latest
+    build:
+      context: ../../backend
+      dockerfile: Dockerfile
+      args:
+        # cpu, or cuda for a GPU host. See backend/Dockerfile.
+        TORCH_VARIANT: ${TORCH_VARIANT:-cpu}
+    command: >
+      /bin/sh -c "alembic upgrade head &&
+        echo 'Starting Heal API server' &&
+        uvicorn heal_app.main:app --host 0.0.0.0 --port 8080"
+    depends_on:
+      relational_db:
+        condition: service_healthy
+      qdrant:
+        condition: service_started
+    restart: always
+    ports:
+      - "8080:8080"
+    environment:
+      # Auth Settings
+      #
+      # `basic`, not `disabled`: with auth off there are no accounts at all and
+      # every admin screen is wide open, so roles cannot be exercised or tested.
+      - AUTH_TYPE=${AUTH_TYPE:-basic}
+      # Seeds the first account into an EMPTY database, and does nothing
+      # otherwise -- it can neither overwrite an account nor reset a password.
+      # The first account becomes SUPER_ADMIN, which is what makes it possible
+      # to log in and create everyone else.
+      #
+      # This password is deliberately trivial because it is a local default.
+      # Production leaves both unset: see env.prod.template.
+      # Not a .local address: that is a reserved special-use TLD and the email
+      # validator rejects it, so seeding would fail before it started.
+      - HEAL_BOOTSTRAP_ADMIN_EMAIL=${HEAL_BOOTSTRAP_ADMIN_EMAIL:-admin@heal.ug}
+      - HEAL_BOOTSTRAP_ADMIN_PASSWORD=${HEAL_BOOTSTRAP_ADMIN_PASSWORD:-password}
+      - SESSION_EXPIRE_TIME_SECONDS=${SESSION_EXPIRE_TIME_SECONDS:-86400}
+      - VALID_EMAIL_DOMAINS=${VALID_EMAIL_DOMAINS:-}
+      - GOOGLE_OAUTH_CLIENT_ID=${GOOGLE_OAUTH_CLIENT_ID:-}
+      - GOOGLE_OAUTH_CLIENT_SECRET=${GOOGLE_OAUTH_CLIENT_SECRET:-}
+      - REQUIRE_EMAIL_VERIFICATION=${REQUIRE_EMAIL_VERIFICATION:-}
+      - SMTP_SERVER=${SMTP_SERVER:-} # For sending verification emails, if unspecified then defaults to 'smtp.gmail.com'
+      - SMTP_PORT=${SMTP_PORT:-587} # For sending verification emails, if unspecified then defaults to '587'
+      - SMTP_USER=${SMTP_USER:-}
+      - SMTP_PASS=${SMTP_PASS:-}
+      - EMAIL_FROM=${EMAIL_FROM:-}
+      # Translation services (Design A). No defaults: a missing URL fails
+      # loudly rather than pointing at someone else's server.
+      - TRANSLATION_PROVIDER=${TRANSLATION_PROVIDER:-heal_mt}
+      - TRANSLATION_EN_URL=${TRANSLATION_EN_URL:-}
+      - TRANSLATION_LUG_URL=${TRANSLATION_LUG_URL:-}
+      - TRANSLATION_API_KEY=${TRANSLATION_API_KEY:-}
+      - TRANSLATION_CONNECT_TIMEOUT=${TRANSLATION_CONNECT_TIMEOUT:-5}
+      - TRANSLATION_READ_TIMEOUT=${TRANSLATION_READ_TIMEOUT:-60}
+      - TRANSLATION_MAX_RETRIES=${TRANSLATION_MAX_RETRIES:-2}
+      # Chat model selection. Ids come from the catalogue in heal/llm/registry.py.
+      - HEAL_CHAT_MODEL=${HEAL_CHAT_MODEL:-}
+      - HEAL_CLASSIFIER_MODEL=${HEAL_CLASSIFIER_MODEL:-}
+      - HEAL_ENABLED_CHAT_MODELS=${HEAL_ENABLED_CHAT_MODELS:-}
+      - HEAL_LLM_TIMEOUT=${HEAL_LLM_TIMEOUT:-}
+      - HEAL_EMERGENCY_CONTACT=${HEAL_EMERGENCY_CONTACT:-}
+      # Self-hosted model. Set HEAL_SELF_HOSTED_URL to add it to the catalogue
+      # as `self-hosted`; leave it empty and nothing changes. The address is
+      # internal, so it lives here and in .env, never in source.
+      - HEAL_SELF_HOSTED_URL=${HEAL_SELF_HOSTED_URL:-}
+      - HEAL_SELF_HOSTED_MODEL=${HEAL_SELF_HOSTED_MODEL:-}
+      - HEAL_SELF_HOSTED_CONTEXT_TOKENS=${HEAL_SELF_HOSTED_CONTEXT_TOKENS:-}
+      - HEAL_SELF_HOSTED_API_KEY=${HEAL_SELF_HOSTED_API_KEY:-}
+      # Gen AI Settings
+      - GEN_AI_MODEL_PROVIDER=${GEN_AI_MODEL_PROVIDER:-openai}
+      - GEN_AI_MODEL_VERSION=${GEN_AI_MODEL_VERSION:-gpt-4o-mini}
+      - FAST_GEN_AI_MODEL_VERSION=${FAST_GEN_AI_MODEL_VERSION:-gpt-4o-mini}
+      - GEN_AI_API_KEY=${GEN_AI_API_KEY:-}
+      - GEN_AI_API_ENDPOINT=${GEN_AI_API_ENDPOINT:-}
+      - GEN_AI_API_VERSION=${GEN_AI_API_VERSION:-}
+      - GEN_AI_LLM_PROVIDER_TYPE=${GEN_AI_LLM_PROVIDER_TYPE:-}
+      - QA_TIMEOUT=${QA_TIMEOUT:-}
+      - DISABLE_GENERATIVE_AI=${DISABLE_GENERATIVE_AI:-}
+      # Knowledge / retrieval. On by default: the admin cannot upload or index
+      # a document without it, and a stack that boots unable to do that reads
+      # as broken rather than as configured.
+      - KNOWLEDGE_ENABLED=${KNOWLEDGE_ENABLED:-true}
+      # Compose service name, resolved on the internal network.
+      - QDRANT_URL=${QDRANT_URL:-http://qdrant:6333}
+      - QDRANT_API_KEY=${QDRANT_API_KEY:-}
+      - QDRANT_COLLECTION=${QDRANT_COLLECTION:-}
+      - HEAL_EMBEDDING_MODEL=${HEAL_EMBEDDING_MODEL:-}
+      - HEAL_EMBEDDING_DEVICE=${HEAL_EMBEDDING_DEVICE:-}
+      - HEAL_MIN_RETRIEVAL_SCORE=${HEAL_MIN_RETRIEVAL_SCORE:-}
+      # The embedding model is baked into the image at /opt/models (see
+      # backend/Dockerfile); nothing is downloaded at boot or on first upload.
+      # Other services
+      - POSTGRES_HOST=relational_db
+      - WEB_DOMAIN=${WEB_DOMAIN:-} # For frontend redirect auth purpose
+      - DISABLE_TELEMETRY=${DISABLE_TELEMETRY:-true}
+      - LOG_LEVEL=${LOG_LEVEL:-info} # Set to debug to get more fine-grained logs
+      - LOG_ALL_MODEL_INTERACTIONS=${LOG_ALL_MODEL_INTERACTIONS:-} # Logs prompts; never enable against real users
+    # Python, not curl: curl does not survive the image's CVE cleanup.
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request as u; u.urlopen('http://localhost:8080/health', timeout=5)"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 90s
+    volumes:
+      # Dynamic config store. The connector temp storage went with the
+      # background container; the model cache is baked into the image.
+      - local_dynamic_storage:/home/storage
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "6"
+
+  web_server:
+    image: khalifan1126/heal-web:latest
+    build:
+      context: ../../web
+      dockerfile: Dockerfile
+      args:
+        - NEXT_PUBLIC_DISABLE_STREAMING=${NEXT_PUBLIC_DISABLE_STREAMING:-false}
+    depends_on:
+      - api_server
+    restart: always
+    environment:
+      - INTERNAL_URL=http://api_server:8080
+      - WEB_DOMAIN=${WEB_DOMAIN:-}
+
+  relational_db:
+    image: postgres:15.2-alpine
+    restart: always
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER:-postgres}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-password}
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-postgres}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    volumes:
+      - db_volume:/var/lib/postgresql/data
+
+  nginx:
+    image: nginx:1.23.4-alpine
+    restart: always
+    # nginx will immediately crash with `nginx: [emerg] host not found in upstream`
+    # if api_server / web_server are not up
+    depends_on:
+      - api_server
+      - web_server
+    environment:
+      - DOMAIN=localhost
+    ports:
+      - "80:80"
+      - "3000:80" # allow for localhost:3000 usage, since that is the norm
+    volumes:
+      - ../data/nginx:/etc/nginx/conf.d
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "6"
+    # Order matters. The inherited form ended `... done & nginx -g "daemon off;"`,
+    # where `&` backgrounds the WHOLE sleep/envsubst/reload chain and starts
+    # nginx immediately -- so nginx read a stale app.conf and crash-looped
+    # before envsubst could ever rewrite it. Only the reload loop is
+    # backgrounded here; the config is generated before nginx starts.
+    #
+    # The sleep gives api_server / web_server time to bind: nginx resolves
+    # upstream names once, at startup, and exits if one does not resolve.
+    command: >
+      /bin/sh -c "sleep 10 &&
+        envsubst '$$\{DOMAIN\}' < /etc/nginx/conf.d/app.conf.template.dev > /etc/nginx/conf.d/app.conf &&
+        { while :; do sleep 6h & wait $${!}; nginx -s reload; done & } &&
+        nginx -g \"daemon off;\""
+
+  # Vector store. Part of the default stack: retrieval is the product, not an
+  # add-on, so it starts with everything else.
+  #
+  # Qdrant ships with no authentication by default. Locally the port is bound
+  # to 127.0.0.1 so it is not reachable from the network; in production it gets
+  # an API key and no published port at all (docker-compose.prod.yml).
+  # Named vectors are created on first ingest so dense + sparse hybrid search is
+  # designed in rather than retrofitted.
+  qdrant:
+    # v1.19.0 publishes linux/amd64 and linux/arm64.
+    image: qdrant/qdrant:v1.19.0
+    restart: always
+    environment:
+      - QDRANT__SERVICE__API_KEY=${QDRANT_API_KEY:-}
+      - QDRANT__TELEMETRY_DISABLED=true
+    ports:
+      - "127.0.0.1:6333:6333"
+    volumes:
+      - qdrant_volume:/qdrant/storage
+
+volumes:
+  local_dynamic_storage:
+  db_volume:
+  qdrant_volume:

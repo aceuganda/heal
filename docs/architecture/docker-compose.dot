@@ -1,0 +1,90 @@
+// Heal local stack: what `make up` starts
+// (deployment/docker_compose/docker-compose.local.yml, project heal-stack).
+//
+// Regenerate the PNG from the repo root:
+//   dot -Tpng -Gdpi=144 docs/architecture/docker-compose.dot -o docs/architecture/docker-compose.png
+//
+// No addresses in here: external services are named by the env var that
+// points at them.
+
+digraph heal_compose {
+  graph [rankdir=LR, bgcolor="white", fontname="Helvetica", fontsize=13,
+         nodesep=0.45, ranksep=0.9, pad=0.35, newrank=true, splines=spline];
+  node  [fontname="Helvetica", fontsize=12, shape=box, style="rounded,filled",
+         color="#4b5563", penwidth=1.3, fillcolor="#ffffff", margin="0.18,0.10"];
+  edge  [fontname="Helvetica", fontsize=10.5, color="#4b5563", fontcolor="#374151",
+         penwidth=1.3, arrowsize=0.8];
+
+  browser [label=<<b>Browser / PWA</b><br/><font point-size="10" color="#6b7280">user</font>>,
+           shape=box, fillcolor="#f3f4f6"];
+
+  subgraph cluster_compose {
+    label=<<b>Docker Compose network</b>  <font color="#6b7280">(project heal-stack · make up)</font>>;
+    labeljust=l; style="dashed,rounded"; color="#2563eb"; penwidth=1.6;
+    fontcolor="#1e3a8a"; margin=22;
+
+    nginx [label=<<b>nginx</b><br/><font point-size="10" color="#6b7280">nginx:1.23.4-alpine</font><br/><font point-size="10">host :80, :3000 -&gt; :80</font>>,
+           fillcolor="#ecfdf5", color="#059669"];
+
+    web [label=<<b>web_server</b><br/><font point-size="10" color="#6b7280">Next.js frontend</font><br/><font point-size="10">:3000 (internal only)</font>>,
+         fillcolor="#eff6ff", color="#2563eb"];
+
+    api [label=<<b>api_server</b><br/><font point-size="10" color="#6b7280">FastAPI · alembic upgrade head on boot</font><br/><font point-size="10" color="#6b7280">embedding model in-process</font><br/><font point-size="10">host :8080 -&gt; :8080</font>>,
+         fillcolor="#eff6ff", color="#2563eb"];
+
+    db [label=<<b>relational_db</b><br/><font point-size="10" color="#6b7280">postgres:15.2-alpine</font><br/><font point-size="10">host :5432 -&gt; :5432</font>>,
+        shape=cylinder, fillcolor="#fffbeb", color="#d97706", style="filled"];
+
+    qdrant [label=<<b>qdrant</b><br/><font point-size="10" color="#6b7280">qdrant/qdrant:v1.19.0 · vector store</font><br/><font point-size="10">:6333, loopback-only on host</font>>,
+            shape=cylinder, fillcolor="#fffbeb", color="#d97706", style="filled"];
+
+    node [shape=folder, style="filled", fillcolor="#f9fafb", color="#9ca3af",
+          fontsize=10, fontcolor="#4b5563", margin="0.10,0.05"];
+    v_dyn    [label="volume: local_dynamic_storage"];
+    v_db     [label="volume: db_volume"];
+    v_qdrant [label="volume: qdrant_volume"];
+    v_nginx  [label="bind: deployment/data/nginx"];
+  }
+
+  subgraph cluster_external {
+    label=<<b>External</b> <font color="#6b7280">(outside the compose network, configured by env var)</font>>;
+    labeljust=l; style="rounded"; color="#9ca3af"; fontcolor="#374151"; margin=18;
+    node [shape=box, style="rounded,filled,dashed", fillcolor="#fdf2f8", color="#be185d",
+          fontsize=11, margin="0.16,0.08"];
+
+    mt_en  [label=<<b>MT: Luganda -&gt; English</b><br/><font point-size="10">TRANSLATION_EN_URL</font>>];
+    mt_lug [label=<<b>MT: English -&gt; Luganda</b><br/><font point-size="10">TRANSLATION_LUG_URL</font>>];
+    llm_cloud [label=<<b>Cloud LLM provider</b><br/><font point-size="10">GEN_AI_MODEL_PROVIDER · HEAL_CHAT_MODEL</font>>];
+    llm_self  [label=<<b>Self-hosted LLM (optional)</b><br/><font point-size="10">OpenAI-compatible (vLLM)</font><br/><font point-size="10">HEAL_SELF_HOSTED_URL</font>>];
+  }
+
+  // request path
+  browser -> nginx [label="HTTP :80 / :3000"];
+  nginx -> web    [label="/*  HTTP :3000"];
+  nginx -> api    [label="/api/*  prefix stripped\nHTTP :8080"];
+  web -> api      [label="server-side calls\nINTERNAL_URL :8080", style=dashed];
+
+  // data
+  api -> db      [label="SQL :5432"];
+  api -> qdrant  [label="HTTP :6333"];
+
+  // external calls
+  api -> mt_en     [label="POST /translate/stream (SSE)"];
+  api -> mt_lug    [label="POST /translate/stream (SSE)"];
+  api -> llm_self  [label="HTTP(S), OpenAI API\n(when configured)"];
+  api -> llm_cloud [label="HTTPS"];
+  llm_self -> llm_cloud [label="cloud fallback\nafter 2 tries", style=dotted, color="#be185d",
+                         fontcolor="#be185d", constraint=false];
+
+  // storage (undirected-looking)
+  edge [arrowhead=none, style=dotted, color="#9ca3af", fontsize=9, label=""];
+  api -> v_dyn;
+  db -> v_db;
+  qdrant -> v_qdrant;
+  nginx -> v_nginx;
+
+  // Columns, left to right: browser | nginx | web_server | api_server |
+  // data stores + external services | volumes.
+  { rank=same; db; qdrant; mt_en; mt_lug; llm_cloud; llm_self; }
+  { rank=same; v_db; v_qdrant; }
+}

@@ -231,7 +231,7 @@ export function ChatIntro({
             </div>
           </div>
         ) : (
-          <div className="px-12 w-[100%]">
+          <div className="w-full max-w-3xl px-6 sm:px-10">
             <div className="mx-auto">
               <div className="m-auto h-[80px] w-[80px]">
                 <Image src="/logo.png" alt="Logo" width="1419" height="1520" />
@@ -246,15 +246,18 @@ export function ChatIntro({
                 Or ask a question immediately to use the{" "}
                 <b>{availablePersonas[0]?.name}</b> assistant.
               </p> */}
-              <p className="font-bold text-xl mb-1 mt-4 text-emphasis text-center">
-                Welcome to the Heal chat Assistant!
+              <p className="mt-4 text-center text-2xl font-semibold text-strong">
+                How can Heal help today?
               </p>
-              <div className="mt-[11rem] sm:mt-[13rem] grid grid-cols-1 lg:grid-cols-2 gap-[0.8rem] place-content-center ">
+              <p className="mt-2 text-center text-sm text-default">
+                Ask a public-health question or choose a starting point below.
+              </p>
+              <div className="mt-8 grid grid-cols-1 gap-3 sm:grid-cols-2">
                 {displayExampleQuestion.map((message, index) => (
                   <div
                     key={index}
                     // variant="link"
-                    className="border-[#000000] border-[2px] rounded-[10px] p-4 h-[3rem] min-w-[16rem]  max-sm:text-[12px] flex items-center justify-center hover:bg-hover-light text-base  cursor-pointer"
+                    className="border border-border rounded-lg px-4 py-3 min-h-[3.5rem] max-sm:text-[12px] flex items-center justify-center bg-background hover:bg-hover-light hover:border-heal-teal-300 text-emphasis text-sm transition-colors cursor-pointer"
                     onClick={() => setInput(message.message)}
                   >
                     {/* <IconArrowRight className="mr-2 text-muted-foreground" /> */}
