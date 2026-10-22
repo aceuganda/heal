@@ -64,12 +64,12 @@ class PersonaSnapshot(BaseModel):
     name: str
     shared: bool
     is_visible: bool
-    display_priority: int | None
+    display_priority: int | None = None
     description: str
-    num_chunks: float | None
+    num_chunks: float | None = None
     llm_relevance_filter: bool
     llm_filter_extraction: bool
-    llm_model_version_override: str | None
+    llm_model_version_override: str | None = None
     default_persona: bool
     prompts: list[PromptSnapshot]
     document_sets: list[DocumentSet]

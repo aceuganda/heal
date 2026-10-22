@@ -10,7 +10,7 @@ from heal_app.server.utils import get_json_line
 
 def test_a_nested_uuid_does_not_break_the_stream() -> None:
     # The final chat line carries context_docs, whose db_doc_id is a UUID that
-    # a parent model's `.dict()` leaves as an object.
+    # a parent model's `.model_dump()` leaves as an object.
     doc_id = uuid4()
     docs = RetrievalDocs(
         top_documents=[
@@ -34,7 +34,7 @@ def test_a_nested_uuid_does_not_break_the_stream() -> None:
         ]
     )
 
-    line = get_json_line({"context_docs": docs.dict()})
+    line = get_json_line({"context_docs": docs.model_dump()})
 
     assert line.endswith("\n")
     parsed = json.loads(line)

@@ -4,6 +4,7 @@ from enum import Enum
 from typing import Any
 
 from pydantic import BaseModel
+from pydantic import ConfigDict
 
 from heal_app.configs.chat_configs import DISABLE_LLM_CHUNK_FILTER
 from heal_app.configs.chat_configs import NUM_RERANKED_RESULTS
@@ -62,13 +63,13 @@ class BaseFilters(BaseModel):
 
 
 class IndexFilters(BaseFilters):
-    access_control_list: list[str] | None
+    access_control_list: list[str] | None = None
 
 
 class ChunkMetric(BaseModel):
     document_id: str
     chunk_content_start: str
-    first_link: str | None
+    first_link: str | None = None
     score: float
 
 
@@ -86,8 +87,7 @@ class SearchQuery(BaseModel):
     # Only used if not skip_llm_chunk_filter
     max_llm_filter_chunks: int = NUM_RERANKED_RESULTS
 
-    class Config:
-        frozen = True
+    model_config = ConfigDict(frozen=True)
 
 
 class RetrievalDetails(BaseModel):
@@ -111,7 +111,7 @@ class SearchDoc(BaseModel):
     document_id: str
     chunk_ind: int
     semantic_identifier: str
-    link: str | None
+    link: str | None = None
     blurb: str
     source_type: DocumentSource
     boost: int
@@ -120,18 +120,18 @@ class SearchDoc(BaseModel):
     # be `True` when doing an admin search
     hidden: bool
     metadata: dict[str, str | list[str]]
-    score: float | None
+    score: float | None = None
     # Matched sections in the doc. Uses Vespa syntax e.g. <hi>TEXT</hi>
     # to specify that a set of words should be highlighted. For example:
     # ["<hi>the</hi> <hi>answer</hi> is 42", "the answer is <hi>42</hi>""]
     match_highlights: list[str]
     # when the doc was last updated
-    updated_at: datetime | None
-    primary_owners: list[str] | None
-    secondary_owners: list[str] | None
+    updated_at: datetime | None = None
+    primary_owners: list[str] | None = None
+    secondary_owners: list[str] | None = None
 
-    def dict(self, *args: list, **kwargs: dict[str, Any]) -> dict[str, Any]:  # type: ignore
-        initial_dict = super().dict(*args, **kwargs)  # type: ignore
+    def model_dump(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
+        initial_dict = super().model_dump(*args, **kwargs)
         initial_dict["updated_at"] = (
             self.updated_at.isoformat() if self.updated_at else None
         )
@@ -148,7 +148,7 @@ class SavedSearchDoc(SearchDoc):
         cls, search_doc: SearchDoc, db_doc_id: UUID | None = None
     ) -> "SavedSearchDoc":
         """IMPORTANT: careful using this and not providing a db_doc_id"""
-        return cls(**search_doc.dict(), db_doc_id=db_doc_id)
+        return cls(**search_doc.model_dump(), db_doc_id=db_doc_id)
 
 
 class RetrievalDocs(BaseModel):

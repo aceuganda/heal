@@ -24,6 +24,7 @@ from fastapi import HTTPException
 from fastapi_users.exceptions import InvalidPasswordException
 from fastapi_users.exceptions import UserAlreadyExists
 from pydantic import BaseModel
+from pydantic import ConfigDict
 from pydantic import EmailStr
 from sqlalchemy import func
 from sqlalchemy import select
@@ -205,8 +206,7 @@ class AccessChangeRequest(BaseModel):
     admin_verified: bool | None = None
     chat_blocked: bool | None = None
 
-    class Config:
-        extra = "forbid"
+    model_config = ConfigDict(extra="forbid")
 
 
 class AccessView(BaseModel):
@@ -214,7 +214,7 @@ class AccessView(BaseModel):
     email: str
     email_verified: bool
     admin_verified: bool
-    admin_verified_at: datetime | None
+    admin_verified_at: datetime | None = None
     chat_blocked: bool
 
 
@@ -229,7 +229,7 @@ async def change_user_access(
     Admins, not only super admins: vouching for a health worker and pausing
     someone's chat are day-to-day moderation, not control of the deployment.
     """
-    sent = request.__fields_set__
+    sent = request.model_fields_set
     if not sent:
         raise HTTPException(status_code=422, detail="Nothing to change")
     try:
@@ -287,8 +287,7 @@ class PolicyUpdate(BaseModel):
     block_email_unverified: bool | None = None
     block_admin_unverified: bool | None = None
 
-    class Config:
-        extra = "forbid"
+    model_config = ConfigDict(extra="forbid")
 
 
 @policy_router.get("")
@@ -309,7 +308,7 @@ def update_access_policy(
     """
     values = {
         name: getattr(request, name)
-        for name in request.__fields_set__
+        for name in request.model_fields_set
         if getattr(request, name) is not None
     }
     if not values:

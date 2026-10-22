@@ -5,15 +5,15 @@ from typing import Any
 from typing import cast
 
 import tiktoken
-from langchain.prompts.base import StringPromptValue
-from langchain.prompts.chat import ChatPromptValue
-from langchain.schema import PromptValue
-from langchain.schema.language_model import LanguageModelInput
-from langchain.schema.messages import AIMessage
-from langchain.schema.messages import BaseMessage
-from langchain.schema.messages import BaseMessageChunk
-from langchain.schema.messages import HumanMessage
-from langchain.schema.messages import SystemMessage
+from langchain_core.prompt_values import StringPromptValue
+from langchain_core.prompt_values import ChatPromptValue
+from langchain_core.prompt_values import PromptValue
+from langchain_core.language_models import LanguageModelInput
+from langchain_core.messages import AIMessage
+from langchain_core.messages import BaseMessage
+from langchain_core.messages import BaseMessageChunk
+from langchain_core.messages import HumanMessage
+from langchain_core.messages import SystemMessage
 from tiktoken.core import Encoding
 
 from heal_app.configs.app_configs import LOG_LEVEL

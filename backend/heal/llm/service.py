@@ -35,9 +35,9 @@ def to_provider_messages(messages: Sequence[tuple[str, str]]) -> list[Any]:
     This is the only place that knows about LangChain, which is why
     PromptBuilder can be built and tested without it.
     """
-    from langchain.schema.messages import AIMessage
-    from langchain.schema.messages import HumanMessage
-    from langchain.schema.messages import SystemMessage
+    from langchain_core.messages import AIMessage
+    from langchain_core.messages import HumanMessage
+    from langchain_core.messages import SystemMessage
 
     kinds = {"system": SystemMessage, "user": HumanMessage, "assistant": AIMessage}
     return [kinds[role](content=text) for role, text in messages]

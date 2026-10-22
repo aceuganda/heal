@@ -20,6 +20,26 @@ the first pilot release.
 
 ## [Unreleased]
 
+### Security
+
+- **Backend image passes the deploy scan again.** Fixable CRITICAL/HIGH CVEs
+  are cleared: the base image moves to `python:3.11.17-slim-bookworm` with
+  Debian updates applied at build time, and litellm, torch, transformers,
+  sentence-transformers, pypdf, starlette, python-multipart and the rest move to
+  patched releases. This brings two major upgrades: pydantic v2 (with FastAPI
+  0.159 and fastapi-users 15) and `langchain-core` / `langchain-litellm` in
+  place of `langchain` 0.0.340. TensorFlow, torchvision, nltk and passlib are
+  removed because nothing imported them. Risk: new logins rehash bcrypt
+  passwords to argon2 on success (old hashes still verify). The embedding model
+  now loads from `model.safetensors` instead of the pickled
+  `pytorch_model.bin`; check search quality on the existing index after deploy.
+
+### Fixed
+
+- **Web build.** `tailwindcss` goes back to v3.4. The v4 bump needed a PostCSS
+  and config migration and fixed no vulnerability. The unused
+  `@headlessui/tailwindcss` plugin is removed from the Tailwind config.
+
 ### Added
 
 - **`make deploy-logs` and `make deploy-restart`.** Follow the API or web logs

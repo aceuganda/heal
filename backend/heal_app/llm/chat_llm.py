@@ -2,9 +2,9 @@ import abc
 from collections.abc import Iterator
 
 import litellm  # type:ignore
-from langchain.chat_models import ChatLiteLLM
-from langchain.chat_models.base import BaseChatModel
-from langchain.schema.language_model import LanguageModelInput
+from langchain_litellm import ChatLiteLLM
+from langchain_core.language_models import BaseChatModel
+from langchain_core.language_models import LanguageModelInput
 
 from heal_app.configs.app_configs import LOG_ALL_MODEL_INTERACTIONS
 from heal_app.configs.model_configs import GEN_AI_API_ENDPOINT

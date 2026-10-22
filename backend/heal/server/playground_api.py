@@ -35,6 +35,7 @@ from fastapi import APIRouter
 from fastapi import Depends
 from fastapi import HTTPException
 from pydantic import BaseModel
+from pydantic import ConfigDict
 from pydantic import Field
 from starlette.concurrency import run_in_threadpool
 
@@ -207,8 +208,8 @@ class SettingView(BaseModel):
     # on the knob, and a declared union would coerce every one of them to the
     # union's first member -- turning `hybrid_search: true` into `1.0` and a
     # top-k of 20 into `20.0` on the way out.
-    value: Any
-    default: Any
+    value: Any = None
+    default: Any = None
     overridden: bool
     # True when the request asked for something outside the allowed range and
     # the server pulled it in. `requested` carries what was asked for, so the
@@ -338,12 +339,11 @@ class SavedDefaults(BaseModel):
     context_top_k: int | None = None
     max_chunks_per_source: int | None = None
 
-    class Config:
-        # An unknown key is a 422, not a shrug. Saving is the one action here
-        # that changes what health workers receive, and a request that names a
-        # knob this endpoint will not write -- a misspelling, say -- has to be
-        # told so rather than quietly half-applied.
-        extra = "forbid"
+    # An unknown key is a 422, not a shrug. Saving is the one action here
+    # that changes what health workers receive, and a request that names a
+    # knob this endpoint will not write -- a misspelling, say -- has to be
+    # told so rather than quietly half-applied.
+    model_config = ConfigDict(extra="forbid")
 
 
 class SavedDefaultsResponse(BaseModel):
@@ -561,10 +561,10 @@ def save_defaults(
     made it, and the screen asks for confirmation before sending one.
     """
     # Only what the caller actually sent. An absent field is untouched; a field
-    # sent as null is a deliberate reset to the environment. `__fields_set__`
+    # sent as null is a deliberate reset to the environment. `model_fields_set`
     # is pydantic v1's record of which is which -- without it the two collapse
     # into "null" and every save would clear the knobs it did not mention.
-    sent = request.__fields_set__
+    sent = request.model_fields_set
     values = {
         name: getattr(request, name) for name in saved_defaults.FIELDS if name in sent
     }

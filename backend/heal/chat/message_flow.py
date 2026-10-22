@@ -83,12 +83,12 @@ def stream_chat_message(
 
     except TranslationError as e:
         logger.error(f"Inbound translation failed: {e}")
-        yield get_json_line(StreamingError(error=e.user_message).dict())
+        yield get_json_line(StreamingError(error=e.user_message).model_dump())
         return
     except Exception as e:
         logger.exception(f"Could not start chat message: {e}")
         yield get_json_line(
-            StreamingError(error="Could not start this message.").dict()
+            StreamingError(error="Could not start this message.").model_dump()
         )
         return
 
@@ -157,12 +157,12 @@ def stream_chat_message(
                 pass
         else:
             for token in tokens:
-                yield get_json_line(DanswerAnswerPiece(answer_piece=token).dict())
+                yield get_json_line(DanswerAnswerPiece(answer_piece=token).model_dump())
     except Exception as e:
         logger.exception(f"Generation failed: {e}")
         error = str(e)
         yield get_json_line(
-            StreamingError(error="The assistant could not answer. Try again.").dict()
+            StreamingError(error="The assistant could not answer. Try again.").model_dump()
         )
 
     english_answer = decision.text
@@ -173,10 +173,10 @@ def stream_chat_message(
         try:
             for token in language_service.stream_to_luganda(english_answer):
                 luganda_response += token
-                yield get_json_line(DanswerAnswerPiece(answer_piece=token).dict())
+                yield get_json_line(DanswerAnswerPiece(answer_piece=token).model_dump())
         except TranslationError as e:
             logger.error(f"Outbound translation failed: {e}")
-            yield get_json_line(StreamingError(error=e.user_message).dict())
+            yield get_json_line(StreamingError(error=e.user_message).model_dump())
             error = e.user_message
 
     # The answer stands, but it did not come from the model that was asked for.
@@ -226,5 +226,5 @@ def stream_chat_message(
     )
 
     yield get_json_line(
-        translate_db_message_to_chat_message_detail(gen_ai_response_message).dict()
+        translate_db_message_to_chat_message_detail(gen_ai_response_message).model_dump()
     )

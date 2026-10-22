@@ -82,7 +82,7 @@ def list_all_users(
         email_filter=email_filter,
     )
     return PaginatedUsers(
-        items=[UserRead.from_orm(user) for user in users],
+        items=[UserRead.model_validate(user) for user in users],
         total=total,
         page=page,
         page_size=page_size,

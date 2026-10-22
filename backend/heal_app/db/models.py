@@ -5,7 +5,7 @@ from typing import List
 from typing import Literal
 from typing import NotRequired
 from typing import Optional
-from typing import TypedDict
+from typing_extensions import TypedDict
 from uuid import UUID
 from uuid import uuid4
 

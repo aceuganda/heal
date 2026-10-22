@@ -2,7 +2,7 @@ import json
 from collections.abc import Iterator
 
 import requests
-from langchain.schema.language_model import LanguageModelInput
+from langchain_core.language_models import LanguageModelInput
 from requests import Timeout
 
 from heal_app.configs.model_configs import GEN_AI_API_ENDPOINT

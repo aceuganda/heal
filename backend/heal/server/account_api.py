@@ -118,18 +118,18 @@ async def change_own_password(
 
 class ProfileView(BaseModel):
     email: str
-    organisation: str | None
-    date_of_birth: datetime.date | None
-    sex: str | None
+    organisation: str | None = None
+    date_of_birth: datetime.date | None = None
+    sex: str | None = None
     sex_options: dict[str, str]
     # Level one: the person clicked the emailed link.
     email_verified: bool
     # Level two: an admin vouched for the account.
     admin_verified: bool
-    admin_verified_at: datetime.datetime | None
+    admin_verified_at: datetime.datetime | None = None
     chat_blocked: bool
     # Why the access policy refuses this account right now, or null.
-    access_blocked_reason: str | None
+    access_blocked_reason: str | None = None
 
 
 class ProfileUpdate(BaseModel):

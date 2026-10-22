@@ -3,7 +3,7 @@ from typing import Any
 from uuid import UUID
 
 from pydantic import BaseModel
-from pydantic import root_validator
+from pydantic import model_validator
 
 from heal_app.chat.models import RetrievalDocs
 from heal_app.configs.constants import DocumentSource
@@ -52,12 +52,10 @@ class ChatFeedbackRequest(BaseModel):
     is_positive: bool | None = None
     feedback_text: str | None = None
 
-    @root_validator
-    def check_is_positive_or_feedback_text(cls: BaseModel, values: dict) -> dict:
-        rating = values.get("rating")
-        is_positive, feedback_text = values.get("is_positive"), values.get(
-            "feedback_text"
-        )
+    @model_validator(mode="after")
+    def check_is_positive_or_feedback_text(self) -> "ChatFeedbackRequest":
+        rating = self.rating
+        is_positive, feedback_text = self.is_positive, self.feedback_text
 
         if rating is not None and not (MIN_RATING <= rating <= MAX_RATING):
             raise ValueError(f"rating must be between {MIN_RATING} and {MAX_RATING}")
@@ -65,7 +63,7 @@ class ChatFeedbackRequest(BaseModel):
         if rating is None and is_positive is None and feedback_text is None:
             raise ValueError("Empty feedback received.")
 
-        return values
+        return self
 
 
 class DocumentSearchRequest(BaseModel):
@@ -92,32 +90,30 @@ class CreateChatMessageRequest(BaseModel):
 
     chat_session_id: UUID
     # This is the primary-key (unique identifier) for the previous message of the tree
-    parent_message_id: int | None
+    parent_message_id: int | None = None
     # New message contents
     message: str
     # If no prompt provided, provide canned retrieval answer, no actually LLM flow
     # Use prompt_id 0 to use the system default prompt which is Answer-Question
-    prompt_id: int | None
+    prompt_id: int | None = None
     # If search_doc_ids provided, then retrieval options are unused
-    search_doc_ids: list[UUID] | None
-    retrieval_options: RetrievalDetails | None
+    search_doc_ids: list[UUID] | None = None
+    retrieval_options: RetrievalDetails | None = None
     # allows the caller to specify the exact search query they want to use
     # will disable Query Rewording if specified
     query_override: str | None = None
     language: str = "english"  # Default to English
 
-    @root_validator
-    def check_search_doc_ids_or_retrieval_options(cls: BaseModel, values: dict) -> dict:
-        search_doc_ids, retrieval_options = values.get("search_doc_ids"), values.get(
-            "retrieval_options"
-        )
+    @model_validator(mode="after")
+    def check_search_doc_ids_or_retrieval_options(self) -> "CreateChatMessageRequest":
+        search_doc_ids, retrieval_options = self.search_doc_ids, self.retrieval_options
 
         if search_doc_ids is None and retrieval_options is None:
             raise ValueError(
                 "Either search_doc_ids or retrieval_options must be provided, but not both or neither."
             )
 
-        return values
+        return self
 
 
 class ChatMessageIdentifier(BaseModel):
@@ -149,34 +145,32 @@ class SearchFeedbackRequest(BaseModel):
     document_id: str
     document_rank: int
     click: bool
-    search_feedback: SearchFeedbackType | None
+    search_feedback: SearchFeedbackType | None = None
 
-    @root_validator
-    def check_click_or_search_feedback(cls: BaseModel, values: dict) -> dict:
-        click, feedback = values.get("click"), values.get("search_feedback")
-
-        if click is False and feedback is None:
+    @model_validator(mode="after")
+    def check_click_or_search_feedback(self) -> "SearchFeedbackRequest":
+        if self.click is False and self.search_feedback is None:
             raise ValueError("Empty feedback received.")
 
-        return values
+        return self
 
 
 class ChatMessageDetail(BaseModel):
     message_id: int
-    parent_message: int | None
-    latest_child_message: int | None
+    parent_message: int | None = None
+    latest_child_message: int | None = None
     message: str
     language: str = "english"
-    luganda_message: str | None
-    rephrased_query: str | None
-    context_docs: RetrievalDocs | None
+    luganda_message: str | None = None
+    rephrased_query: str | None = None
+    context_docs: RetrievalDocs | None = None
     message_type: MessageType
     time_sent: datetime
     # Dict mapping citation number to db_doc_id
-    citations: dict[int, str] | None
+    citations: dict[int, str] | None = None
 
-    def dict(self, *args: list, **kwargs: dict[str, Any]) -> dict[str, Any]:  # type: ignore
-        initial_dict = super().dict(*args, **kwargs)  # type: ignore
+    def model_dump(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
+        initial_dict = super().model_dump(*args, **kwargs)
         initial_dict["time_sent"] = self.time_sent.isoformat()
         return initial_dict
 
@@ -203,7 +197,7 @@ class AdminSearchResponse(BaseModel):
 
 
 class DanswerAnswer(BaseModel):
-    answer: str | None
+    answer: str | None = None
 
 
 class TranslateChatMessagePayload(BaseModel):

@@ -1,7 +1,7 @@
 import abc
 from collections.abc import Iterator
 
-from langchain.schema.language_model import LanguageModelInput
+from langchain_core.language_models import LanguageModelInput
 
 from heal_app.utils.logger import setup_logger
 

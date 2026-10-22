@@ -5,9 +5,9 @@ from collections.abc import Iterator
 from functools import lru_cache
 from typing import cast
 
-from langchain.schema.messages import BaseMessage
-from langchain.schema.messages import HumanMessage
-from langchain.schema.messages import SystemMessage
+from langchain_core.messages import BaseMessage
+from langchain_core.messages import HumanMessage
+from langchain_core.messages import SystemMessage
 from sqlalchemy.orm import Session
 
 from heal_app.chat.models import CitationInfo

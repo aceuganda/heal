@@ -1,7 +1,7 @@
 from collections.abc import Iterator
 from typing import Any
 
-from langchain.schema.language_model import LanguageModelInput
+from langchain_core.language_models import LanguageModelInput
 
 from heal_app.configs.model_configs import GEN_AI_MAX_OUTPUT_TOKENS
 from heal_app.configs.model_configs import GEN_AI_MODEL_VERSION

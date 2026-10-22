@@ -1,8 +1,9 @@
 from typing import Any
 
 from pydantic import BaseModel
-from pydantic import root_validator
-from pydantic import validator
+from pydantic import ConfigDict
+from pydantic import field_validator
+from pydantic import model_validator
 
 from heal_app.auth.schemas import UserRole
 from heal_app.configs.constants import AuthType
@@ -67,8 +68,7 @@ class SlackBotTokens(BaseModel):
     bot_token: str
     app_token: str
 
-    class Config:
-        frozen = True
+    model_config = ConfigDict(frozen=True)
 
 
 class SlackBotConfigCreationRequest(BaseModel):
@@ -76,8 +76,8 @@ class SlackBotConfigCreationRequest(BaseModel):
     # in the future, `document_sets` will probably be replaced
     # by an optional `PersonaSnapshot` object. Keeping it like this
     # for now for simplicity / speed of development
-    document_sets: list[int] | None
-    persona_id: int | None  # NOTE: only one of `document_sets` / `persona_id` should be set
+    document_sets: list[int] | None = None
+    persona_id: int | None = None  # NOTE: only one of `document_sets` / `persona_id` should be set
     channel_names: list[str]
     respond_tag_only: bool = False
     # If no team members, assume respond in the channel to everyone
@@ -86,7 +86,8 @@ class SlackBotConfigCreationRequest(BaseModel):
     # list of user emails
     follow_up_tags: list[str] | None = None
 
-    @validator("answer_filters", pre=True)
+    @field_validator("answer_filters", mode="before")
+    @classmethod
     def validate_filters(cls, value: list[str]) -> list[str]:
         if any(test not in VALID_SLACK_FILTERS for test in value):
             raise ValueError(
@@ -94,17 +95,17 @@ class SlackBotConfigCreationRequest(BaseModel):
             )
         return value
 
-    @root_validator
+    @model_validator(mode="after")
     def validate_document_sets_and_persona_id(
-        cls, values: dict[str, Any]
-    ) -> dict[str, Any]:
-        if values.get("document_sets") and values.get("persona_id"):
+        self,
+    ) -> "SlackBotConfigCreationRequest":
+        if self.document_sets and self.persona_id:
             raise ValueError("Only one of `document_sets` / `persona_id` should be set")
 
-        return values
+        return self
 
 
 class SlackBotConfig(BaseModel):
     id: int
-    persona: PersonaSnapshot | None
+    persona: PersonaSnapshot | None = None
     channel_config: ChannelConfig

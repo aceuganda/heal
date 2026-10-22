@@ -18,21 +18,21 @@ class LlmDoc(BaseModel):
     content: str
     semantic_identifier: str
     source_type: DocumentSource
-    updated_at: datetime | None
-    link: str | None
+    updated_at: datetime | None = None
+    link: str | None = None
 
 
 # First chunk of info for streaming QA
 class QADocsResponse(RetrievalDocs):
     rephrased_query: str | None = None
-    predicted_flow: QueryFlow | None
-    predicted_search: SearchType | None
-    applied_source_filters: list[DocumentSource] | None
-    applied_time_cutoff: datetime | None
+    predicted_flow: QueryFlow | None = None
+    predicted_search: SearchType | None = None
+    applied_source_filters: list[DocumentSource] | None = None
+    applied_time_cutoff: datetime | None = None
     recency_bias_multiplier: float
 
-    def dict(self, *args: list, **kwargs: dict[str, Any]) -> dict[str, Any]:  # type: ignore
-        initial_dict = super().dict(*args, **kwargs)  # type: ignore
+    def model_dump(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
+        initial_dict = super().model_dump(*args, **kwargs)
         initial_dict["applied_time_cutoff"] = (
             self.applied_time_cutoff.isoformat() if self.applied_time_cutoff else None
         )
@@ -46,7 +46,7 @@ class LLMRelevanceFilterResponse(BaseModel):
 
 class DanswerAnswerPiece(BaseModel):
     # A small piece of a complete answer. Used for streaming back answers.
-    answer_piece: str | None  # if None, specifies the end of an Answer
+    answer_piece: str | None = None  # if None, specifies the end of an Answer
 
 
 # An intermediate representation of citations, later translated into
@@ -64,7 +64,7 @@ class DanswerQuote(BaseModel):
     # This is during inference so everything is a string by this point
     quote: str
     document_id: str
-    link: str | None
+    link: str | None = None
     source_type: str
     semantic_identifier: str
     blurb: str
@@ -75,11 +75,11 @@ class DanswerQuotes(BaseModel):
 
 
 class DanswerAnswer(BaseModel):
-    answer: str | None
+    answer: str | None = None
 
 
 class QAResponse(SearchResponse, DanswerAnswer):
-    quotes: list[DanswerQuote] | None
+    quotes: list[DanswerQuote] | None = None
     predicted_flow: QueryFlow
     predicted_search: SearchType
     eval_res_valid: bool | None = None

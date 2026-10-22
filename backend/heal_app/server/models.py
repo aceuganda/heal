@@ -3,13 +3,12 @@ from typing import Optional
 from typing import TypeVar
 
 from pydantic import BaseModel
-from pydantic.generics import GenericModel
 
 
 DataT = TypeVar("DataT")
 
 
-class StatusResponse(GenericModel, Generic[DataT]):
+class StatusResponse(BaseModel, Generic[DataT]):
     success: bool
     message: Optional[str] = None
     data: Optional[DataT] = None
