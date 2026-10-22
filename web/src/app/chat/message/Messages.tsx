@@ -1,10 +1,8 @@
 import {
   FiCheck,
-  FiActivity,
   FiChevronRight,
   FiCopy,
   FiGlobe,
-  FiMessageCircle,
   // FiCpu,
   FiThumbsDown,
   FiThumbsUp,
@@ -17,6 +15,8 @@ import { DanswerDocument } from "@/lib/search/interfaces";
 import { SearchSummary, ShowHideDocsButton } from "./SearchSummary";
 import { SourceIcon } from "@/components/SourceIcon";
 import { AnswerProgress } from "./AnswerProgress";
+import { DotMark } from "@/components/splash/DotMark";
+import { ThoughtCloudIcon } from "@/components/icons/icons";
 import { citationKeyFromHref, linkifyCitations } from "./citationMarkers";
 
 export const Hoverable: React.FC<{
@@ -75,6 +75,7 @@ export const AIMessage = ({
   handleSearchQueryEdit,
   messageIdTranslating,
   onCitationClick,
+  liveMark = false,
 }: {
   messageId: number | null;
   content: string | JSX.Element | null | undefined;
@@ -93,6 +94,9 @@ export const AIMessage = ({
   handleSearchQueryEdit?: (query: string) => void;
   messageIdTranslating?: number | null;
   onCitationClick?: (citationKey: string, document: DanswerDocument) => void;
+  /** Keep the avatar mark breathing. Only the newest answer gets this; the
+   *  rest assemble once and hold, so a long chat is not dozens of loops. */
+  liveMark?: boolean;
 }) => {
   const [copyClicked, setCopyClicked] = useState(false);
 
@@ -115,8 +119,16 @@ export const AIMessage = ({
       <div className="mx-auto w-full max-w-3xl">
         <div>
           <div className="flex">
-            <div className="flex h-7 w-7 items-center justify-center rounded-full border border-heal-teal-200 bg-heal-teal-50">
-              <FiActivity size={15} className="text-accent" aria-hidden="true" />
+            {/* The animated mark itself, no disc around it: it sits on the
+                page like the logo does on the splash. While an answer is
+                pending this is also the loading signal. */}
+            <div className="h-7 w-7 shrink-0" style={{ lineHeight: 0 }}>
+              <DotMark
+                loop={liveMark || isComplete === false}
+                role={isComplete === false ? "status" : "img"}
+                label={isComplete === false ? "Preparing your answer" : "Heal"}
+                fallbackSizePx={28}
+              />
             </div>
 
             <div className="font-bold text-emphasis ml-2 my-auto">Heal</div>
@@ -137,7 +149,10 @@ export const AIMessage = ({
               )} */}
           </div>
 
-          <div className="mt-1.5 max-w-2xl break-words rounded-2xl rounded-tl-md border border-border bg-background px-4 py-3 text-emphasis shadow-sm sm:ml-8">
+          {/* Translucent over the warm canvas with a white hairline edge: the
+              answer reads as a surface without a card's hard border or
+              shadow. */}
+          <div className="mt-1.5 max-w-2xl break-words rounded-2xl rounded-tl-md border border-white/70 bg-white/55 px-4 py-3 text-emphasis shadow-[0_1px_3px_rgba(31,41,51,0.03)] backdrop-blur-[1px] sm:ml-8">
             {query !== undefined &&
               handleShowRetrieved !== undefined &&
               isCurrentlyShowingRetrieved !== undefined && (
@@ -169,7 +184,9 @@ export const AIMessage = ({
                           return cited ? (
                             <InlineCitation
                               citationKey={citationKey}
-                              onClick={() => onCitationClick?.(citationKey, cited)}
+                              onClick={() =>
+                                onCitationClick?.(citationKey, cited)
+                              }
                             />
                           ) : (
                             <span>[{citationKey}]</span>
@@ -199,7 +216,7 @@ export const AIMessage = ({
               // An assistant message with no text yet: the answer is on its
               // way but nothing has streamed, which is exactly the silence
               // AnswerProgress exists to fill.
-              <AnswerProgress className="my-auto" />
+              <AnswerProgress className="my-auto" showMark={false} />
             )}
             {citedDocuments && citedDocuments.length > 0 && (
               <div className="mt-2">
@@ -215,14 +232,22 @@ export const AIMessage = ({
                           // guideline share it. Markers are unique per message.
                           key={citationKey}
                           type="button"
-                          onClick={() => onCitationClick?.(citationKey, document)}
+                          onClick={() =>
+                            onCitationClick?.(citationKey, document)
+                          }
                           className="group flex max-w-full items-center rounded-lg border border-border bg-background px-2.5 py-1.5 text-left text-xs text-emphasis transition-colors hover:border-heal-teal-200 hover:bg-hover-light"
                         >
-                          <SourceIcon sourceType={document.source_type} iconSize={15} />
+                          <SourceIcon
+                            sourceType={document.source_type}
+                            iconSize={15}
+                          />
                           <span className="ml-1.5 line-clamp-1">
                             [{citationKey}] {document.semantic_identifier}
                           </span>
-                          <FiChevronRight className="ml-1 shrink-0 text-subtle group-hover:text-accent" size={15} />
+                          <FiChevronRight
+                            className="ml-1 shrink-0 text-subtle group-hover:text-accent"
+                            size={15}
+                          />
                         </button>
                       );
                     })}
@@ -232,14 +257,17 @@ export const AIMessage = ({
           </div>
           {handleFeedback && (
             <div className="flex flex-col gap-y-1.5 items-start">
-              {language === 'luganda' && messageId && !luganda_message &&
+              {language === "luganda" && messageId && !luganda_message && (
                 <button
                   onClick={() => handleTranslation(messageId)}
                   className="ml-8 flex items-center gap-1 text-[10px] text-link"
                 >
                   <FiGlobe size={12} aria-hidden="true" />
-                  {messageIdTranslating && messageIdTranslating === messageId ? "translating..." : "Translate to Luganda"}
-                </button>}
+                  {messageIdTranslating && messageIdTranslating === messageId
+                    ? "translating..."
+                    : "Translate to Luganda"}
+                </button>
+              )}
               {/* Pulled close under the answer it belongs to: these controls
                   rate the message above them, and a wide gap makes them read
                   as belonging to whatever comes next. */}
@@ -277,7 +305,7 @@ export const HumanMessage = ({
   language,
   luganda_message,
   handleTranslation,
-  messageIdTranslating
+  messageIdTranslating,
 }: {
   id: number | null;
   content: string | JSX.Element | null | undefined;
@@ -291,14 +319,14 @@ export const HumanMessage = ({
       <div className="mx-auto w-full max-w-3xl">
         <div>
           <div className="flex">
-            <div className="flex h-7 w-7 items-center justify-center rounded-full border border-border bg-background-strong text-emphasis">
-              <FiMessageCircle size={15} aria-hidden="true" />
+            <div className="flex h-7 w-7 shrink-0 items-center justify-center text-default">
+              <ThoughtCloudIcon size={20} className="text-default" />
             </div>
 
             <div className="font-bold text-emphasis ml-2 my-auto">You</div>
           </div>
           <div className="mt-1.5 ml-8 flex flex-wrap">
-            <div className="max-w-2xl break-words rounded-2xl rounded-tl-md border border-heal-teal-100 bg-heal-teal-50/70 px-4 py-3 text-emphasis">
+            <div className="max-w-2xl break-words rounded-2xl rounded-tl-md border border-heal-teal-100/40 bg-heal-teal-50/35 px-4 py-3 text-emphasis">
               {typeof content === "string" ? (
                 <ReactMarkdown
                   className="prose max-w-full"
@@ -322,14 +350,17 @@ export const HumanMessage = ({
           </div>
         </div>
         <div className="flex flex-col gap-y-1.5 items-start">
-          {language === 'luganda' && id && !luganda_message &&
+          {language === "luganda" && id && !luganda_message && (
             <button
               onClick={() => handleTranslation(id)}
               className="ml-16 flex items-center gap-1 text-[10px] text-link"
             >
               <FiGlobe size={12} aria-hidden="true" />
-              {messageIdTranslating && messageIdTranslating === id ? "translating..." : "Translate to Luganda"}
-            </button>}
+              {messageIdTranslating && messageIdTranslating === id
+                ? "translating..."
+                : "Translate to Luganda"}
+            </button>
+          )}
         </div>
       </div>
     </div>

@@ -7,7 +7,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import React, { useEffect, useRef, useState } from "react";
 import { CustomDropdown, DefaultDropdownElement } from "./Dropdown";
-import { FiMenu, FiMessageSquare, FiSearch, FiUser, FiX } from "react-icons/fi";
+import { FiMenu, FiMessageSquare, FiSearch, FiX } from "react-icons/fi";
+import { UserAvatar } from "./avatar/UserAvatar";
 import { usePathname } from "next/navigation";
 
 interface HeaderProps {
@@ -81,7 +82,9 @@ export const Header: React.FC<HeaderProps> = ({ user }) => {
         {pathname.startsWith("/chat") && (
           <button
             type="button"
-            onClick={() => window.dispatchEvent(new Event("toggle-chat-sidebar"))}
+            onClick={() =>
+              window.dispatchEvent(new Event("toggle-chat-sidebar"))
+            }
             // self-center is what was missing: the header row is `flex h-16`
             // with the default stretch alignment, and an explicit h-9 on a
             // stretched item pins it to the TOP of the 64px row. On a phone
@@ -89,7 +92,9 @@ export const Header: React.FC<HeaderProps> = ({ user }) => {
             // meant to line up with. At sm the button goes back to filling
             // the row's height, so it stretches again there.
             className="ml-2 flex h-9 w-9 shrink-0 self-center items-center justify-center rounded-lg text-emphasis hover:bg-hover sm:ml-3 sm:h-full sm:w-auto sm:gap-2 sm:self-stretch sm:rounded-none sm:px-3"
-            aria-label={chatSidebarOpen ? "Close chat history" : "Open chat history"}
+            aria-label={
+              chatSidebarOpen ? "Close chat history" : "Open chat history"
+            }
             aria-pressed={chatSidebarOpen}
           >
             {chatSidebarOpen ? (
@@ -115,7 +120,10 @@ export const Header: React.FC<HeaderProps> = ({ user }) => {
           </div>
         </Link> */}
 
-        <Link href="/chat" className="hidden h-full flex-col hover:bg-hover sm:flex">
+        <Link
+          href="/chat"
+          className="hidden h-full flex-col hover:bg-hover sm:flex"
+        >
           <div className="w-24 flex my-auto">
             <div className="mx-auto flex text-strong px-2">
               <FiMessageSquare className="my-auto mr-1" />
@@ -153,10 +161,15 @@ export const Header: React.FC<HeaderProps> = ({ user }) => {
             >
               <div className="hover:bg-hover rounded-full p-1 w-fit">
                 <div
-                  className="flex h-8 w-8 items-center justify-center rounded-full border border-heal-teal-200 bg-heal-teal-50 text-accent"
-                  aria-label="Open account menu"
+                  className="flex"
+                  role="img"
+                  aria-label={
+                    user
+                      ? `Account menu for ${user.email}`
+                      : "Open account menu"
+                  }
                 >
-                  <FiUser size={15} aria-hidden="true" />
+                  <UserAvatar email={user?.email} />
                 </div>
               </div>
             </CustomDropdown>

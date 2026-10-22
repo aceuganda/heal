@@ -444,25 +444,27 @@ def collection_stats(
     # admin reading a panel that showed only the flag would believe rare drug
     # codes were being weighted when they were not.
     live_idf = collection_uses_idf(client, name) if exists else None
+    # Saved overrides included: this panel reports what retrieval runs on.
+    live = RetrievalSettings()
     return {
         "collection": name,
         "collection_exists": exists,
         "points": (getattr(info, "points_count", 0) or 0) if info else 0,
         "embedding_model": config.EMBEDDING_MODEL,
         "embedding_dim": config.EMBEDDING_DIM,
-        "hybrid_search": config.HYBRID_SEARCH,
-        "hybrid_alpha": config.HYBRID_ALPHA,
+        "hybrid_search": live.hybrid_search,
+        "hybrid_alpha": live.hybrid_alpha,
         "sparse_idf_configured": config.SPARSE_IDF,
         "sparse_idf_active": live_idf,
         "sparse_idf_needs_reingest": bool(config.SPARSE_IDF and live_idf is False),
-        "retrieval_top_k": config.RETRIEVAL_TOP_K,
-        "context_top_k": config.CONTEXT_TOP_K,
-        "min_retrieval_score": config.MIN_RETRIEVAL_SCORE,
+        "retrieval_top_k": live.retrieval_top_k,
+        "context_top_k": live.context_top_k,
+        "min_retrieval_score": live.min_retrieval_score,
         # True whenever the floor is being applied to a score distribution it
         # was never derived against. Both halves are unmeasured today, so this
         # is honest rather than alarming -- but it has to be visible.
         "min_retrieval_score_unvalidated": True,
-        "max_chunks_per_source": config.MAX_CHUNKS_PER_SOURCE,
+        "max_chunks_per_source": live.max_chunks_per_source,
     }
 
 

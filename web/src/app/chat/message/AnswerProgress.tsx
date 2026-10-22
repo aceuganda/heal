@@ -102,7 +102,15 @@ function useTypedStep(reduced: boolean): string {
   return reduced ? STEPS[step] : STEPS[step].slice(0, typed);
 }
 
-export const AnswerProgress = ({ className }: { className?: string }) => {
+export const AnswerProgress = ({
+  className,
+  showMark = true,
+}: {
+  className?: string;
+  /** False where the mark is already on screen beside this, as the chat
+   *  answer's own animated avatar. */
+  showMark?: boolean;
+}) => {
   const reduced = usePrefersReducedMotion();
   const text = useTypedStep(reduced);
 
@@ -111,7 +119,7 @@ export const AnswerProgress = ({ className }: { className?: string }) => {
       {/* Smaller than the loader it replaced (2.5rem): the mark carries more
           detail than the old pulse did, so it holds the eye harder at the same
           size, and the status text beside it is what should be read first. */}
-      <DotMarkLoader size="2rem" label="Preparing your answer" />
+      {showMark && <DotMarkLoader size="2rem" label="Preparing your answer" />}
       {/* aria-live is off: the loader beside it already announces a busy
           state, and reading five rotating steps aloud would be noise rather
           than information. */}

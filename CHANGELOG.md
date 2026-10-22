@@ -22,6 +22,18 @@ the first pilot release.
 
 ### Added
 
+- **Retrieval settings can be saved from the admin playground too.** The
+  score floor, hybrid search and its weight, the candidate and context top-k,
+  and the per-source cap now save with **Save changes**, like
+  the wording knobs, instead of showing an env line to set followed by an API
+  restart. They are not secrets. A saved value reaches every chat from the next
+  message onwards. The `HEAL_*` environment variables stay the default
+  underneath, and clearing a knob goes back to them. Every save is audited, and
+  the confirm dialog warns that a retrieval change affects whether a dose is
+  quoted at all. The knowledge search tool and the collection panel now report
+  the live values, saved ones included. Requires a migration (`a7c3e91d5b20`,
+  additive: six nullable columns on `model_settings`).
+
 - **Change your own password** at Admin → User Management → Your password (`/admin/account`), backed by `POST /api/manage/me/password`. It needs the current password, refuses fewer than 8 characters, an unchanged password, common ones and the account's own email, and signs out every other session of the account. Meant first for the bootstrap administrator, whose initial password came from an env file.
 - **Show/hide toggle on password fields**, including the login and sign-up forms.
 
@@ -94,7 +106,7 @@ the first pilot release.
 - **Model settings can now be saved from the admin playground instead of living
   only in environment variables.** Temperature, top-p, the token ceiling, the
   new verbosity level, and the default chat and classifier models can be tuned
-  on the playground and then kept with **Save as deployment default** — no
+  on the playground and then kept with **Save changes** — no
   redeploy, no restart. What an admin saves is what every chat user gets from
   the next message onwards; a health worker does not choose a model, and now an
   operator can.
@@ -110,12 +122,7 @@ the first pilot release.
   values, and "why did the answers get shorter last Tuesday" has to be
   answerable.
 
-  **The retrieval knobs are deliberately not saveable.** The score floor
-  decides whether a dose may be quoted at all. It is a clinical-safety
-  parameter set from measured results on the eval set, so it stays in the
-  deployment's environment where changing it is a reviewed act; the playground
-  still tunes it per-run and still prints the env line that would make it
-  permanent. Requires a migration (`f3b6d20c47a1`).
+  Requires a migration (`f3b6d20c47a1`).
 
 - **Verbosity: brief, standard or detailed.** A named answer length rather than
   a token number. Each level puts a length instruction in the prompt, so the
@@ -144,6 +151,29 @@ the first pilot release.
   read at all.
 
 ### Fixed
+
+- **An answer no longer fails at the last moment and only shows up after a
+  reload.** The final line of the chat stream carries the cited passages, and
+  each one has a UUID id. Python's JSON encoder refused that id, so the stream
+  broke after the answer had already been saved. The browser reported
+  `ERR_INCOMPLETE_CHUNKED_ENCODING` and a network error. Streamed lines now use
+  pydantic's encoder.
+
+- **Luganda translation works with the current translation services.** Both
+  BentoML services now take `POST /translate/stream` with `{"text": ...}` and
+  stream JSON events (`token`, then `done`). Heal was still sending
+  `{"prompt", "stream"}` to `/generate`, which returned 404 for Luganda. Both
+  directions now use the streaming route, and an SSE line split across network
+  chunks is no longer dropped. The `TRANSLATION_EN_URL` and
+  `TRANSLATION_LUG_URL` base URLs are unchanged. A translation failure is now
+  a 503 with a sentence the screen shows, not a bare 500.
+
+- **Chat errors read as sentences, not exceptions.** A health worker no longer
+  sees `Unexpected token 'I', "Internal S"... is not valid JSON` or a bare
+  `network error`. Heal now tells them whether it could not be reached, or
+  whether the answer was cut off part way (refresh to see if it was saved).
+  Failed translations and feedback get a message too, where before they failed
+  silently or with a parser error.
 
 - **Kubernetes: the API server now reads its database credentials from `heal-secrets`.** It previously fell back to the built-in default password, so any real password set in the secret broke the connection. The LLM provider key also moved from the ConfigMap to the secret (`gen_ai_api_key`, optional).
 
@@ -215,6 +245,26 @@ the first pilot release.
   top-p slider measured nothing.
 
 ### Changed
+
+- **Heal's answers carry the animated mark and sit softly on the page.** The
+  avatar on each answer is now the dot-drawn Heal mark from the splash, with
+  no circle around it. While an answer is being prepared, the mark is the
+  loading signal (the separate loader beside the status text is gone there).
+  Only the newest answer keeps breathing; older ones assemble once and hold
+  still, so a long chat is not dozens of animation loops on a low-end phone.
+  Answer and question bubbles are now translucent over the warm canvas, with a
+  faint edge and no hard border or card shadow.
+  A question is marked with a plain thought-cloud icon instead of a speech
+  icon in a circle. The account button in the header is now the first letter
+  of the person's email on a reddish gradient, and the account row at the foot
+  of the chat sidebar uses a settings icon. The gradient is seeded from the email, so each person keeps the
+  same colours everywhere.
+
+- **The "backend unavailable" banner speaks to users, not operators.** It
+  now reads "Heal is temporarily unavailable. Please try again in a few
+  minutes. If the problem continues, contact your administrator." The old text
+  named Danswer and talked about deployments and backend setup, which meant
+  nothing to a health worker.
 
 - **Kubernetes volume sizes for the pilot:** Postgres 10 GiB (was 1), app
   storage `dynamic-pvc` 5 GiB (was 1), in-cluster registry 20 GiB. k3s's

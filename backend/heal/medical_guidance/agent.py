@@ -199,7 +199,6 @@ class MedicalGuidanceAgent:
         """
         outcome = self.store.search(
             understanding.query,
-            limit=config.CONTEXT_TOP_K,
             lexical_query=understanding.lexical_query,
         )
         if outcome.unavailable:

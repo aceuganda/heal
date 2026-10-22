@@ -82,31 +82,41 @@ export interface PlaygroundOptions {
 
 /**
  * The knobs that can be SAVED as the deployment's default, as opposed to tried
- * for one run.
- *
- * Only the wording ones and the model choice. The retrieval knobs are absent
- * deliberately: the score floor decides whether a dose may be quoted at all,
- * it is set from measured results on the clinical eval set, and it stays in
- * the environment where changing it is a reviewed act rather than a slider and
- * a save button. The server enforces this too — this list only keeps the
- * screen from offering something that would be refused.
+ * for one run: wording and retrieval alike. The model choice is saved too, but
+ * travels separately (see savePayload).
  */
 export const SAVEABLE = [
   "temperature",
   "max_output_tokens",
   "top_p",
   "verbosity",
+  "min_retrieval_score",
+  "hybrid_alpha",
+  "hybrid_search",
+  "retrieval_top_k",
+  "context_top_k",
+  "max_chunks_per_source",
 ] as const;
 
 export type SaveableName = (typeof SAVEABLE)[number];
+
+/** The saveable knobs that decide what an answer may quote, not how it reads. */
+export const RETRIEVAL_NAMES: readonly string[] = [
+  "min_retrieval_score",
+  "hybrid_alpha",
+  "hybrid_search",
+  "retrieval_top_k",
+  "context_top_k",
+  "max_chunks_per_source",
+];
 
 export function isSaveable(name: string): name is SaveableName {
   return (SAVEABLE as readonly string[]).includes(name);
 }
 
 /**
- * The body for a save: the wording knobs that differ from what is deployed,
- * plus either model picker that has been pointed somewhere else.
+ * The body for a save: the knobs that differ from what is deployed, plus
+ * either model picker that has been pointed somewhere else.
  *
  * A key that is absent means "leave it alone", which is why nothing unchanged
  * is included — saving all of them would record a deliberate choice for knobs
@@ -118,8 +128,8 @@ export function savePayload(
   defaults: TunableValues,
   chatModel: string,
   classifierModel: string
-): Record<string, number | string> {
-  const body: Record<string, number | string> = {};
+): Record<string, number | string | boolean> {
+  const body: Record<string, number | string | boolean> = {};
   for (const name of SAVEABLE) {
     if (isOverridden(values[name], defaults[name])) {
       body[name] = values[name];
@@ -215,7 +225,7 @@ export interface Tunable {
   /** Floats need a tolerance when compared; the k values do not. */
   float: boolean;
   stage: "retrieval" | "generation";
-  /** Set this in the environment to make the value the default for all chats. */
+  /** The environment variable this knob falls back to when nothing is saved. */
   envVar: string;
 }
 
@@ -398,4 +408,27 @@ export function clampToBounds(
 ): number {
   if (!bounds) return value;
   return Math.max(bounds[0], Math.min(bounds[1], value));
+}
+
+const SETTING_LABELS: Record<string, string> = {
+  chat_model: "Chat model",
+  classifier_model: "Classifier",
+  verbosity: "Verbosity",
+  hybrid_search: "Hybrid search",
+};
+
+/** The name a person reads for a setting, as the controls label it. */
+export function settingLabel(name: string): string {
+  return (
+    SETTING_LABELS[name] ??
+    NUMERIC_TUNABLES.find((t) => t.name === name)?.label ??
+    name.replace(/_/g, " ")
+  );
+}
+
+/** A setting's value as text; a switch reads "on"/"off", not "true". */
+export function formatSetting(value: unknown): string {
+  if (typeof value === "boolean") return value ? "on" : "off";
+  if (value === null || value === undefined || value === "") return "—";
+  return String(value);
 }

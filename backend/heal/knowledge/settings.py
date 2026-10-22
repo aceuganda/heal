@@ -1,23 +1,24 @@
 """Retrieval tuning as a value, not as global state.
 
-Every constant here also exists in `heal/config.py`, read from the environment
-once at import. That is right for a deployment: the live chat path a health
-worker uses must behave the same for every concurrent conversation, and the
-only way to change it is a restart with a different environment.
+Every knob here defaults to `heal.llm.defaults.effective()`: the environment
+(`heal/config.py`), with any value an admin saved from the playground applied
+over it. So a saved score floor reaches the live chat path, not only the screen
+that set it, and a deployment with nothing saved behaves exactly as its
+environment says.
 
-It is wrong for an admin who wants to try a different score floor. Writing the
-module constant -- even "temporarily", even under a lock -- changes the clinical
-behaviour of every conversation running at that moment, with nothing in the
-audit trail to say why an answer differed. So the tunables are lifted into a
-frozen value that travels as an argument instead:
+What must never happen is a per-run experiment leaking into other
+conversations. Writing a module constant -- even "temporarily", even under a
+lock -- changes the clinical behaviour of every conversation running at that
+moment, with nothing in the audit trail to say why an answer differed. So the
+tunables are a frozen value that travels as an argument instead:
 
-  * `RetrievalSettings()` with no arguments reads today's config, so the live
-    path passes nothing and behaves exactly as it did before this existed.
+  * `RetrievalSettings()` with no arguments reads the deployment defaults, so
+    the live path passes nothing.
   * `resolve()` builds one from client-supplied overrides, clamping each into a
     range the pipeline can actually honour, and reports what it did.
 
-The defaults are read at construction, not at import, so a test that
-monkeypatches `config.MIN_RETRIEVAL_SCORE` still steers the store.
+Defaults are read at construction, not at import, so a test that monkeypatches
+`config.MIN_RETRIEVAL_SCORE` still steers the store.
 """
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -25,7 +26,12 @@ from dataclasses import field
 from dataclasses import fields
 from typing import Any
 
-from heal import config
+from heal.llm import defaults
+
+
+def _default(name: str) -> Any:
+    """One knob's deployment default, saved value first, environment behind it."""
+    return defaults.effective()[name]
 
 
 @dataclass(frozen=True)
@@ -37,14 +43,14 @@ class RetrievalSettings:
     """
 
     min_retrieval_score: float = field(
-        default_factory=lambda: config.MIN_RETRIEVAL_SCORE
+        default_factory=lambda: _default("min_retrieval_score")
     )
-    hybrid_alpha: float = field(default_factory=lambda: config.HYBRID_ALPHA)
-    hybrid_search: bool = field(default_factory=lambda: config.HYBRID_SEARCH)
-    retrieval_top_k: int = field(default_factory=lambda: config.RETRIEVAL_TOP_K)
-    context_top_k: int = field(default_factory=lambda: config.CONTEXT_TOP_K)
+    hybrid_alpha: float = field(default_factory=lambda: _default("hybrid_alpha"))
+    hybrid_search: bool = field(default_factory=lambda: _default("hybrid_search"))
+    retrieval_top_k: int = field(default_factory=lambda: _default("retrieval_top_k"))
+    context_top_k: int = field(default_factory=lambda: _default("context_top_k"))
     max_chunks_per_source: int = field(
-        default_factory=lambda: config.MAX_CHUNKS_PER_SOURCE
+        default_factory=lambda: _default("max_chunks_per_source")
     )
 
     @property
@@ -68,8 +74,7 @@ BOUNDS: dict[str, tuple[float, float]] = {
     "max_chunks_per_source": (1, 50),
 }
 
-# The environment variable each knob is set from, so the playground can say how
-# to make a value that worked the default for every chat.
+# The environment variable each knob falls back to when nothing is saved.
 ENV_VARS: dict[str, str] = {
     "min_retrieval_score": "HEAL_MIN_RETRIEVAL_SCORE",
     "hybrid_alpha": "HEAL_HYBRID_ALPHA",

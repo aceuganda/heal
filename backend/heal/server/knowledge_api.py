@@ -30,6 +30,7 @@ from heal.knowledge import jobs
 from heal.knowledge.ingest import reference_ingest
 from heal.knowledge.ingest import set_approval
 from heal.knowledge.ingest import supersede
+from heal.knowledge.settings import RetrievalSettings
 from heal.knowledge.store import collection_stats
 from heal.knowledge.store import delete_source
 from heal.knowledge.store import ensure_collection
@@ -346,18 +347,20 @@ def test_search(
     """
     _enabled()
     store = QdrantKnowledgeStore()
+    # The deployment's live values, saved overrides included.
+    settings = RetrievalSettings()
     try:
-        candidates = store.candidates(query)
+        candidates = store.candidates(query, settings=settings)
     except Exception as exc:  # noqa: BLE001
         return SearchResponse(
             query=query,
             hits=[],
-            min_retrieval_score=config.MIN_RETRIEVAL_SCORE,
+            min_retrieval_score=settings.min_retrieval_score,
             unavailable=True,
             error=type(exc).__name__,
         )
 
-    floor = config.MIN_RETRIEVAL_SCORE
+    floor = settings.min_retrieval_score
     hits = [
         SearchHit(
             title=c.source.title,
@@ -368,7 +371,7 @@ def test_search(
             sparse_score=round(c.sparse_score, 4),
             above_floor=c.score >= floor,
         )
-        for c in candidates[: config.RETRIEVAL_TOP_K]
+        for c in candidates[: settings.retrieval_top_k]
     ]
     best = max((c.score for c in candidates), default=0.0)
     return SearchResponse(

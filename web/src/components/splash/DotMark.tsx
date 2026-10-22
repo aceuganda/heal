@@ -11,6 +11,7 @@ import {
   jitterOffset,
   pulseFactor,
   seededUnit,
+  DRAW_DURATION_MS,
   settleProgress,
   toRgbString,
 } from "./dotAnimation";
@@ -41,6 +42,11 @@ interface DotMarkProps {
    *  is rendered much smaller than the splash's 5.75rem, so the first frame
    *  is not drawn at four times its final size. */
   fallbackSizePx?: number;
+  /** Keep breathing after the mark assembles (the default). False assembles
+   *  once and then holds still, for places that show many marks at once --
+   *  every answer in a chat -- where one animation loop each would add up on
+   *  a low-end phone. */
+  loop?: boolean;
 }
 
 /**
@@ -64,8 +70,18 @@ export function DotMark({
   label = "Heal",
   role = "img",
   fallbackSizePx = DEFAULT_FALLBACK_SIZE_PX,
+  loop = true,
 }: DotMarkProps = {}) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  // Read through refs so a change of `loop` (an answer that is no longer the
+  // newest) holds or resumes the running mark instead of reassembling it.
+  const loopRef = useRef(loop);
+  const resumeRef = useRef<() => void>(() => {});
+
+  useEffect(() => {
+    loopRef.current = loop;
+    if (loop) resumeRef.current();
+  }, [loop]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -82,6 +98,9 @@ export function DotMark({
     let size = fallbackSizePx;
     let frame = 0;
     let cancelled = false;
+    // Set once a non-looping mark has assembled: from then on it is drawn
+    // settled, at this moment's colours, and never again animated.
+    let heldAt: number | null = null;
 
     // The canvas is square (see africaDots.ts: x and y are each normalised
     // over the mark's own bounding box, which is near-enough square that the
@@ -97,7 +116,7 @@ export function DotMark({
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     };
 
-    const draw = (elapsedMs: number) => {
+    const draw = (elapsedMs: number, still = false) => {
       ctx.clearRect(0, 0, size, size);
 
       for (let i = 0; i < AFRICA_DOTS.length; i++) {
@@ -110,7 +129,9 @@ export function DotMark({
         let alpha = 1;
         let colorTime = 0;
 
-        if (!reduceMotion) {
+        if (still) {
+          colorTime = elapsedMs;
+        } else if (!reduceMotion) {
           const delay = dotDelayMs(i, AFRICA_DOTS.length);
           const settle = settleProgress(elapsedMs, delay);
           const [jx, jy] = jitterOffset(i);
@@ -152,7 +173,8 @@ export function DotMark({
     if (typeof ResizeObserver !== "undefined") {
       observer = new ResizeObserver(() => {
         resize();
-        draw(reduceMotion ? 0 : performance.now() - start);
+        if (heldAt !== null) draw(heldAt, true);
+        else draw(reduceMotion ? 0 : performance.now() - start);
       });
       observer.observe(canvas);
     }
@@ -160,10 +182,21 @@ export function DotMark({
     if (!reduceMotion) {
       const tick = (now: number) => {
         if (cancelled) return;
-        draw(now - start);
+        const elapsed = now - start;
+        if (!loopRef.current && elapsed >= DRAW_DURATION_MS) {
+          heldAt = elapsed;
+          draw(heldAt, true);
+          return;
+        }
+        draw(elapsed);
         frame = requestAnimationFrame(tick);
       };
       frame = requestAnimationFrame(tick);
+      resumeRef.current = () => {
+        if (cancelled || heldAt === null) return;
+        heldAt = null;
+        frame = requestAnimationFrame(tick);
+      };
     }
 
     return () => {

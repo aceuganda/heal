@@ -855,6 +855,15 @@ class ModelSettings(Base):
     chat_model: Mapped[str | None] = mapped_column(String, nullable=True)
     classifier_model: Mapped[str | None] = mapped_column(String, nullable=True)
 
+    # Retrieval knobs (heal/knowledge/settings.py). The score floor decides
+    # whether a dose may be quoted at all, so a save is audited like any other.
+    min_retrieval_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    hybrid_alpha: Mapped[float | None] = mapped_column(Float, nullable=True)
+    hybrid_search: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    retrieval_top_k: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    context_top_k: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    max_chunks_per_source: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
     updated_at: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
@@ -883,5 +892,18 @@ class ModelSettings(Base):
         CheckConstraint(
             "verbosity IS NULL OR verbosity IN ('brief', 'standard', 'detailed')",
             name="model_settings_verbosity_known",
+        ),
+        *(
+            CheckConstraint(
+                f"{name} IS NULL OR ({name} >= {low} AND {name} <= {high})",
+                name=f"model_settings_{name}_range",
+            )
+            for name, low, high in (
+                ("min_retrieval_score", 0, 1),
+                ("hybrid_alpha", 0, 1),
+                ("retrieval_top_k", 1, 200),
+                ("context_top_k", 1, 50),
+                ("max_chunks_per_source", 1, 50),
+            )
         ),
     )

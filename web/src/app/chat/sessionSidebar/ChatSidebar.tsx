@@ -6,8 +6,8 @@ import {
   FiMoreHorizontal,
   FiPlusSquare,
   FiSearch,
+  FiSettings,
   FiTool,
-  FiUser,
 } from "react-icons/fi";
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
@@ -18,7 +18,6 @@ import { BasicClickable, BasicSelectable } from "@/components/BasicClickable";
 import { ChatSessionDisplay } from "./SessionDisplay";
 import { ChatSession } from "../interfaces";
 import { groupSessionsByDateRange, SESSION_GROUPS } from "./sessionGrouping";
-
 
 interface ChatSidebarProps {
   existingChats: ChatSession[];
@@ -70,7 +69,8 @@ export const ChatSidebar = ({
     const toggleSidebar = () => setIsSidebarOpen((isOpen) => !isOpen);
     window.addEventListener("toggle-chat-sidebar", toggleSidebar);
 
-    return () => window.removeEventListener("toggle-chat-sidebar", toggleSidebar);
+    return () =>
+      window.removeEventListener("toggle-chat-sidebar", toggleSidebar);
   }, []);
 
   // Mirrors open state back to the header's toggle button, which owns the
@@ -194,8 +194,8 @@ export const ChatSidebar = ({
                 onClick={() => setUserInfoVisible(!userInfoVisible)}
                 className="flex h-8"
               >
-                <div className="my-auto mr-2 flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-heal-teal-200 bg-heal-teal-50 text-accent">
-                  <FiUser size={15} aria-hidden="true" />
+                <div className="my-auto mr-2 flex h-8 w-8 shrink-0 items-center justify-center text-default">
+                  <FiSettings size={17} aria-hidden="true" />
                 </div>
                 <p className="my-auto">
                   {user ? user.email : "Anonymous Possum"}

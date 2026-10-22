@@ -4,6 +4,7 @@ import {
   Filters,
 } from "@/lib/search/interfaces";
 import { handleStream } from "@/lib/search/streamingUtils";
+import { ChatRequestError, errorDetail } from "./errors";
 import { FeedbackType } from "./types";
 import { RefObject } from "react";
 import {
@@ -58,7 +59,7 @@ export async function* sendMessage({
   filters,
   selectedDocumentIds,
   queryOverride,
-  language
+  language,
 }: SendMessageRequest) {
   const documentsAreSelected =
     selectedDocumentIds && selectedDocumentIds.length > 0;
@@ -75,22 +76,25 @@ export async function* sendMessage({
       search_doc_ids: documentsAreSelected ? selectedDocumentIds : null,
       retrieval_options: !documentsAreSelected
         ? {
-          run_search:
-            promptId === null || promptId === undefined || queryOverride
-              ? "always"
-              : "auto",
-          real_time: true,
-          filters: filters,
-        }
+            run_search:
+              promptId === null || promptId === undefined || queryOverride
+                ? "always"
+                : "auto",
+            real_time: true,
+            filters: filters,
+          }
         : null,
       query_override: queryOverride,
-      language: language
+      language: language,
     }),
   });
   if (!sendMessageResponse.ok) {
-    const errorJson = await sendMessageResponse.json();
-    const errorMsg = errorJson.message || errorJson.detail || "";
-    throw Error(`Failed to send message - ${errorMsg}`);
+    throw new ChatRequestError(
+      await errorDetail(
+        sendMessageResponse,
+        "Heal could not answer that just now. Please try again."
+      )
+    );
   }
 
   yield* handleStream<
@@ -161,9 +165,7 @@ export async function fetchReferenceGloss(
   }
 }
 
-export async function handleLugandaTranslation(
-  messageId: number
-) {
+export async function handleLugandaTranslation(messageId: number) {
   const response = await fetch("/api/chat/translate-chat-message", {
     method: "POST",
     headers: {
@@ -227,8 +229,8 @@ export function handleAutoScroll(
   if (endRef && endRef.current && scrollableRef && scrollableRef.current) {
     if (
       scrollableRef.current.scrollHeight -
-      scrollableRef.current.scrollTop -
-      buffer <=
+        scrollableRef.current.scrollTop -
+        buffer <=
       scrollableRef.current.clientHeight
     ) {
       endRef.current.scrollIntoView({ behavior: "smooth" });
@@ -352,11 +354,11 @@ export function processRawChatHistory(rawMessages: BackendMessage[]) {
         // this is identical to what is computed at streaming time
         ...(messageInfo.message_type === "assistant"
           ? {
-            retrievalType: retrievalType,
-            query: messageInfo.rephrased_query,
-            documents: messageInfo?.context_docs?.top_documents || [],
-            citations: messageInfo?.citations || {},
-          }
+              retrievalType: retrievalType,
+              query: messageInfo.rephrased_query,
+              documents: messageInfo?.context_docs?.top_documents || [],
+              citations: messageInfo?.citations || {},
+            }
           : {}),
       };
     });

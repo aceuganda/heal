@@ -23,6 +23,16 @@ Ask questions in Luganda or english, and Heal will understand.
 How It Works:
 Simply input your question, and Heal will retrieve relevant information from trusted private sources, helping medical personnel make informed decisions swiftly and accurately.
 
+<h3>Architecture</h3>
+
+`make up` starts five containers on one Docker Compose network:
+
+<img width="100%" alt="Heal Docker Compose architecture" src="docs/architecture/docker-compose.png">
+
+The browser talks only to nginx, which sends `/api/*` (prefix stripped) to the FastAPI `api_server` and everything else to the Next.js `web_server`. The `api_server` keeps accounts and chats in Postgres, retrieves knowledge from Qdrant, and calls the Luganda/English translation services and the chat model (cloud, or a self-hosted vLLM endpoint with cloud fallback), all configured by env var.
+
+To regenerate the diagram after editing its source: `dot -Tpng -Gdpi=144 docs/architecture/docker-compose.dot -o docs/architecture/docker-compose.png`
+
 <h3>Screenshots </h3>
 <img width="1438" alt="Screenshot 2024-04-28 at 12 44 04" src="https://github.com/aceuganda/heal/assets/69305400/eeb79f2a-9454-44c9-b9a5-ea4475194271">
 <img width="343" alt="Screenshot 2024-04-28 at 12 14 40" src="https://github.com/aceuganda/heal/assets/69305400/cbb9681e-54e6-4695-b311-9a3b224675d6">

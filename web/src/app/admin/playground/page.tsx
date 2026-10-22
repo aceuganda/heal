@@ -20,19 +20,13 @@
 
 import { useMemo, useState } from "react";
 import useSWR from "swr";
-import {
-  Badge,
-  Button,
-  Card,
-  Text,
-  TextInput,
-  Title,
-} from "@tremor/react";
+import { Badge, Button, Card, Text, TextInput, Title } from "@tremor/react";
 import { LoadingButton } from "@/components/LoadingButton";
 import { AdminPageTitle } from "@/components/admin/Title";
 import { usePopup } from "@/components/admin/connectors/Popup";
 import { ZoomInIcon } from "@/components/icons/icons";
 import { fetcher } from "@/lib/fetcher";
+import { ConfirmSettingsDialog, SettingChange } from "./ConfirmSettingsDialog";
 
 import {
   appliedFloor,
@@ -42,13 +36,16 @@ import {
   floorLineAfter,
   formatMs,
   formatScore,
+  formatSetting,
   isOverridden,
   isSaveable,
   NUMERIC_TUNABLES,
   overridesFor,
   PlaygroundOptions,
   PlaygroundResult,
+  RETRIEVAL_NAMES,
   savePayload,
+  settingLabel,
   shortfall,
   TunableValues,
 } from "./lib";
@@ -178,7 +175,9 @@ function NumberKnob({
           // Clamped here as well as on the server. The server is the authority
           // — this only stops the slider rendering off its own track while the
           // number is being typed.
-          onChange={(e) => onChange(clampToBounds(Number(e.target.value), bounds))}
+          onChange={(e) =>
+            onChange(clampToBounds(Number(e.target.value), bounds))
+          }
           className="w-20 rounded border border-border px-2 py-1 text-sm"
         />
         {moved && (
@@ -323,13 +322,11 @@ function ScopeNotice() {
         unchanged by anything you try here.
       </Text>
       <Text className="mt-2">
-        The exception is <b>Save as deployment default</b>, which is the one
-        action on this page that outlives its request: it changes how every
-        subsequent answer is worded, immediately, for everybody. Only the
-        wording settings and the model choice can be saved. The retrieval
-        settings stay per-run — the score floor decides whether a dose may be
-        quoted at all, so it is changed in the deployment&rsquo;s environment
-        against measured results, not from a slider.
+        The exception is <b>Save changes</b>, which is the one action on this
+        page that outlives its request: it changes how every subsequent answer
+        is worded and retrieved, immediately, for everybody. Every save is
+        audited. Be deliberate with the retrieval settings: the score floor
+        decides whether a dose may be quoted at all.
       </Text>
     </Card>
   );
@@ -368,6 +365,16 @@ function DeploymentDefaults({
       label: "Token ceiling",
       value: String(options.defaults.max_output_tokens),
     },
+    {
+      name: "hybrid_search",
+      label: "Hybrid search",
+      value: options.defaults.hybrid_search ? "on" : "off",
+    },
+    ...NUMERIC_TUNABLES.filter((t) => t.stage === "retrieval").map((t) => ({
+      name: t.name,
+      label: t.label,
+      value: String(options.defaults[t.name]),
+    })),
   ];
   const saved = rows.filter((r) => options.sources[r.name] === "saved");
 
@@ -385,7 +392,9 @@ function DeploymentDefaults({
         {saved.length === 0
           ? "Every value is the deployment’s environment. Nothing has been overridden from this screen."
           : `Saved values override the environment until they are cleared${
-              options.updated_by ? `. Last changed by ${options.updated_by}` : ""
+              options.updated_by
+                ? `. Last changed by ${options.updated_by}`
+                : ""
             }${
               options.updated_at
                 ? ` on ${new Date(options.updated_at).toLocaleString()}`
@@ -443,7 +452,9 @@ function SettingsUsed({ result }: { result: PlaygroundResult }) {
 
   return (
     <Card
-      className={`mb-4 ${changed.length ? "border-l-4 border-l-amber-500" : ""}`}
+      className={`mb-4 ${
+        changed.length ? "border-l-4 border-l-amber-500" : ""
+      }`}
     >
       <div className="flex items-baseline gap-3">
         <Title>Settings this run used</Title>
@@ -518,7 +529,9 @@ function UnderstandingPanel({ result }: { result: PlaygroundResult }) {
           <div className="text-xs uppercase tracking-wide text-heal-ink-500">
             Rewritten for search
           </div>
-          <p className="mt-1 text-sm font-medium text-heal-ink-900">{u.query}</p>
+          <p className="mt-1 text-sm font-medium text-heal-ink-900">
+            {u.query}
+          </p>
           {!u.rewritten && (
             <p className="mt-1 text-xs text-error">
               The rewrite was not used{u.error ? ` (${u.error})` : ""} — the
@@ -614,7 +627,8 @@ function CandidatesPanel({ result }: { result: PlaygroundResult }) {
   const floor = appliedFloor(result);
   const lineAfter = floorLineAfter(result.candidates);
   const allBelow =
-    result.candidates.length > 0 && result.candidates.every((c) => !c.passed_floor);
+    result.candidates.length > 0 &&
+    result.candidates.every((c) => !c.passed_floor);
 
   return (
     <Card className="mb-4">
@@ -762,14 +776,19 @@ export default function Page() {
   const [result, setResult] = useState<PlaygroundResult | null>(null);
   const [busy, setBusy] = useState(false);
   const [saving, setSaving] = useState(false);
+  // The pending save or clear, waiting on the confirmation dialog.
+  const [pending, setPending] = useState<{
+    kind: "save" | "clear";
+    body: Record<string, number | string | boolean | null>;
+    changes: SettingChange[];
+  } | null>(null);
 
   // The controls start on the server's defaults rather than on a copy compiled
   // into the bundle, so "default" on this screen always means the value this
   // deployment is actually running.
   const current = values ?? options?.defaults ?? null;
   const changed = useMemo(
-    () =>
-      current && options ? changedNames(current, options.defaults) : [],
+    () => (current && options ? changedNames(current, options.defaults) : []),
     [current, options]
   );
 
@@ -794,7 +813,10 @@ export default function Page() {
         }),
       });
       if (!res.ok) {
-        setPopup({ message: await errorMessage(res, "Run failed"), type: "error" });
+        setPopup({
+          message: await errorMessage(res, "Run failed"),
+          type: "error",
+        });
         return;
       }
       setResult(await res.json());
@@ -814,7 +836,7 @@ export default function Page() {
    * pin knobs the admin never touched.
    */
   const persist = async (
-    body: Record<string, number | string | null>,
+    body: Record<string, number | string | boolean | null>,
     message: string
   ) => {
     setSaving(true);
@@ -825,7 +847,10 @@ export default function Page() {
         body: JSON.stringify(body),
       });
       if (!res.ok) {
-        setPopup({ message: await errorMessage(res, "Save failed"), type: "error" });
+        setPopup({
+          message: await errorMessage(res, "Save failed"),
+          type: "error",
+        });
         return;
       }
       // Re-read rather than patching local state: the server clamps, and the
@@ -844,21 +869,35 @@ export default function Page() {
     }
   };
 
+  /** What the deployment runs on now, for a knob, as the dialog shows it. */
+  const deployedValue = (name: string): unknown => {
+    if (!options) return undefined;
+    if (name === "chat_model") return options.chat_model;
+    if (name === "classifier_model") return options.classifier_model;
+    return options.defaults[name as keyof TunableValues];
+  };
+
   const saveDefaults = () => {
     if (!options || !current) return;
-    const body = savePayload(current, options.defaults, chatModel, classifierModel);
+    const body = savePayload(
+      current,
+      options.defaults,
+      chatModel,
+      classifierModel
+    );
     const names = Object.keys(body);
     if (names.length === 0) return;
-    if (
-      !window.confirm(
-        `Save ${names.join(", ")} as the deployment default?\n\n` +
-          "This changes how every answer is worded, for every user, from the " +
-          "next message onwards."
-      )
-    ) {
-      return;
-    }
-    void persist(body, `Saved ${names.length} setting(s) for every chat.`);
+    setPending({
+      kind: "save",
+      body,
+      changes: names.map((name) => ({
+        name,
+        label: settingLabel(name),
+        from: formatSetting(deployedValue(name)),
+        to: formatSetting(body[name]),
+        retrieval: RETRIEVAL_NAMES.includes(name),
+      })),
+    });
   };
 
   const revertDefaults = () => {
@@ -867,23 +906,56 @@ export default function Page() {
       .filter(([, source]) => source === "saved")
       .map(([name]) => name);
     if (saved.length === 0) return;
-    if (
-      !window.confirm(
-        `Clear ${saved.join(", ")} and follow the environment again?`
-      )
-    ) {
-      return;
-    }
-    // Explicit nulls: this is a reset, not an omission.
-    void persist(
-      Object.fromEntries(saved.map((name) => [name, null])),
-      "Cleared. Every value follows the environment again."
+    setPending({
+      kind: "clear",
+      // Explicit nulls: this is a reset, not an omission.
+      body: Object.fromEntries(saved.map((name) => [name, null])),
+      changes: saved.map((name) => ({
+        name,
+        label: settingLabel(name),
+        from: formatSetting(deployedValue(name)),
+        to: formatSetting(options.env_defaults[name]),
+        retrieval: RETRIEVAL_NAMES.includes(name),
+      })),
+    });
+  };
+
+  const confirmPending = async () => {
+    if (!pending) return;
+    const count = pending.changes.length;
+    await persist(
+      pending.body,
+      pending.kind === "save"
+        ? `Saved ${count} change${count === 1 ? "" : "s"} for every chat.`
+        : "Cleared. Every value follows the environment again."
     );
+    setPending(null);
   };
 
   return (
     <div className="container mx-auto">
       {popup}
+      {pending && (
+        <ConfirmSettingsDialog
+          title={
+            pending.kind === "save"
+              ? "Save changes for every chat?"
+              : "Go back to the environment?"
+          }
+          description={
+            pending.kind === "save"
+              ? "These become the deployment defaults."
+              : "The saved values are cleared and each setting follows its environment variable again."
+          }
+          changes={pending.changes}
+          confirmLabel={
+            pending.kind === "save" ? "Save changes" : "Clear saved values"
+          }
+          busy={saving}
+          onCancel={() => setPending(null)}
+          onConfirm={() => void confirmPending()}
+        />
+      )}
       <AdminPageTitle
         icon={<ZoomInIcon size={32} />}
         title="Retrieval playground"
@@ -918,7 +990,11 @@ export default function Page() {
             onValueChange={setQuestion}
             onKeyDown={(e) => e.key === "Enter" && run()}
           />
-          <LoadingButton onClick={run} disabled={busy || !current} loading={busy}>
+          <LoadingButton
+            onClick={run}
+            disabled={busy || !current}
+            loading={busy}
+          >
             {busy ? "Running…" : "Run"}
           </LoadingButton>
         </div>
@@ -992,7 +1068,9 @@ export default function Page() {
                         value={current[tunable.name] as number}
                         fallback={options.defaults[tunable.name] as number}
                         onChange={(next) =>
-                          set({ [tunable.name]: next } as Partial<TunableValues>)
+                          set({
+                            [tunable.name]: next,
+                          } as Partial<TunableValues>)
                         }
                       />
                     )
@@ -1022,10 +1100,7 @@ export default function Page() {
               ].join(", ")}{" "}
               — for this request only. Health workers are unaffected.
             </div>
-            {/* The tuning is worthless if you cannot keep the value you liked.
-                The wording knobs can be saved from here; the retrieval ones
-                are shown as the environment lines that would set them, which
-                is deliberate — see ScopeNotice. */}
+            {/* The tuning is worthless if you cannot keep the value you liked. */}
             {(changed.some((name) => isSaveable(name)) ||
               chatModel ||
               classifierModel) && (
@@ -1045,43 +1120,19 @@ export default function Page() {
                   disabled={saving}
                   onClick={saveDefaults}
                 >
-                  Save as deployment default
+                  Save changes
                 </LoadingButton>
                 <div className="mt-1 text-xs text-amber-800">
                   Applies to every chat from the next message. No restart.
                 </div>
               </div>
             )}
-            {changed.some((name) => !isSaveable(name)) && (
-              <div className="mt-2 rounded bg-amber-100/70 px-3 py-2">
-                <div className="text-xs font-semibold text-amber-900">
-                  The retrieval settings are not saveable from here. To make
-                  them the default, set:
-                </div>
-                <pre className="mt-1 overflow-x-auto font-mono text-xs text-amber-900">
-                  {changed
-                    .filter((name) => !isSaveable(name))
-                    .map((name) => {
-                      const tunable = NUMERIC_TUNABLES.find(
-                        (t) => t.name === name
-                      );
-                      const envVar =
-                        tunable?.envVar ?? `HEAL_${name.toUpperCase()}`;
-                      return `${envVar}=${current ? current[name] : ""}`;
-                    })
-                    .join("\n")}
-                </pre>
-                <div className="mt-1 text-xs text-amber-800">
-                  Then restart the API. The score floor decides whether a dose
-                  may be quoted at all, so it is changed against measured
-                  results rather than from this screen.
-                </div>
-              </div>
-            )}
             <button
               type="button"
               className="mt-2 text-xs text-amber-900 underline"
-              onClick={() => setValues(options ? { ...options.defaults } : null)}
+              onClick={() =>
+                setValues(options ? { ...options.defaults } : null)
+              }
             >
               Reset everything to the deployment defaults
             </button>

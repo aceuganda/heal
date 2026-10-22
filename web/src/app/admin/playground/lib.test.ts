@@ -18,7 +18,9 @@ import {
   isOverridden,
   isSaveable,
   overridesFor,
+  formatSetting,
   savePayload,
+  settingLabel,
   PlaygroundResult,
   shortfall,
   TunableValues,
@@ -166,15 +168,31 @@ describe("appliedFloor", () => {
     // old run, so the line has to be drawn at the old floor.
     const result = {
       settings: [
-        { name: "hybrid_alpha", value: 0.6, default: 0.6, overridden: false, clamped: false, requested: null },
-        { name: "min_retrieval_score", value: 0.2, default: 0.35, overridden: true, clamped: false, requested: 0.2 },
+        {
+          name: "hybrid_alpha",
+          value: 0.6,
+          default: 0.6,
+          overridden: false,
+          clamped: false,
+          requested: null,
+        },
+        {
+          name: "min_retrieval_score",
+          value: 0.2,
+          default: 0.35,
+          overridden: true,
+          clamped: false,
+          requested: 0.2,
+        },
       ],
     } as PlaygroundResult;
     expect(appliedFloor(result)).toBe(0.2);
   });
 
   it("falls back to zero rather than guessing when the knob is absent", () => {
-    expect(appliedFloor({ settings: [] } as unknown as PlaygroundResult)).toBe(0);
+    expect(appliedFloor({ settings: [] } as unknown as PlaygroundResult)).toBe(
+      0
+    );
   });
 });
 
@@ -199,26 +217,27 @@ describe("savePayload", () => {
     expect(savePayload(defaults, defaults, "", "")).toEqual({});
   });
 
-  it("sends only the wording knobs that changed", () => {
+  it("sends only the knobs that changed", () => {
     const body = savePayload(
       { ...defaults, temperature: 0.4, min_retrieval_score: 0.9 },
       defaults,
       "",
       ""
     );
-    expect(body).toEqual({ temperature: 0.4 });
+    expect(body).toEqual({ temperature: 0.4, min_retrieval_score: 0.9 });
   });
 
-  it("never offers to save a retrieval knob", () => {
-    // The score floor decides whether a dose may be quoted at all. It is set
-    // from measured results, in the environment, not from a save button.
+  it("carries a retrieval knob and the hybrid toggle", () => {
     const body = savePayload(
-      { ...defaults, min_retrieval_score: 0.9, context_top_k: 9 },
+      { ...defaults, context_top_k: 9, hybrid_search: !defaults.hybrid_search },
       defaults,
       "",
       ""
     );
-    expect(body).toEqual({});
+    expect(body).toEqual({
+      context_top_k: 9,
+      hybrid_search: !defaults.hybrid_search,
+    });
   });
 
   it("carries a chosen model", () => {
@@ -246,8 +265,35 @@ describe("isSaveable", () => {
     expect(isSaveable("verbosity")).toBe(true);
   });
 
-  it("refuses the retrieval knobs", () => {
-    expect(isSaveable("min_retrieval_score")).toBe(false);
-    expect(isSaveable("hybrid_alpha")).toBe(false);
+  it("allows the retrieval knobs", () => {
+    expect(isSaveable("min_retrieval_score")).toBe(true);
+    expect(isSaveable("hybrid_search")).toBe(true);
+  });
+
+  it("refuses a name it does not know", () => {
+    expect(isSaveable("chunk_size")).toBe(false);
+  });
+});
+
+describe("settingLabel", () => {
+  it("uses the control's own label", () => {
+    expect(settingLabel("min_retrieval_score")).toBe("Score floor");
+    expect(settingLabel("chat_model")).toBe("Chat model");
+  });
+
+  it("falls back to the name with spaces", () => {
+    expect(settingLabel("something_new")).toBe("something new");
+  });
+});
+
+describe("formatSetting", () => {
+  it("reads a switch as on or off", () => {
+    expect(formatSetting(true)).toBe("on");
+    expect(formatSetting(false)).toBe("off");
+  });
+
+  it("shows an empty value as a dash rather than nothing", () => {
+    expect(formatSetting("")).toBe("—");
+    expect(formatSetting(null)).toBe("—");
   });
 });

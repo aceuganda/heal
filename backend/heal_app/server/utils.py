@@ -1,9 +1,16 @@
 import json
 from typing import Any
 
+from pydantic.json import pydantic_encoder
+
 
 def get_json_line(json_dict: dict) -> str:
-    return json.dumps(json_dict) + "\n"
+    # pydantic_encoder, not the stdlib default: a model's `.dict()` leaves UUIDs
+    # and datetimes in nested models as objects (search_doc.id is a UUID), and
+    # raising here kills the stream after the answer is already saved -- the
+    # browser sees ERR_INCOMPLETE_CHUNKED_ENCODING and the answer only appears
+    # on reload.
+    return json.dumps(json_dict, default=pydantic_encoder) + "\n"
 
 
 def mask_string(sensitive_str: str) -> str:

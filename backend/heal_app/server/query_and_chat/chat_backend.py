@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from heal.chat.export import download_chat_sessions_helper
 from heal.chat.message_flow import stream_chat_message
 from heal.language import get_language_service
+from heal.language import TranslationError
 from heal_app.auth.users import current_user
 from heal_app.chat.chat_utils import create_chat_chain
 from heal_app.db.chat import create_chat_session
@@ -235,9 +236,15 @@ def upd_chat_message(
         user_id=user_id,
         db_session=db_session,
     )
-    chat_message.luganda_message = get_language_service().to_luganda(
-        chat_message.message
-    )
+    try:
+        chat_message.luganda_message = get_language_service().to_luganda(
+            chat_message.message
+        )
+    except TranslationError as e:
+        # 503 with a sentence the screen can show, not a bare 500 the browser
+        # then fails to parse as JSON.
+        logger.warning(f"Luganda translation failed: {e}")
+        raise HTTPException(status_code=503, detail=e.user_message) from e
 
     db_session.commit()
 

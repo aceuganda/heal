@@ -1,4 +1,4 @@
-"""The deployment's generation defaults: the environment, as an admin amended it.
+"""The deployment's generation and retrieval defaults: the environment, as an admin amended it.
 
 `heal/config.py` reads every knob from the environment once at import. That is
 right for a deployment and wrong for an operator: changing a temperature meant
@@ -44,6 +44,13 @@ FIELDS: tuple[str, ...] = (
     "verbosity",
     "chat_model",
     "classifier_model",
+    # Retrieval, read by `heal/knowledge/settings.py`.
+    "min_retrieval_score",
+    "hybrid_alpha",
+    "hybrid_search",
+    "retrieval_top_k",
+    "context_top_k",
+    "max_chunks_per_source",
 )
 
 # The single row's id. There is one answer to "what does this deployment run
@@ -77,6 +84,12 @@ def env_defaults() -> dict[str, Any]:
         "verbosity": config.VERBOSITY,
         "chat_model": config.CHAT_MODEL,
         "classifier_model": config.CLASSIFIER_MODEL,
+        "min_retrieval_score": config.MIN_RETRIEVAL_SCORE,
+        "hybrid_alpha": config.HYBRID_ALPHA,
+        "hybrid_search": config.HYBRID_SEARCH,
+        "retrieval_top_k": config.RETRIEVAL_TOP_K,
+        "context_top_k": config.CONTEXT_TOP_K,
+        "max_chunks_per_source": config.MAX_CHUNKS_PER_SOURCE,
     }
 
 
@@ -160,8 +173,9 @@ def save(values: Mapping[str, Any], actor_id: UUID | None = None) -> dict[str, A
     "reset temperature" and "I did not touch temperature" cannot be the same
     request.
 
-    Validation belongs to the caller (see `heal/llm/settings.py` for the bounds
-    and `heal/llm/registry.py` for the model ids). This function is the writer,
+    Validation belongs to the caller (see `heal/llm/settings.py` and
+    `heal/knowledge/settings.py` for the bounds and `heal/llm/registry.py` for
+    the model ids). This function is the writer,
     not the referee; it refuses only names it does not know, because storing
     one would be a silent no-op.
     """

@@ -530,11 +530,25 @@ class TestSavedDefaults:
         assert response.status_code == 422
         assert writes == []
 
-    def test_a_retrieval_knob_cannot_be_saved_here(self, writes) -> None:
-        # The score floor decides whether a dose may be quoted at all. It is
-        # set from measured results on the eval set, in the deployment's
-        # environment, not from a slider and a save button.
-        response = self.put(client_as(UserRole.ADMIN), min_retrieval_score=0.1)
+    def test_a_retrieval_knob_can_be_saved(self, writes) -> None:
+        response = self.put(client_as(UserRole.ADMIN), min_retrieval_score=0.44)
+        assert response.status_code == 200, response.text
+        assert writes == [{"min_retrieval_score": 0.44}]
+
+    def test_a_retrieval_knob_is_clamped_to_what_the_pipeline_honours(
+        self, writes
+    ) -> None:
+        # A top-k of 100000 would ask Qdrant for the whole collection on every
+        # chat turn, saved or not.
+        self.put(client_as(UserRole.ADMIN), retrieval_top_k=100000)
+        assert writes == [{"retrieval_top_k": 200}]
+
+    def test_hybrid_search_saves_as_a_bool(self, writes) -> None:
+        self.put(client_as(UserRole.ADMIN), hybrid_search=False)
+        assert writes == [{"hybrid_search": False}]
+
+    def test_a_misspelt_knob_is_refused(self, writes) -> None:
+        response = self.put(client_as(UserRole.ADMIN), min_retreival_score=0.1)
         assert response.status_code == 422
         assert writes == []
 

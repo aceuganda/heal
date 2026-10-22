@@ -197,6 +197,10 @@ MIN_RETRIEVAL_SCORE = _env_float("HEAL_MIN_RETRIEVAL_SCORE", 0.35)
 # single long guideline cannot crowd out a corroborating second source.
 MAX_CHUNKS_PER_SOURCE = _env_int("HEAL_MAX_CHUNKS_PER_SOURCE", 2)
 
+# The retrieval knobs here are DEFAULTS too: an admin can save an override from
+# the playground (`model_settings`). Read `heal.knowledge.settings.
+# RetrievalSettings()` for what retrieval actually runs on.
+
 # Hybrid search. Dense alone is weakest exactly where this product is most
 # sensitive -- drug codes, abbreviations and dosages ("TDF/3TC/DTG", "500mg
 # BD"). A sparse lexical vector alongside the dense one covers that without a

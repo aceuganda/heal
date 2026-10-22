@@ -194,5 +194,28 @@ class TestPerRunOverrides:
 class TestWriteGuard:
     def test_an_unknown_setting_is_refused(self) -> None:
         # A save that reports success and stores nothing is worse than a 422.
-        with pytest.raises(ValueError, match="min_retrieval_score"):
-            defaults.save({"min_retrieval_score": 0.5})
+        with pytest.raises(ValueError, match="min_retreival_score"):
+            defaults.save({"min_retreival_score": 0.5})
+
+
+class TestRetrievalDefaults:
+    def test_a_saved_floor_reaches_the_live_retrieval_settings(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # The live chat path builds `RetrievalSettings()` with no arguments, so
+        # this is what a health worker's next question runs on.
+        from heal.knowledge.settings import RetrievalSettings
+
+        monkeypatch.setattr(
+            defaults, "stored", lambda refresh=False: {"min_retrieval_score": 0.44}
+        )
+        assert RetrievalSettings().min_retrieval_score == 0.44
+
+    def test_with_nothing_saved_retrieval_follows_the_environment(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from heal.knowledge.settings import RetrievalSettings
+
+        monkeypatch.setattr(defaults, "stored", lambda refresh=False: {})
+        monkeypatch.setattr(config, "CONTEXT_TOP_K", 7)
+        assert RetrievalSettings().context_top_k == 7

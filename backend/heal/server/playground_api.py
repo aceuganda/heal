@@ -331,12 +331,18 @@ class SavedDefaults(BaseModel):
     verbosity: str | None = None
     chat_model: str | None = None
     classifier_model: str | None = None
+    min_retrieval_score: float | None = None
+    hybrid_alpha: float | None = None
+    hybrid_search: bool | None = None
+    retrieval_top_k: int | None = None
+    context_top_k: int | None = None
+    max_chunks_per_source: int | None = None
 
     class Config:
         # An unknown key is a 422, not a shrug. Saving is the one action here
         # that changes what health workers receive, and a request that names a
-        # knob this endpoint will not write -- a retrieval setting, say, or a
-        # misspelling -- has to be told so rather than quietly half-applied.
+        # knob this endpoint will not write -- a misspelling, say -- has to be
+        # told so rather than quietly half-applied.
         extra = "forbid"
 
 
@@ -550,10 +556,9 @@ def save_defaults(
     difference is not a detail: a temperature saved here is the temperature the
     next health worker's answer is written at.
 
-    Which is why the retrieval knobs are NOT settable through it. The score
-    floor decides whether a dose may be quoted at all; it is a clinical-safety
-    parameter, it is set from measured results on the eval set, and it stays in
-    the deployment's environment where changing it is a reviewed act.
+    That includes the retrieval knobs. The score floor decides whether a dose
+    may be quoted at all, so every save is written to the audit trail with who
+    made it, and the screen asks for confirmation before sending one.
     """
     # Only what the caller actually sent. An absent field is untouched; a field
     # sent as null is a deliberate reset to the environment. `__fields_set__`
@@ -620,7 +625,10 @@ def _validated(name: str, value: Any) -> Any:
             )
         return str(value)
 
-    low, high = GENERATION_BOUNDS[name]
+    if name == "hybrid_search":
+        return bool(value)
+
+    low, high = {**BOUNDS, **GENERATION_BOUNDS}[name]
     bounded = max(low, min(high, float(value)))
     return int(bounded) if isinstance(value, int) else bounded
 

@@ -37,6 +37,7 @@ import { DanswerInitializingLoader } from "@/components/DanswerInitializingLoade
 import { ChatIntro } from "./ChatIntro";
 import { HEADER_PADDING } from "@/lib/constants";
 import { SearchLanguageSelector } from "@/components/search/SearchLanguageSelector";
+import { chatErrorMessage, errorDetail } from "./errors";
 import { handleLugandaTranslation } from "./lib";
 import { ReferenceDrawer, SelectedReference } from "./reference/ReferenceDrawer";
 
@@ -176,13 +177,27 @@ export const Chat = ({
     }
     setMessageIdTranslating(messageId)
     try {
-      const respStream = await handleLugandaTranslation(messageId);
-      const respText = await respStream.text();
-      const resp = JSON.parse(respText);
-      await updateLugandaPart(messageId, resp.luganda_message);
+      const response = await handleLugandaTranslation(messageId);
+      if (!response.ok) {
+        setPopup({
+          message: await errorDetail(
+            response,
+            "Translation is temporarily unavailable. Please try again."
+          ),
+          type: "error",
+        });
+        return;
+      }
+      const resp = await response.json();
+      updateLugandaPart(messageId, resp.luganda_message);
     } catch (e) {
-      console.log(e)
-      setMessageIdTranslating(null)
+      console.log(e);
+      setPopup({
+        message: "Couldn't reach the translation service. Please try again.",
+        type: "error",
+      });
+    } finally {
+      setMessageIdTranslating(null);
     }
 
   }
@@ -404,6 +419,7 @@ export const Chat = ({
     let documents: DanswerDocument[] = selectedDocuments;
     let error: string | null = null;
     let finalMessage: BackendMessage | null = null;
+    let streamStarted = false;
     try {
       const lastSuccessfulMessageId =
         getLastSuccessfulMessageId(currMessageHistory);
@@ -427,6 +443,7 @@ export const Chat = ({
           .map((document) => document.db_doc_id as string),
         queryOverride,
       })) {
+        streamStarted = true;
         for (const packet of packetBunch) {
           if (Object.hasOwn(packet, "answer_piece")) {
             answer += (packet as AnswerPiecePacket).answer_piece;
@@ -475,8 +492,9 @@ export const Chat = ({
           break;
         }
       }
-    } catch (e: any) {
-      const errorMsg = e.message;
+    } catch (e: unknown) {
+      console.log(e);
+      const errorMsg = chatErrorMessage(e, streamStarted);
       setMessageHistory([
         ...currMessageHistory,
         {
@@ -538,10 +556,9 @@ export const Chat = ({
         type: "success",
       });
     } else {
-      const responseJson = await response.json();
-      const errorMsg = responseJson.detail || responseJson.message;
+      const errorMsg = await errorDetail(response, "please try again.");
       setPopup({
-        message: `Failed to submit feedback - ${errorMsg}`,
+        message: `Couldn't save your feedback - ${errorMsg}`,
         type: "error",
       });
     }
@@ -638,6 +655,7 @@ export const Chat = ({
                           isComplete={
                             i !== messageHistory.length - 1 || !isStreaming
                           }
+                          liveMark={i === messageHistory.length - 1}
                           hasDocs={
                             (message.documents &&
                               message.documents.length > 0) === true
@@ -735,7 +753,10 @@ export const Chat = ({
                       <AIMessage
                         messageId={null}
                         handleTranslation={handleMessageTranslation}
-                        content={<AnswerProgress className="my-auto" />}
+                        isComplete={false}
+                        content={
+                          <AnswerProgress className="my-auto" showMark={false} />
+                        }
                       />
                     </div>
                   )}

@@ -4,13 +4,15 @@ The behaviour that matters here is what the old `utils/translation.py` did not
 have: bounded timeouts, bounded retries, typed failures, and configuration that
 comes from the environment rather than the source.
 """
+import json
+
 import pytest
 import requests
 
 from heal import config
 from heal.language.errors import TranslationNotConfigured
 from heal.language.errors import TranslationUnavailable
-from heal.language.providers.heal_mt import _parse_sse_payload
+from heal.language.providers.heal_mt import _tokens
 from heal.language.providers.heal_mt import HealMtProvider
 
 
@@ -19,20 +21,49 @@ from heal.language.providers.heal_mt import HealMtProvider
 #####
 
 
-class TestParseSsePayload:
-    def test_plain_text_passes_through(self) -> None:
-        assert _parse_sse_payload("  how much paracetamol  ") == "how much paracetamol"
+def sse(*events: dict) -> bytes:
+    """Frames events the way the BentoML services do."""
+    return b"".join(
+        f"data: {json.dumps(e, ensure_ascii=False)}\n\n".encode() for e in events
+    )
 
-    def test_sse_frames_are_unwrapped(self) -> None:
-        body = "data: how\ndata: much\ndata: paracetamol\n"
-        assert _parse_sse_payload(body) == "how much paracetamol"
 
-    def test_blank_frames_are_dropped(self) -> None:
-        assert _parse_sse_payload("data: how\ndata: \ndata: much\n") == "how much"
+def token(text: str) -> dict:
+    return {"event": "token", "token": text}
 
-    def test_non_data_lines_are_ignored(self) -> None:
-        body = "event: start\ndata: how\n\ndata: much\n"
-        assert _parse_sse_payload(body) == "how much"
+
+class TestEventParsing:
+    def test_tokens_are_yielded_until_done(self) -> None:
+        body = sse(token("mira "), token("eddagala"), {"event": "done"})
+        assert list(_tokens([body])) == ["mira ", "eddagala"]
+
+    def test_a_line_split_across_chunks_is_not_lost(self) -> None:
+        body = sse(token("eddagala"), {"event": "done"})
+        cut = len(body) // 3
+        assert list(_tokens([body[:cut], body[cut:]])) == ["eddagala"]
+
+    def test_a_character_split_across_chunks_survives(self) -> None:
+        body = sse(token("ŋŋ"))
+        cut = body.index("ŋ".encode()) + 1
+        assert list(_tokens([body[:cut], body[cut:]])) == ["ŋŋ"]
+
+    def test_done_full_text_is_used_when_no_tokens_came(self) -> None:
+        body = sse({"event": "done", "full_text": "mira eddagala"})
+        assert list(_tokens([body])) == ["mira eddagala"]
+
+    def test_full_text_is_not_repeated_after_tokens(self) -> None:
+        body = sse(token("mira"), {"event": "done", "full_text": "mira"})
+        assert list(_tokens([body])) == ["mira"]
+
+    def test_an_error_event_raises(self) -> None:
+        with pytest.raises(TranslationUnavailable):
+            list(_tokens([sse({"event": "error", "message": "boom"})]))
+
+    def test_old_bare_word_framing_still_reads(self) -> None:
+        assert list(_tokens([b"data: mira\ndata: eddagala\n"])) == [
+            "mira ",
+            "eddagala ",
+        ]
 
 
 #####
@@ -57,8 +88,8 @@ class TestEndpointResolution:
 
     def test_no_network_address_is_hard_coded(self) -> None:
         provider = HealMtProvider()
-        assert provider._endpoint("en").startswith("http://mt-en.test")
-        assert provider._endpoint("lug").startswith("http://mt-lug.test")
+        assert provider._endpoint("en") == "http://mt-en.test/translate/stream"
+        assert provider._endpoint("lug") == "http://mt-lug.test/translate/stream"
 
     def test_api_key_becomes_a_bearer_header(
         self, monkeypatch: pytest.MonkeyPatch
@@ -84,11 +115,12 @@ class TestPostBehaviour:
 
         def capture(url, **kwargs):
             seen.update(kwargs)
-            return fake_response(200, "hello")
+            return fake_response(200, chunks=[sse(token("hello"))])
 
         monkeypatch.setattr(requests, "post", capture)
         HealMtProvider().to_english("ki kigambo")
 
+        assert seen["json"] == {"text": "ki kigambo"}
         assert seen["timeout"] == (
             config.TRANSLATION_CONNECT_TIMEOUT,
             config.TRANSLATION_READ_TIMEOUT,
@@ -134,7 +166,7 @@ class TestPostBehaviour:
             attempts["n"] += 1
             if attempts["n"] == 1:
                 raise requests.ConnectionError("connection refused")
-            return fake_response(200, "one tablet twice daily")
+            return fake_response(200, chunks=[sse(token("one tablet twice daily"))])
 
         monkeypatch.setattr(requests, "post", flaky)
         assert HealMtProvider().to_english("x") == "one tablet twice daily"
@@ -175,15 +207,14 @@ class TestStreaming:
     def test_tokens_are_yielded_in_order(
         self, monkeypatch: pytest.MonkeyPatch, fake_response
     ) -> None:
-        chunks = [b"data: mira\ndata: eddagala\n", b"data: buli\ndata: lunaku\n"]
+        chunks = [sse(token("mira "), token("eddagala ")), sse(token("buli lunaku"))]
         monkeypatch.setattr(
             requests, "post", lambda url, **kw: fake_response(200, chunks=chunks)
         )
         assert list(HealMtProvider().stream_to_luganda("take the medicine daily")) == [
             "mira ",
             "eddagala ",
-            "buli ",
-            "lunaku ",
+            "buli lunaku",
         ]
 
     def test_to_luganda_joins_the_stream(
@@ -193,10 +224,10 @@ class TestStreaming:
             requests,
             "post",
             lambda url, **kw: fake_response(
-                200, chunks=[b"data: mira\ndata: eddagala\n"]
+                200, chunks=[sse(token("mira "), token("eddagala "))]
             ),
         )
-        assert HealMtProvider().to_luganda("take the medicine") == "mira eddagala "
+        assert HealMtProvider().to_luganda("take the medicine") == "mira eddagala"
 
     def test_undecodable_bytes_do_not_kill_the_stream(
         self, monkeypatch: pytest.MonkeyPatch, fake_response
@@ -205,7 +236,7 @@ class TestStreaming:
             requests,
             "post",
             lambda url, **kw: fake_response(
-                200, chunks=[b"data: mira\xff\ndata: ok\n"]
+                200, chunks=[b"data: mira\xff\n", sse(token("ok"))]
             ),
         )
         assert len(list(HealMtProvider().stream_to_luganda("x"))) == 2
