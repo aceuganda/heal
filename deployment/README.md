@@ -109,7 +109,8 @@ make deploy
 ```
 
 Other commands: `make deploy-check` (steps 1–2 only), `make deploy-doctor`,
-`make deploy-status`, `make deploy-rollback`. `make deploy-unchecked` skips
+`make deploy-status`, `make deploy-rollback`, `make deploy-secrets` (see
+Notes). `make deploy-unchecked` skips
 steps 1–2, the image scan in step 3 and the prompt in step 4 (it deploys to
 DEPLOY_NAMESPACE), for a rebuild right after a passing `make deploy-check`;
 its history entry says `"checked": false`.
@@ -192,8 +193,10 @@ for a new one.
 
 It can create and update Deployments, StatefulSets, Services, PVCs and
 ConfigMaps in `heal`, read pods, logs and events, and port-forward to pods
-(how images reach the registry). It cannot read Secrets, touch any other
-namespace, or change its own permissions.
+(how images reach the registry). On Secrets it can only patch `heal-secrets`:
+no get, no list, no other Secret. A PATCH reply carries the whole object, so
+the token can see those values -- the price of setting them from your machine.
+It cannot touch any other namespace or change its own permissions.
 
 `kustomization.yaml` is the list of what a deploy applies. `env-configmap.yaml`
 and `secrets.yaml` are left out on purpose: re-applying the repo templates
@@ -212,12 +215,16 @@ a revisit date; that file is reviewed like code.
   fails to pull instead of running an unscanned `latest`.
 - User auth is on by default (`AUTH_TYPE` in `env-configmap.yaml`).
 - HTTPS is assumed to be terminated by your cluster's ingress.
+- Settings live in `env-configmap`; every credential lives in `heal-secrets`
+  and reaches the API server by key (list in `kubernetes/secrets.yaml`). All
+  are optional except `user_auth_secret`, which signs password-reset and
+  verification tokens; the API server will not start without it. Set them
+  with `make deploy-secrets`: one hidden prompt per key, Enter keeps the
+  current value, `random` generates one. Values go straight to the API in one
+  TLS PATCH, never on a command line or disk. Then `make deploy` or `make deploy-restart`.
 - Qdrant runs as `qdrant-statefulset` behind the ClusterIP `qdrant-service`
   (5 GiB volume). It will not start until `heal-secrets` has
-  `qdrant_api_key`; on a cluster set up before Qdrant, add it once on the
-  server (the deployer cannot write Secrets):
-  `sudo k3s kubectl -n heal patch secret heal-secrets -p "{\"stringData\":{\"qdrant_api_key\":\"$(openssl rand -hex 32)\"}}"`.
-  Set `QDRANT_URL=http://qdrant-service:6333` in `env-configmap` and leave
+  `qdrant_api_key` (`make deploy-secrets`, answer `random`). Set `QDRANT_URL=http://qdrant-service:6333` in `env-configmap` and leave
   `KNOWLEDGE_ENABLED=false` until the corpus is ingested.
 - `kubectl delete -f kubernetes/` **erases the database.** To keep it, delete
   the specific manifests and leave `persistent-volumes.yaml` alone.

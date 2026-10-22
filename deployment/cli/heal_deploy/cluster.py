@@ -6,8 +6,11 @@ import os
 import re
 import shutil
 import socket
+import ssl
 import tempfile
 import time
+import urllib.error
+import urllib.request
 from contextlib import contextmanager
 from dataclasses import replace
 from pathlib import Path
@@ -24,6 +27,22 @@ DEPLOYMENTS = ("api-server-deployment", "web-server-deployment")
 SHORT_NAMES = {"api": DEPLOYMENTS[0], "web": DEPLOYMENTS[1]}
 ROLLOUT_TIMEOUT = "5m"
 REGISTRY_DEPLOYMENT = "heal-registry"
+STATEFUL_RESTARTS = ("qdrant-statefulset",)
+SECRETS_NAME = "heal-secrets"
+# What `make deploy-secrets` offers, with the prompt hint. The Postgres
+# credentials are left out: the data directory keeps the original password.
+SECRET_KEYS = {
+    "user_auth_secret": "required; signs reset/verify tokens",
+    "qdrant_api_key": "required; Qdrant and the API server share it",
+    "gen_ai_api_key": "LLM provider key",
+    "translation_api_key": "bearer token for the MT services",
+    "self_hosted_api_key": "vLLM endpoint key",
+    "smtp_pass": "SMTP password",
+    "bootstrap_admin_email": "first admin; seeds an EMPTY user table only",
+    "bootstrap_admin_password": "first admin's password",
+    "google_oauth_client_id": "Google OAuth client id",
+    "google_oauth_client_secret": "Google OAuth client secret",
+}
 
 _HEAL_IMAGE = re.compile(r"^\s*-?\s*image:\s*(\S*heal-(?:backend|web)\S*)\s*$", re.M)
 
@@ -162,6 +181,36 @@ def can_i(runner: Runner, cfg: Config, verb: str, resource: str) -> bool:
     return runner.capture(kubectl(cfg, "auth", "can-i", verb, resource)) == "yes"
 
 
+def patch_secret(
+    cfg: Config,
+    values: Mapping[str, str],
+    opener: Callable[..., object] = urllib.request.urlopen,
+) -> None:
+    """Merge `values` into heal-secrets with one PATCH to the API. `kubectl
+    patch` GETs the Secret first, which the deployer may not do. The reply
+    carries every key, so it is discarded unread."""
+    request = urllib.request.Request(
+        f"{cfg.api_server_url.rstrip('/')}/api/v1/namespaces/{cfg.namespace}"
+        f"/secrets/{SECRETS_NAME}",
+        data=json.dumps({"stringData": dict(values)}).encode(),
+        method="PATCH",
+        headers={
+            "Authorization": f"Bearer {cfg.kube_token}",
+            "Content-Type": "application/merge-patch+json",
+        },
+    )
+    context = ssl.create_default_context(cafile=cfg.kube_ca)
+    print(f"$ PATCH secrets/{SECRETS_NAME} in {cfg.namespace}", flush=True)
+    try:
+        with opener(request, context=context, timeout=30):
+            pass
+    except urllib.error.HTTPError as error:
+        reason = json.loads(error.read() or b"{}").get("message", error.reason)
+        raise RuntimeError(f"API refused the patch ({error.code}): {reason}")
+    except urllib.error.URLError as error:
+        raise RuntimeError(f"cannot reach {cfg.api_server_url}: {error.reason}")
+
+
 def write_overlay(overlay_dir: Path, pinned: Mapping[str, str]) -> Path:
     """A kustomization that pins each logical image to `name@digest`."""
     overlay_dir.mkdir(parents=True, exist_ok=True)
@@ -275,15 +324,11 @@ def logs(runner: Runner, cfg: Config, service: str) -> None:
 
 def restart(runner: Runner, cfg: Config) -> None:
     """New pods with the same images, so ConfigMap and Secret edits take effect."""
-    for name in DEPLOYMENTS:
-        runner.run(kubectl(cfg, "rollout", "restart", f"deployment/{name}"))
-    for name in DEPLOYMENTS:
+    targets = [f"deployment/{name}" for name in DEPLOYMENTS]
+    targets += [f"statefulset/{name}" for name in STATEFUL_RESTARTS]
+    for target in targets:
+        runner.run(kubectl(cfg, "rollout", "restart", target))
+    for target in targets:
         runner.run(
-            kubectl(
-                cfg,
-                "rollout",
-                "status",
-                f"deployment/{name}",
-                f"--timeout={ROLLOUT_TIMEOUT}",
-            )
+            kubectl(cfg, "rollout", "status", target, f"--timeout={ROLLOUT_TIMEOUT}")
         )

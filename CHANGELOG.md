@@ -22,12 +22,31 @@ the first pilot release.
 
 ### Added
 
+- **`make deploy-secrets` sets `heal-secrets` from your machine.** One hidden
+  prompt per key the API server reads; Enter keeps a value, `random`
+  generates one. Values go to the k3s API in one direct PATCH, never argv or
+  disk (`kubectl patch` would need `get` on the Secret).
+  The deployer role gains `patch` on `heal-secrets` only (no get/list); since a
+  PATCH reply returns the Secret, the deploy token can now see those values.
+  `make deploy-restart` now restarts Qdrant too. **Migration:** the role change
+  must be applied once on the server, where the deployer cannot widen itself:
+  `sudo k3s kubectl apply -f rbac/deployer.yaml`.
+- **k3s: every backend setting and credential is now wired.** `env-configmap`
+  gains the self-hosted model URL/model/context, translation timeouts and
+  retries, `QDRANT_COLLECTION` and `REQUIRE_EMAIL_VERIFICATION`. The API
+  server now reads `SECRET`, the translation and self-hosted keys,
+  `SMTP_PASS`, the bootstrap admin email and password and the Google OAuth pair from `heal-secrets`; `SMTP_PASS` moves out of the
+  ConfigMap. **Migration:** `user_auth_secret` is required — set it with
+  `make deploy-secrets` before deploying or the new API pod will not start; until now `SECRET`
+  was empty, so reset and verification tokens were signed with a known key.
+  The cluster's ConfigMap is not re-applied by `make deploy`; add the new
+  settings you need to it by hand.
 - **Qdrant runs on k3s.** `make deploy` now applies a Qdrant StatefulSet
   (`qdrant/qdrant:v1.19.0`, 5 GiB volume) behind an internal-only
   `qdrant-service`. Its API key is `qdrant_api_key` in `heal-secrets`, shared
   with the API server; the pod refuses to start without it.
-  **Migration:** on the existing server, add the key before deploying (command
-  in `deployment/README.md` § Notes) and set
+  **Migration:** set the key with `make deploy-secrets` before deploying, and
+  set
   `QDRANT_URL=http://qdrant-service:6333` in `env-configmap`.
   `KNOWLEDGE_ENABLED` stays `false` until the corpus is ingested.
 

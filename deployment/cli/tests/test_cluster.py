@@ -1,4 +1,7 @@
+import io
 import json
+import urllib.error
+from contextlib import nullcontext
 from pathlib import Path
 
 import pytest
@@ -141,10 +144,42 @@ class TestLogsAndRestart:
         cluster.logs(runner, cfg, "web")
         assert runner.ran("logs deployment/web-server-deployment --tail=200 --follow")
 
-    def test_restart_restarts_both_then_waits(self, cfg: Config) -> None:
+    def test_restart_restarts_api_web_and_qdrant_then_waits(self, cfg: Config) -> None:
         runner = FakeRunner()
         cluster.restart(runner, cfg)
         restarts = [i for i, c in enumerate(runner.calls) if "rollout restart" in c]
         waits = [i for i, c in enumerate(runner.calls) if "rollout status" in c]
-        assert len(restarts) == len(waits) == 2
+        assert len(restarts) == len(waits) == 3
         assert max(restarts) < min(waits)
+
+
+class TestPatchSecret:
+    def test_one_merge_patch_with_the_token_in_a_header(self, cfg: Config) -> None:
+        seen = []
+
+        def opener(request, context, timeout):
+            seen.append(request)
+            return nullcontext()
+
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr(cluster.ssl, "create_default_context", lambda cafile: None)
+            cluster.patch_secret(cfg, {"smtp_pass": "pw"}, opener=opener)
+        (request,) = seen
+        assert request.get_method() == "PATCH"
+        assert request.full_url == (
+            "https://heal-node.internal:6443"
+            "/api/v1/namespaces/heal/secrets/heal-secrets"
+        )
+        assert request.get_header("Authorization") == "Bearer s3cret-token"
+        assert request.get_header("Content-type") == "application/merge-patch+json"
+        assert json.loads(request.data) == {"stringData": {"smtp_pass": "pw"}}
+
+    def test_a_refusal_names_the_reason(self, cfg: Config) -> None:
+        def opener(request, context, timeout):
+            body = io.BytesIO(b'{"message": "secrets is forbidden"}')
+            raise urllib.error.HTTPError(request.full_url, 403, "Forbidden", {}, body)
+
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr(cluster.ssl, "create_default_context", lambda cafile: None)
+            with pytest.raises(RuntimeError, match="403.*forbidden"):
+                cluster.patch_secret(cfg, {"smtp_pass": "pw"}, opener=opener)

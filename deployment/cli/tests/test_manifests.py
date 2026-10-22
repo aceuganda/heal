@@ -24,11 +24,14 @@ def test_everything_lives_in_the_heal_namespace() -> None:
                 assert doc["metadata"]["namespace"] == "heal", (name, doc["kind"])
 
 
-def test_deployer_can_port_forward_but_never_read_secrets() -> None:
+def test_deployer_can_port_forward_and_only_patch_heal_secrets() -> None:
     (role,) = [d for d in docs("rbac/deployer.yaml") if d["kind"] == "Role"]
     resources = {r for rule in role["rules"] for r in rule["resources"]}
     assert "pods/portforward" in resources
-    assert "secrets" not in resources
+    (rule,) = [r for r in role["rules"] if "secrets" in r["resources"]]
+    assert rule["resources"] == ["secrets"]
+    assert rule["resourceNames"] == ["heal-secrets"]
+    assert rule["verbs"] == ["patch"]
 
 
 def test_registry_listens_on_loopback_at_the_cli_port() -> None:
@@ -71,7 +74,9 @@ def test_qdrant_is_deployed_internal_only_and_keyed() -> None:
 
 def test_api_server_shares_the_qdrant_key_and_url() -> None:
     (deployment,) = [
-        d for d in docs("api_server-service-deployment.yaml") if d["kind"] == "Deployment"
+        d
+        for d in docs("api_server-service-deployment.yaml")
+        if d["kind"] == "Deployment"
     ]
     (container,) = deployment["spec"]["template"]["spec"]["containers"]
     ref = _env(container)["QDRANT_API_KEY"]["valueFrom"]["secretKeyRef"]
@@ -81,3 +86,63 @@ def test_api_server_shares_the_qdrant_key_and_url() -> None:
     assert configmap["data"]["QDRANT_URL"] == "http://qdrant-service:6333"
     assert "QDRANT_API_KEY" not in configmap["data"]
     assert "qdrant_api_key" in SCRIPT.read_text()
+
+
+# env var -> heal-secrets key. Only SECRET is required: empty, it signs reset
+# and verification tokens with a known key.
+API_SERVER_SECRETS = {
+    "POSTGRES_USER": "postgres_user",
+    "POSTGRES_PASSWORD": "postgres_password",
+    "GEN_AI_API_KEY": "gen_ai_api_key",
+    "QDRANT_API_KEY": "qdrant_api_key",
+    "SECRET": "user_auth_secret",
+    "TRANSLATION_API_KEY": "translation_api_key",
+    "HEAL_SELF_HOSTED_API_KEY": "self_hosted_api_key",
+    "SMTP_PASS": "smtp_pass",
+    "HEAL_BOOTSTRAP_ADMIN_EMAIL": "bootstrap_admin_email",
+    "HEAL_BOOTSTRAP_ADMIN_PASSWORD": "bootstrap_admin_password",
+    "GOOGLE_OAUTH_CLIENT_ID": "google_oauth_client_id",
+    "GOOGLE_OAUTH_CLIENT_SECRET": "google_oauth_client_secret",
+}
+
+
+def test_api_server_reads_every_credential_from_heal_secrets() -> None:
+    (deployment,) = [
+        d
+        for d in docs("api_server-service-deployment.yaml")
+        if d["kind"] == "Deployment"
+    ]
+    (container,) = deployment["spec"]["template"]["spec"]["containers"]
+    env = _env(container)
+    for name, key in API_SERVER_SECRETS.items():
+        ref = env[name]["valueFrom"]["secretKeyRef"]
+        assert (ref["name"], ref["key"]) == ("heal-secrets", key), name
+    assert not env["SECRET"]["valueFrom"]["secretKeyRef"].get("optional", False)
+
+    # Every key is documented in the template, and the required one is generated.
+    template = (BASE_DIR / "secrets.yaml").read_text()
+    for key in API_SERVER_SECRETS.values():
+        assert f"  {key}:" in template, key
+    assert "user_auth_secret=" in SCRIPT.read_text()
+
+
+def test_deploy_secrets_offers_only_keys_the_api_server_reads() -> None:
+    from heal_deploy.cluster import SECRET_KEYS
+
+    assert set(SECRET_KEYS) <= set(API_SERVER_SECRETS.values())
+    assert {"user_auth_secret", "qdrant_api_key"} <= set(SECRET_KEYS)
+    assert not {"postgres_user", "postgres_password"} & set(SECRET_KEYS)
+
+
+def test_configmap_carries_settings_not_credentials() -> None:
+    (configmap,) = docs("env-configmap.yaml")
+    data = configmap["data"]
+    for name in (
+        "TRANSLATION_EN_URL",
+        "TRANSLATION_LUG_URL",
+        "HEAL_SELF_HOSTED_URL",
+        "HEAL_SELF_HOSTED_MODEL",
+        "QDRANT_URL",
+    ):
+        assert name in data, name
+    assert not set(API_SERVER_SECRETS) & set(data)

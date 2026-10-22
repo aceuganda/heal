@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 import argparse
+import getpass
 import json
+import secrets
 import shutil
 import sys
 from datetime import datetime
@@ -77,6 +79,8 @@ def cmd_doctor(runner: Runner, cfg: Config) -> int:
     else:
         detail = "run deployment/kubernetes/setup-server.sh (README § k3s)"
     ok = _report("registry inside k3s is running", [] if ready else [detail]) and ok
+    if not cluster.can_i(runner, cfg, "patch", f"secret/{cluster.SECRETS_NAME}"):
+        print("warn token cannot patch heal-secrets; re-apply rbac/deployer.yaml")
     return 0 if ok else 1
 
 
@@ -212,6 +216,44 @@ def cmd_restart(runner: Runner, cfg: Config, ask: Callable[[str], str] = input) 
     return 0
 
 
+def cmd_secrets(
+    runner: Runner,
+    cfg: Config,
+    ask: Callable[[str], str] = input,
+    secret: Callable[[str], str] = getpass.getpass,
+    patch: Callable[[Config, dict], None] = cluster.patch_secret,
+) -> int:
+    if not cluster.can_i(runner, cfg, "patch", f"secret/{cluster.SECRETS_NAME}"):
+        print(
+            f"FAIL token cannot patch {cluster.SECRETS_NAME}. On the server, apply "
+            "the deployer role once (README § What the deployer can and cannot do)."
+        )
+        return 1
+    print(
+        f"Setting keys in {cluster.SECRETS_NAME}. Input is hidden.\n"
+        "Enter keeps the current value; `random` generates a new one.\n"
+    )
+    values = {}
+    for key, hint in cluster.SECRET_KEYS.items():
+        value = secret(f"  {key} ({hint}): ").strip()
+        if value == "random":
+            value = secrets.token_hex(32)
+        if value:
+            values[key] = value
+    if not values:
+        print("Nothing to change.")
+        return 0
+
+    print(f"\nWill set: {', '.join(values)}")
+    answer = ask(f"Type the namespace ({cfg.namespace}) to continue: ")
+    if answer.strip() != cfg.namespace:
+        print("Not confirmed; nothing was changed.")
+        return 1
+    patch(cfg, values)
+    print("Saved. Pods keep the old values until `make deploy-restart` or a deploy.")
+    return 0
+
+
 COMMANDS: dict[str, Callable[[Runner, Config], int]] = {
     "doctor": cmd_doctor,
     "check": cmd_check,
@@ -221,6 +263,7 @@ COMMANDS: dict[str, Callable[[Runner, Config], int]] = {
     "rollback": cmd_rollback,
     "logs": cmd_logs,
     "restart": cmd_restart,
+    "secrets": cmd_secrets,
 }
 
 

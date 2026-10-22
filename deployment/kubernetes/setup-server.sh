@@ -64,7 +64,8 @@ else
     --from-literal=postgres_user=postgres \
     --from-literal=postgres_password="$(openssl rand -base64 24)" \
     --from-literal=gen_ai_api_key="" \
-    --from-literal=qdrant_api_key="$(openssl rand -hex 32)"
+    --from-literal=qdrant_api_key="$(openssl rand -hex 32)" \
+    --from-literal=user_auth_secret="$(openssl rand -hex 32)"
 fi
 
 if [ -n "${ALLOW_FROM:-}" ]; then

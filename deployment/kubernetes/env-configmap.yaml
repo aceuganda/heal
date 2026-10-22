@@ -9,9 +9,9 @@ data:
   VALID_EMAIL_DOMAINS: ""  # Restrict sign-in to specific domains
   SMTP_SERVER: ""  # Defaults to smtp.gmail.com when unset
   SMTP_PORT: ""  # Defaults to 587 when unset
-  SMTP_USER: ""
-  SMTP_PASS: ""
+  SMTP_USER: ""  # SMTP_PASS lives in heal-secrets (key smtp_pass)
   EMAIL_FROM: ""  # Used when SMTP_USER is missing
+  REQUIRE_EMAIL_VERIFICATION: ""  # "true" needs SMTP set up
 
   # Chat model. Ids come from the catalogue in backend/heal/llm/registry.py.
   GEN_AI_MODEL_PROVIDER: "openai"
@@ -23,12 +23,22 @@ data:
   HEAL_ENABLED_CHAT_MODELS: ""
   HEAL_LLM_TIMEOUT: ""
 
+  # Self-hosted model (vLLM, OpenAI-compatible). Empty URL = off. Set
+  # HEAL_CHAT_MODEL to "self-hosted" to route chat to it; key in heal-secrets.
+  HEAL_SELF_HOSTED_URL: ""  # base URL including /v1
+  HEAL_SELF_HOSTED_MODEL: ""  # exact id from GET <url>/models
+  HEAL_SELF_HOSTED_CONTEXT_TOKENS: ""  # max_model_len; default 131072
+
   # Translation (Design A). Required for Luganda chat; English is unaffected.
   # No default is baked into the image -- a missing URL fails with a config
   # error naming the variable rather than reaching someone else's server.
   TRANSLATION_PROVIDER: "heal_mt"
   TRANSLATION_EN_URL: ""
   TRANSLATION_LUG_URL: ""
+  # Optional bearer token lives in heal-secrets (key translation_api_key).
+  TRANSLATION_CONNECT_TIMEOUT: ""  # seconds; default 5
+  TRANSLATION_READ_TIMEOUT: ""  # seconds; default 60
+  TRANSLATION_MAX_RETRIES: ""  # default 2
 
   # Safety. Set the escalation number that is correct for this deployment's
   # country before the pilot.
@@ -39,6 +49,7 @@ data:
   # QDRANT_API_KEY lives in heal-secrets (key qdrant_api_key), not here.
   KNOWLEDGE_ENABLED: "false"
   QDRANT_URL: "http://qdrant-service:6333"
+  QDRANT_COLLECTION: ""  # default heal_reference_384
   # Empty = GPU if usable, else CPU. "cuda" needs a TORCH_VARIANT=cuda image.
   HEAL_EMBEDDING_DEVICE: ""
 

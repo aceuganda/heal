@@ -87,6 +87,55 @@ spec:
               name: heal-secrets
               key: qdrant_api_key
               optional: true
+        # Required: an empty SECRET would sign reset and verification tokens
+        # with a known key.
+        - name: SECRET
+          valueFrom:
+            secretKeyRef:
+              name: heal-secrets
+              key: user_auth_secret
+        - name: TRANSLATION_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: heal-secrets
+              key: translation_api_key
+              optional: true
+        - name: HEAL_SELF_HOSTED_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: heal-secrets
+              key: self_hosted_api_key
+              optional: true
+        - name: SMTP_PASS
+          valueFrom:
+            secretKeyRef:
+              name: heal-secrets
+              key: smtp_pass
+              optional: true
+        - name: HEAL_BOOTSTRAP_ADMIN_EMAIL
+          valueFrom:
+            secretKeyRef:
+              name: heal-secrets
+              key: bootstrap_admin_email
+              optional: true
+        - name: HEAL_BOOTSTRAP_ADMIN_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: heal-secrets
+              key: bootstrap_admin_password
+              optional: true
+        - name: GOOGLE_OAUTH_CLIENT_ID
+          valueFrom:
+            secretKeyRef:
+              name: heal-secrets
+              key: google_oauth_client_id
+              optional: true
+        - name: GOOGLE_OAUTH_CLIENT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: heal-secrets
+              key: google_oauth_client_secret
+              optional: true
         volumeMounts:
         # The file-connector volume went with the connectors. Its PVC is left
         # declared in persistent-volumes.yaml rather than deleted, because

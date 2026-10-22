@@ -314,6 +314,10 @@ deploy-logs: ## Follow cluster logs: make deploy-logs [SERVICE=api|web]
 deploy-restart: ## Restart API and web on the cluster so env/secret edits apply
 	$(DEPLOY) restart
 
+.PHONY: deploy-secrets
+deploy-secrets: ## Set keys in heal-secrets (hidden prompts), then deploy or deploy-restart
+	$(DEPLOY) secrets
+
 .PHONY: test-deploy
 test-deploy: venv ## Run the deploy CLI's unit tests
 	$(PY) -m pytest deployment/cli/tests -q

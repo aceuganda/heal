@@ -180,3 +180,46 @@ class TestRestart:
         assert cli.cmd_restart(runner, cfg, ask=lambda _: cfg.namespace) == 0
         assert runner.ran("rollout restart deployment/api-server-deployment")
         assert runner.ran("rollout restart deployment/web-server-deployment")
+        assert runner.ran("rollout restart statefulset/qdrant-statefulset")
+
+
+class TestSecrets:
+    @staticmethod
+    def answers(**given: str):
+        return lambda prompt: given.get(prompt.split()[0], "")
+
+    @staticmethod
+    def run(cfg: Config, runner: FakeRunner, confirm: str = "heal", **given: str):
+        sent: list[dict] = []
+        code = cli.cmd_secrets(
+            runner,
+            cfg,
+            ask=lambda _: confirm,
+            secret=TestSecrets.answers(**given),
+            patch=lambda _cfg, values: sent.append(values),
+        )
+        return code, sent
+
+    def test_stops_before_prompting_without_patch_rights(self, cfg: Config) -> None:
+        runner = FakeRunner(outputs={"auth can-i": "no"})
+        code, sent = self.run(cfg, runner, smtp_pass="x")
+        assert code == 1
+        assert not sent
+
+    def test_blank_answers_change_nothing(self, cfg: Config) -> None:
+        assert self.run(cfg, FakeRunner(outputs={"auth can-i": "yes"})) == (0, [])
+
+    def test_unconfirmed_patch_is_not_sent(self, cfg: Config) -> None:
+        runner = FakeRunner(outputs={"auth can-i": "yes"})
+        assert self.run(cfg, runner, confirm="nope", smtp_pass="pw") == (1, [])
+
+    def test_random_generates_and_blank_keeps(self, cfg: Config) -> None:
+        runner = FakeRunner(outputs={"auth can-i": "yes"})
+        code, (values,) = self.run(
+            cfg, runner, user_auth_secret="random", smtp_pass="pw-123"
+        )
+        assert code == 0
+        assert values["smtp_pass"] == "pw-123"
+        assert len(values["user_auth_secret"]) == 64
+        assert set(values) == {"user_auth_secret", "smtp_pass"}
+        assert not any("pw-123" in call for call in runner.calls)
