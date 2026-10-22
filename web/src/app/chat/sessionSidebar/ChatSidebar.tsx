@@ -2,11 +2,11 @@
 
 import {
   FiLogOut,
-  FiMessageSquare,
   FiMoreHorizontal,
   FiPlusSquare,
   FiSearch,
   FiSettings,
+  FiUser,
   FiTool,
 } from "react-icons/fi";
 import { useEffect, useRef, useState } from "react";
@@ -162,12 +162,14 @@ export const ChatSidebar = ({
                   <FiSearch className="my-auto mr-2" />
                   Heal Search
                 </Link> */}
+                {/* Everyone gets their own account; only admins get the
+                    admin panel below it. */}
                 <Link
-                  href="/chat"
+                  href="/account"
                   className="flex py-3 px-4 cursor-pointer hover:bg-hover"
                 >
-                  <FiMessageSquare className="my-auto mr-2" />
-                  Heal Chat
+                  <FiUser className="my-auto mr-2" />
+                  Account settings
                 </Link>
                 {(!user || isAdminRole(user.role)) && (
                   <Link

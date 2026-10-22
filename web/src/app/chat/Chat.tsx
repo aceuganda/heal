@@ -1,5 +1,8 @@
 "use client";
 
+import useSWR from "swr";
+import Link from "next/link";
+import { fetcher } from "@/lib/fetcher";
 import { useEffect, useRef, useState } from "react";
 import { FiBookOpen, FiRefreshCcw, FiSend, FiStopCircle } from "react-icons/fi";
 import { AIMessage, HumanMessage } from "./message/Messages";
@@ -28,7 +31,7 @@ import { AnswerProgress } from "./message/AnswerProgress";
 import { Persona } from "../admin/personas/interfaces";
 import { ChatPersonaSelector } from "./ChatPersonaSelector";
 import { useFilters } from "@/lib/hooks";
-import { DocumentSet, Tag, ValidSources } from "@/lib/types";
+import { DocumentSet, Tag, User, ValidSources } from "@/lib/types";
 import { ChatFilters } from "./modifiers/ChatFilters";
 import { buildFilters } from "@/lib/search/utils";
 import { SelectedDocuments } from "./modifiers/SelectedDocuments";
@@ -221,6 +224,15 @@ export const Chat = ({
   // unreachable. Sticky until dismissed: it is the explanation for a change in
   // the answers, so it should outlast the turn that caused it.
   const [modelNotice, setModelNotice] = useState(false);
+  // Why this account cannot ask questions right now, if it cannot: the access
+  // policy or an admin's chat pause. Said once above the input instead of as
+  // an error on every message.
+  const { data: me } = useSWR<User>("/api/manage/me", fetcher);
+  const accessNotice =
+    me?.access_blocked_reason ||
+    (me?.chat_blocked
+      ? "An administrator has paused chat for your account."
+      : null);
   const latestAssistantMessage = [...messageHistory]
     .reverse()
     .find((chatMessage) => chatMessage.type === "assistant");
@@ -794,6 +806,20 @@ export const Chat = ({
               ref={composerRef}
               className="absolute bottom-0 max-sm:left-0 sm:z-10 w-full bg-gradient-to-b from-canvas/0 via-canvas/90 to-canvas backdrop-blur-[2px]"
             >
+              {accessNotice && (
+                <div
+                  role="status"
+                  className="mx-auto flex w-full max-w-3xl flex-wrap items-center gap-x-3 gap-y-1 px-4 pt-2 text-xs text-amber-900 sm:px-6"
+                >
+                  <span>{accessNotice}</span>
+                  <Link
+                    href="/account"
+                    className="font-medium text-accent hover:underline"
+                  >
+                    Account settings
+                  </Link>
+                </div>
+              )}
               {modelNotice && (
                 <div className="mx-auto flex w-full max-w-3xl flex-wrap items-center gap-x-3 gap-y-1 px-4 pt-2 text-xs text-subtle sm:px-6">
                   <span>Internal model unreachable — using the cloud model.</span>

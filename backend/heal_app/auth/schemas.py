@@ -1,3 +1,4 @@
+import datetime
 import uuid
 
 from fastapi_users import schemas
@@ -23,6 +24,13 @@ __all__ = [
 
 class UserRead(schemas.BaseUser[uuid.UUID]):
     role: UserRole
+    # Profile and the admin-side access state; defaults keep fastapi-users'
+    # own routers working when they build this from a fresh row.
+    organisation: str | None = None
+    date_of_birth: datetime.date | None = None
+    sex: str | None = None
+    admin_verified_at: datetime.datetime | None = None
+    chat_blocked: bool = False
 
 
 class UserCreate(schemas.BaseUserCreate):

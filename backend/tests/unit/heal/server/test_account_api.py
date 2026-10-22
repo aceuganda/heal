@@ -13,7 +13,7 @@ from fastapi_users.password import PasswordHelper
 
 from heal.server import account_api
 from heal_app.auth.users import cookie_transport
-from heal_app.auth.users import current_user
+from heal_app.auth.users import current_account_user
 
 CURRENT = "first-boot-pass"
 helper = PasswordHelper()
@@ -71,7 +71,7 @@ def session(row: FakeRow, monkeypatch: pytest.MonkeyPatch) -> FakeSession:
 def client_for(user) -> TestClient:
     app = FastAPI()
     app.include_router(account_api.router)
-    app.dependency_overrides[current_user] = lambda: user
+    app.dependency_overrides[current_account_user] = lambda: user
     return TestClient(app)
 
 

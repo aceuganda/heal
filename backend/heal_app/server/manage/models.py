@@ -30,6 +30,11 @@ class UserInfo(BaseModel):
     is_superuser: bool
     is_verified: bool
     role: UserRole
+    admin_verified: bool = False
+    chat_blocked: bool = False
+    # Why the access policy refuses this account right now, or null; the
+    # chat screen shows it instead of failing request by request.
+    access_blocked_reason: str | None = None
 
 
 class UserByEmail(BaseModel):

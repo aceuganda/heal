@@ -5,7 +5,7 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { detailOf, passwordProblem, signedOutMessage } from "./lib";
+import { detailOf, passwordProblem, signedOutMessage } from "./password";
 
 const EMAIL = "Admin@heal.test";
 const ok = {

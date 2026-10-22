@@ -14,6 +14,8 @@ least one super admin. Without it, a single careless demotion locks everyone
 out of the API keys and of user management, with no in-app way back.
 """
 import uuid
+from datetime import datetime
+from datetime import timezone
 from typing import Any
 
 from fastapi import APIRouter
@@ -27,10 +29,12 @@ from sqlalchemy import func
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from heal.accounts import access
 from heal.logger import get_logger
 from heal_app.auth.schemas import ASSIGNABLE_ROLES
 from heal_app.auth.schemas import UserCreate
 from heal_app.auth.schemas import UserRole
+from heal_app.auth.users import current_admin_user
 from heal_app.auth.users import current_super_admin_user
 from heal_app.auth.users import get_user_manager
 from heal_app.auth.users import UserManager
@@ -192,3 +196,128 @@ async def change_user_role(
         "Role changed for %s: %s -> %s", email, previous.value, request.role.value
     )
     return {"id": user_id, "email": email, "role": request.role.value}
+
+
+class AccessChangeRequest(BaseModel):
+    """Any of the three; an absent field is left as it is."""
+
+    email_verified: bool | None = None
+    admin_verified: bool | None = None
+    chat_blocked: bool | None = None
+
+    class Config:
+        extra = "forbid"
+
+
+class AccessView(BaseModel):
+    id: str
+    email: str
+    email_verified: bool
+    admin_verified: bool
+    admin_verified_at: datetime | None
+    chat_blocked: bool
+
+
+@router.patch("/{user_id}/access")
+async def change_user_access(
+    user_id: str,
+    request: AccessChangeRequest,
+    actor: User | None = Depends(current_admin_user),
+) -> AccessView:
+    """Set an account's email verification, admin verification or chat block.
+
+    Admins, not only super admins: vouching for a health worker and pausing
+    someone's chat are day-to-day moderation, not control of the deployment.
+    """
+    sent = request.__fields_set__
+    if not sent:
+        raise HTTPException(status_code=422, detail="Nothing to change")
+    try:
+        target_id = uuid.UUID(user_id)
+    except ValueError:
+        raise HTTPException(status_code=422, detail="Not a valid user id")
+
+    async with AsyncSession(
+        get_sqlalchemy_async_engine(), expire_on_commit=False
+    ) as asession:
+        user = await asession.get(User, target_id)
+        if user is None:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        if "email_verified" in sent and request.email_verified is not None:
+            user.is_verified = request.email_verified
+        if "admin_verified" in sent and request.admin_verified is not None:
+            if request.admin_verified and user.admin_verified_at is None:
+                user.admin_verified_at = datetime.now(timezone.utc)
+                user.admin_verified_by_id = actor.id if actor is not None else None
+            elif not request.admin_verified:
+                user.admin_verified_at = None
+                user.admin_verified_by_id = None
+        if "chat_blocked" in sent and request.chat_blocked is not None:
+            user.chat_blocked = request.chat_blocked
+
+        asession.add(user)
+        await asession.commit()
+
+    logger.info(
+        "Access changed for %s by %s: %s",
+        user.email,
+        actor.email if actor is not None else "auth-disabled",
+        {k: getattr(request, k) for k in sorted(sent)},
+    )
+    return AccessView(
+        id=str(user.id),
+        email=user.email,
+        email_verified=bool(user.is_verified),
+        admin_verified=user.admin_verified_at is not None,
+        admin_verified_at=user.admin_verified_at,
+        chat_blocked=bool(user.chat_blocked),
+    )
+
+
+policy_router = APIRouter(prefix="/manage/access-policy")
+
+
+class PolicyView(BaseModel):
+    block_email_unverified: bool
+    block_admin_unverified: bool
+
+
+class PolicyUpdate(BaseModel):
+    block_email_unverified: bool | None = None
+    block_admin_unverified: bool | None = None
+
+    class Config:
+        extra = "forbid"
+
+
+@policy_router.get("")
+def get_access_policy(_: User | None = Depends(current_admin_user)) -> PolicyView:
+    policy = access.current_policy(refresh=True)
+    return PolicyView(**policy.__dict__)
+
+
+@policy_router.put("")
+def update_access_policy(
+    request: PolicyUpdate,
+    actor: User | None = Depends(current_admin_user),
+) -> PolicyView:
+    """Turn blocking of unverified accounts on or off, per level.
+
+    Never affects admins (see heal/accounts/access.py), so no switch here can
+    lock out the people who would have to switch it back.
+    """
+    values = {
+        name: getattr(request, name)
+        for name in request.__fields_set__
+        if getattr(request, name) is not None
+    }
+    if not values:
+        raise HTTPException(status_code=422, detail="Nothing to change")
+    policy = access.save(values, actor_id=actor.id if actor is not None else None)
+    logger.info(
+        "Access policy changed by %s: %s",
+        actor.email if actor is not None else "auth-disabled",
+        values,
+    )
+    return PolicyView(**policy.__dict__)

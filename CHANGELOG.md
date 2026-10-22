@@ -22,6 +22,38 @@ the first pilot release.
 
 ### Added
 
+- **Account settings for everyone, with a profile and two levels of
+  verification.**
+  - **Account settings page:** every user now has one at `/account`, opened
+    from the settings menu at the foot of the chat sidebar (and from the header
+    menu). A member's menu shows only Account settings and Log out; admins
+    also get the Admin Panel.
+  - **What's on it:** the person's details (organisation, date of birth,
+    sex), their verification status, and the password change that was
+    previously admin-only.
+  - **Two verification levels:**
+    - *Email verified:* the person clicked the link Heal emailed them, sent
+      from a button on the page.
+    - *Admin verified:* an administrator has vouched for the account.
+    - New accounts start unverified at both levels. Existing accounts keep
+      whatever email status they had.
+  - **Admin controls** (Admin → Users): admins can set both levels and pause
+    chat for a single account. Pausing stops new questions; the person's past
+    chats stay readable.
+  - **Access policy:** two switches, one per level, that block unverified
+    accounts from everything except their own Account settings. Both are off
+    by default, so verification is only a status until an admin chooses
+    otherwise.
+  - **Admins are never blocked** by the policy, so no switch can lock out the
+    people who would have to switch it back.
+  - **Blocked users are told why:** the chat screen shows the reason above the
+    input, with a link to Account settings.
+  - Requires a migration (`c5e8a1f3d742`, additive: profile and access columns
+    on `user`, plus a one-row `access_policy` table). The verification email
+    needs `SMTP_USER`/`SMTP_PASS` (and `WEB_DOMAIN` for the link). Until those
+    are set, the button says email is not set up and suggests asking an admin
+    to verify instead.
+
 - **Retrieval settings can be saved from the admin playground too.** The
   score floor, hybrid search and its weight, the candidate and context top-k,
   and the per-source cap now save with **Save changes**, like

@@ -110,23 +110,41 @@ def verify_email_domain(email: str) -> None:
             )
 
 
+class EmailNotConfigured(RuntimeError):
+    """SMTP is still on its placeholder settings; no mail can be sent."""
+
+
+def smtp_configured() -> bool:
+    placeholders = {"", "your-email@gmail.com", "your-gmail-password"}
+    return SMTP_USER not in placeholders and SMTP_PASS not in placeholders
+
+
 def send_user_verification_email(
     user_email: str,
     token: str,
     mail_from: str = EMAIL_FROM,
 ) -> None:
+    if not smtp_configured():
+        raise EmailNotConfigured("SMTP_USER / SMTP_PASS are not set")
+
     msg = MIMEMultipart()
-    msg["Subject"] = "Danswer Email Verification"
+    msg["Subject"] = "Verify your email address for Heal"
     msg["To"] = user_email
     if mail_from:
         msg["From"] = mail_from
 
     link = f"{WEB_DOMAIN}/auth/verify-email?token={token}"
 
-    body = MIMEText(f"Click the following link to verify your email address: {link}")
+    body = MIMEText(
+        "Confirm this is your email address by opening the link below. "
+        "If you did not ask for this, you can ignore this email.\n\n"
+        f"{link}"
+    )
     msg.attach(body)
 
-    with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as s:
+    # A timeout, so an unreachable mail server fails the request instead of
+    # holding an API worker indefinitely.
+    with smtplib.SMTP(SMTP_SERVER, SMTP_PORT, timeout=20) as s:
         s.starttls()
         # If credentials fails with gmail, check (You need an app password, not just the basic email password)
         # https://support.google.com/accounts/answer/185833?sjid=8512343437447396151-NA
@@ -308,15 +326,35 @@ async def double_check_user(
     return user
 
 
-async def current_user(
+async def current_account_user(
     request: Request,
     user: User | None = Depends(optional_valid_user),
     db_session: Session = Depends(get_session),
 ) -> User | None:
+    """Signed in, without the access policy applied.
+
+    Only for the person's own account endpoints: a user the policy blocks must
+    still be able to reach Account settings to verify their email or fix their
+    details, or the block could never be lifted from their side.
+    """
     double_check_user = fetch_versioned_implementation(
         "heal_app.auth.users", "double_check_user"
     )
-    user = await double_check_user(request, user, db_session)
+    return await double_check_user(request, user, db_session)
+
+
+async def current_user(
+    user: User | None = Depends(current_account_user),
+) -> User | None:
+    """Signed in AND allowed in by the access policy (heal/accounts/access.py).
+
+    Admins are never blocked by the policy; see that module.
+    """
+    from heal.accounts.access import blocked_reason
+
+    reason = blocked_reason(user)
+    if reason:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=reason)
     return user
 
 

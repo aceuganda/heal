@@ -32,6 +32,15 @@ export interface User {
   is_superuser: string;
   is_verified: string;
   role: UserRole;
+  // Profile and admin-side access state (admin user list).
+  organisation?: string | null;
+  date_of_birth?: string | null;
+  sex?: string | null;
+  admin_verified_at?: string | null;
+  chat_blocked?: boolean;
+  // From /manage/me only.
+  admin_verified?: boolean;
+  access_blocked_reason?: string | null;
 }
 
 export type ValidSources =

@@ -165,7 +165,7 @@ export async function Layout({ children }: { children: React.ReactNode }) {
                     name: (
                       <div className="flex">
                         <LockIcon size={18} />
-                        <div className="ml-1">Your password</div>
+                        <div className="ml-1">Your account</div>
                       </div>
                     ),
                     link: "/admin/account",

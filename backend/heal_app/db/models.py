@@ -14,6 +14,7 @@ from fastapi_users.db import SQLAlchemyBaseUserTableUUID
 from fastapi_users_db_sqlalchemy.access_token import SQLAlchemyBaseAccessTokenTableUUID
 from sqlalchemy import Boolean
 from sqlalchemy import CheckConstraint
+from sqlalchemy import Date
 from sqlalchemy import DateTime
 from sqlalchemy import Enum
 from sqlalchemy import Float
@@ -98,6 +99,59 @@ class User(SQLAlchemyBaseUserTableUUID, Base):
     )
     prompts: Mapped[List["Prompt"]] = relationship("Prompt", back_populates="user")
     personas: Mapped[List["Persona"]] = relationship("Persona", back_populates="user")
+
+    # Profile, filled in by the person on Account settings. Null until then.
+    organisation: Mapped[str | None] = mapped_column(String, nullable=True)
+    date_of_birth: Mapped[datetime.date | None] = mapped_column(Date, nullable=True)
+    # "female" | "male" | "prefer_not_to_say"; see heal/accounts/profile.py.
+    sex: Mapped[str | None] = mapped_column(String, nullable=True)
+
+    # The second verification level. `is_verified` (fastapi-users) means the
+    # person clicked the email link; this means an admin vouched for them.
+    admin_verified_at: Mapped[datetime.datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    admin_verified_by_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("user.id", ondelete="SET NULL"), nullable=True
+    )
+
+    # An admin's per-account pause on chat. Nothing else is affected.
+    chat_blocked: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "sex IS NULL OR sex IN ('female', 'male', 'prefer_not_to_say')",
+            name="user_sex_known",
+        ),
+    )
+
+
+class AccessPolicy(Base):
+    """Deployment-wide switches that block unverified accounts. One row, id 1.
+
+    No row means nothing is blocked. Read through `heal/accounts/access.py`,
+    which caches it and never blocks an admin.
+    """
+
+    __tablename__ = "access_policy"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    block_email_unverified: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
+    block_admin_unverified: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
+    updated_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_by_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("user.id", ondelete="SET NULL"), nullable=True
+    )
+
+    __table_args__ = (CheckConstraint("id = 1", name="access_policy_single_row"),)
 
 
 class AccessToken(SQLAlchemyBaseAccessTokenTableUUID, Base):

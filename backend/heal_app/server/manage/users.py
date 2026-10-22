@@ -9,6 +9,7 @@ from fastapi_users_db_sqlalchemy import UUID_ID
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 
+from heal.accounts.access import blocked_reason
 from heal_app.auth.schemas import UserRead
 from heal_app.auth.schemas import UserRole
 from heal_app.auth.users import current_admin_user
@@ -115,4 +116,7 @@ def verify_user_logged_in(user: User | None = Depends(optional_valid_user)) -> U
         is_superuser=user.is_superuser,
         is_verified=user.is_verified,
         role=user.role,
+        admin_verified=user.admin_verified_at is not None,
+        chat_blocked=bool(user.chat_blocked),
+        access_blocked_reason=blocked_reason(user),
     )

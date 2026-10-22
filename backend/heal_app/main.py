@@ -19,6 +19,7 @@ from heal.server.feedback_api import router as feedback_router
 from heal.server.knowledge_api import router as knowledge_router
 from heal.server.playground_api import router as playground_router
 from heal.server.reference_api import router as reference_router
+from heal.server.users_api import policy_router as access_policy_router
 from heal.server.users_api import router as users_admin_router
 from heal_app import __version__
 from heal_app.auth.schemas import UserCreate
@@ -124,6 +125,7 @@ def get_application() -> FastAPI:
     # Creating accounts and changing roles. Mounted after `user_router`, which
     # keeps the inherited read-only user routes.
     include_router_with_global_prefix_prepended(application, users_admin_router)
+    include_router_with_global_prefix_prepended(application, access_policy_router)
     include_router_with_global_prefix_prepended(application, account_router)
     # Retrieval playground. Behind the same gate as user management: its
     # settings are per-request and change nothing for anyone else, but whoever

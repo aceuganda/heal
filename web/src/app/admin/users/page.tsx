@@ -3,9 +3,10 @@
 /**
  * User administration.
  *
- * Two things happen here: accounts get created, and roles get changed. Both
- * are privileged, because both are ways of handing out control of the
- * deployment.
+ * Accounts get created, roles get changed, and each account's verification
+ * and chat access are set. The access policy at the top decides whether an
+ * unverified account is blocked at all; with both switches off (the default)
+ * verification is a status and nothing more.
  *
  * The role select writes immediately rather than through a save button. There
  * is one field, the change is a single request, and a save button on a
@@ -34,14 +35,15 @@ import { AdminPageTitle } from "@/components/admin/Title";
 import { usePopup } from "@/components/admin/connectors/Popup";
 import { UsersIcon } from "@/components/icons/icons";
 import { fetcher } from "@/lib/fetcher";
-import {
-  ASSIGNABLE_ROLES,
-  ROLE_LABELS,
-  User,
-  UserRole,
-} from "@/lib/types";
+import { ASSIGNABLE_ROLES, ROLE_LABELS, User, UserRole } from "@/lib/types";
 
 const USERS_URL = "/api/manage/users";
+
+const SEX_LABELS: Record<string, string> = {
+  female: "Female",
+  male: "Male",
+  prefer_not_to_say: "Sex not given",
+};
 const PAGE_SIZE = 25;
 
 interface PaginatedUsers {
@@ -103,6 +105,125 @@ function roleBadgeColor(role: UserRole): string {
   return "gray";
 }
 
+/** A small on/off switch that writes as soon as it is flipped. */
+function Toggle({
+  checked,
+  disabled,
+  label,
+  onChange,
+}: {
+  checked: boolean;
+  disabled?: boolean;
+  label: string;
+  onChange: (next: boolean) => void;
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      aria-label={label}
+      disabled={disabled}
+      onClick={() => onChange(!checked)}
+      className={
+        "relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors disabled:opacity-50 " +
+        (checked ? "bg-heal-teal-700" : "bg-heal-ink-300")
+      }
+    >
+      <span
+        className={
+          "inline-block h-4 w-4 rounded-full bg-white shadow transition-transform " +
+          (checked ? "translate-x-[18px]" : "translate-x-0.5")
+        }
+      />
+    </button>
+  );
+}
+
+interface AccessPolicy {
+  block_email_unverified: boolean;
+  block_admin_unverified: boolean;
+}
+
+const POLICY_URL = "/api/manage/access-policy";
+
+function AccessPolicyCard({ setPopup }: { setPopup: (p: any) => void }) {
+  const { data, mutate: reload } = useSWR<AccessPolicy>(POLICY_URL, fetcher);
+  const [busy, setBusy] = useState(false);
+
+  const set = async (name: keyof AccessPolicy, value: boolean) => {
+    setBusy(true);
+    try {
+      const res = await fetch(POLICY_URL, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ [name]: value }),
+      });
+      if (!res.ok) {
+        setPopup({
+          message: await errorMessage(
+            res,
+            "Could not change the access policy"
+          ),
+          type: "error",
+        });
+        return;
+      }
+      await reload(await res.json(), { revalidate: false });
+      setPopup({
+        message: value
+          ? "Blocking is on. It applies from the next request; admins are never blocked."
+          : "Blocking is off for that level.",
+        type: "success",
+      });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const rows: { name: keyof AccessPolicy; title: string; hint: string }[] = [
+    {
+      name: "block_email_unverified",
+      title: "Block accounts without a verified email",
+      hint: "They can sign in and reach Account settings to verify, but nothing else.",
+    },
+    {
+      name: "block_admin_unverified",
+      title: "Block accounts an admin has not verified",
+      hint: "They can sign in and fill in their details while they wait for review.",
+    },
+  ];
+
+  return (
+    <Card className="mb-6">
+      <Title>Access policy</Title>
+      <Text className="mt-1 mb-4">
+        Both off by default: verification is shown below but blocks nobody.
+        Admins are never blocked by these switches.
+      </Text>
+      <div className="flex flex-col gap-4 max-w-2xl">
+        {rows.map((row) => (
+          <div
+            key={row.name}
+            className="flex items-start justify-between gap-4"
+          >
+            <div>
+              <div className="text-sm font-medium text-strong">{row.title}</div>
+              <div className="text-xs text-default">{row.hint}</div>
+            </div>
+            <Toggle
+              label={row.title}
+              checked={Boolean(data?.[row.name])}
+              disabled={!data || busy}
+              onChange={(next) => set(row.name, next)}
+            />
+          </div>
+        ))}
+      </div>
+    </Card>
+  );
+}
+
 function AddUserPanel({ setPopup }: { setPopup: (p: any) => void }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -111,7 +232,10 @@ function AddUserPanel({ setPopup }: { setPopup: (p: any) => void }) {
 
   const submit = async () => {
     if (!email.trim() || !password) {
-      setPopup({ message: "Email and password are both required", type: "error" });
+      setPopup({
+        message: "Email and password are both required",
+        type: "error",
+      });
       return;
     }
     setBusy(true);
@@ -134,7 +258,9 @@ function AddUserPanel({ setPopup }: { setPopup: (p: any) => void }) {
       }
       const created = await res.json();
       setPopup({
-        message: `${created.email} created as ${ROLE_LABELS[created.role as UserRole]}`,
+        message: `${created.email} created as ${
+          ROLE_LABELS[created.role as UserRole]
+        }`,
         type: "success",
       });
       setEmail("");
@@ -238,6 +364,41 @@ function UsersTable({ setPopup }: { setPopup: (p: any) => void }) {
     }
   };
 
+  const changeAccess = async (
+    user: User,
+    change: Partial<{
+      email_verified: boolean;
+      admin_verified: boolean;
+      chat_blocked: boolean;
+    }>,
+    done: string
+  ) => {
+    setPending(user.id);
+    try {
+      const res = await fetch(`${USERS_URL}/${user.id}/access`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(change),
+      });
+      if (!res.ok) {
+        setPopup({
+          message: await errorMessage(res, "Could not change the account"),
+          type: "error",
+        });
+        return;
+      }
+      setPopup({ message: done, type: "success" });
+      refreshUserPages();
+    } catch (e) {
+      setPopup({
+        message: `Could not change the account: ${e}`,
+        type: "error",
+      });
+    } finally {
+      setPending(null);
+    }
+  };
+
   const searchBox = (
     <div className="flex gap-2 items-center mb-4 max-w-md">
       <TextInput
@@ -274,21 +435,84 @@ function UsersTable({ setPopup }: { setPopup: (p: any) => void }) {
       <Table className="overflow-visible">
         <TableHead>
           <TableRow>
-            <TableHeaderCell>Email</TableHeaderCell>
-            <TableHeaderCell>Status</TableHeaderCell>
+            <TableHeaderCell>Account</TableHeaderCell>
+            <TableHeaderCell>Email verified</TableHeaderCell>
+            <TableHeaderCell>Admin verified</TableHeaderCell>
+            <TableHeaderCell>Chat</TableHeaderCell>
             <TableHeaderCell>Role</TableHeaderCell>
           </TableRow>
         </TableHead>
         <TableBody>
           {users.map((user) => (
             <TableRow key={user.id}>
-              <TableCell>{user.email}</TableCell>
               <TableCell>
-                <div className="flex gap-2">
+                <div className="flex items-center gap-2">
+                  <span className="font-medium text-strong">{user.email}</span>
                   <Badge color={roleBadgeColor(user.role)}>
                     {ROLE_LABELS[user.role] ?? user.role}
                   </Badge>
-                  {!user.is_verified && <Badge color="amber">Unverified</Badge>}
+                </div>
+                <div className="mt-0.5 text-xs text-default">
+                  {[
+                    user.organisation,
+                    user.sex ? SEX_LABELS[user.sex] ?? user.sex : null,
+                    user.date_of_birth ? `born ${user.date_of_birth}` : null,
+                  ]
+                    .filter(Boolean)
+                    .join(" · ") || "No details yet"}
+                </div>
+              </TableCell>
+              <TableCell>
+                <Toggle
+                  label={`Email verified for ${user.email}`}
+                  checked={Boolean(user.is_verified)}
+                  disabled={pending === user.id}
+                  onChange={(next) =>
+                    changeAccess(
+                      user,
+                      { email_verified: next },
+                      next
+                        ? `${user.email}'s email is marked verified`
+                        : `${user.email}'s email is marked unverified`
+                    )
+                  }
+                />
+              </TableCell>
+              <TableCell>
+                <Toggle
+                  label={`Admin verified for ${user.email}`}
+                  checked={Boolean(user.admin_verified_at)}
+                  disabled={pending === user.id}
+                  onChange={(next) =>
+                    changeAccess(
+                      user,
+                      { admin_verified: next },
+                      next
+                        ? `${user.email} is verified`
+                        : `${user.email} is no longer admin-verified`
+                    )
+                  }
+                />
+              </TableCell>
+              <TableCell>
+                <div className="flex items-center gap-2">
+                  <Toggle
+                    label={`Chat allowed for ${user.email}`}
+                    checked={!user.chat_blocked}
+                    disabled={pending === user.id}
+                    onChange={(allowed) =>
+                      changeAccess(
+                        user,
+                        { chat_blocked: !allowed },
+                        allowed
+                          ? `Chat is back on for ${user.email}`
+                          : `Chat is paused for ${user.email}`
+                      )
+                    }
+                  />
+                  <span className="text-xs text-default">
+                    {user.chat_blocked ? "Paused" : "On"}
+                  </span>
                 </div>
               </TableCell>
               <TableCell>
@@ -296,9 +520,7 @@ function UsersTable({ setPopup }: { setPopup: (p: any) => void }) {
                   aria-label={`Role for ${user.email}`}
                   value={user.role === "basic" ? "member" : user.role}
                   disabled={pending === user.id}
-                  onChange={(e) =>
-                    changeRole(user, e.target.value as UserRole)
-                  }
+                  onChange={(e) => changeRole(user, e.target.value as UserRole)}
                   className="border border-border rounded p-2 text-sm bg-background"
                 >
                   {ASSIGNABLE_ROLES.map((r) => (
@@ -348,6 +570,7 @@ const Page = () => {
     <div className="mx-auto container">
       {popup}
       <AdminPageTitle title="Users" icon={<UsersIcon size={32} />} />
+      <AccessPolicyCard setPopup={setPopup} />
       <AddUserPanel setPopup={setPopup} />
       <UsersTable setPopup={setPopup} />
     </div>

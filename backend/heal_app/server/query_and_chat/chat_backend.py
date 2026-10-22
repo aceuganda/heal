@@ -6,6 +6,7 @@ from fastapi import HTTPException
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
+from heal.accounts.access import CHAT_BLOCKED_MESSAGE
 from heal.chat.export import download_chat_sessions_helper
 from heal.chat.message_flow import stream_chat_message
 from heal.language import get_language_service
@@ -43,6 +44,20 @@ from heal_app.utils.logger import setup_logger
 logger = setup_logger()
 
 router = APIRouter(prefix="/chat")
+
+
+async def current_chat_user(
+    user: User | None = Depends(current_user),
+) -> User | None:
+    """`current_user`, refused when an admin has paused chat for the account.
+
+    Applied only where a new answer would be produced. Reading, renaming and
+    deleting past chats stay open: a pause stops new questions, it does not
+    take away someone's own history.
+    """
+    if user is not None and user.chat_blocked:
+        raise HTTPException(status_code=403, detail=CHAT_BLOCKED_MESSAGE)
+    return user
 
 
 @router.get("/get-user-chat-sessions")
@@ -101,7 +116,7 @@ def get_chat_session(
 @router.post("/create-chat-session")
 def create_new_chat_session(
     chat_session_creation_request: ChatSessionCreationRequest,
-    user: User | None = Depends(current_user),
+    user: User | None = Depends(current_chat_user),
     db_session: Session = Depends(get_session),
 ) -> CreateChatSessionID:
     user_id = user.id if user is not None else None
@@ -160,7 +175,7 @@ def delete_chat_session_by_id(
 @router.post("/send-message")
 def handle_new_chat_message(
     chat_message_req: CreateChatMessageRequest,
-    user: User | None = Depends(current_user),
+    user: User | None = Depends(current_chat_user),
     db_session: Session = Depends(get_session),
 ) -> StreamingResponse:
     """This endpoint is both used for all the following purposes:
@@ -226,7 +241,7 @@ def create_chat_feedback(
 @router.post("/translate-chat-message")
 def upd_chat_message(
     payload: TranslateChatMessagePayload,
-    user: User | None = Depends(current_user),
+    user: User | None = Depends(current_chat_user),
     db_session: Session = Depends(get_session),
 ):
     """Translate to luganda"""
