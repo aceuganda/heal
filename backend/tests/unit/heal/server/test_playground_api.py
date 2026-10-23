@@ -310,6 +310,32 @@ class TestModelSelection:
         body = run(client_as(UserRole.ADMIN), classifier_model="gpt-4o")
         assert body["classifier_model"] == "gpt-4o"
 
+    def test_the_internal_model_understands_what_it_answers(
+        self, store, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """No cloud classifier, and so no cloud key, in front of it."""
+        monkeypatch.setattr(config, "SELF_HOSTED_URL", "http://internal.test/v1")
+        monkeypatch.setattr(config, "SELF_HOSTED_MODEL", "local-model")
+        store([chunk()])
+        body = run(
+            client_as(UserRole.ADMIN), chat_model="self-hosted", retrieval_only=True
+        )
+        assert body["classifier_model"] == "self-hosted"
+
+    def test_an_explicit_classifier_still_wins(
+        self, store, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(config, "SELF_HOSTED_URL", "http://internal.test/v1")
+        monkeypatch.setattr(config, "SELF_HOSTED_MODEL", "local-model")
+        store([chunk()])
+        body = run(
+            client_as(UserRole.ADMIN),
+            chat_model="self-hosted",
+            classifier_model="gpt-4o",
+            retrieval_only=True,
+        )
+        assert body["classifier_model"] == "gpt-4o"
+
 
 class TestTheCandidateReport:
     """Tuning a floor means seeing what it is about to discard."""

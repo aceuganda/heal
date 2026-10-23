@@ -2,6 +2,7 @@
 from heal.llm.models import ModelSpec
 from heal.llm.registry import all_models
 from heal.llm.registry import available_models
+from heal.llm.registry import classifier_for
 from heal.llm.registry import classifier_model
 from heal.llm.registry import default_model
 from heal.llm.registry import get_model
@@ -13,6 +14,7 @@ __all__ = [
     "ModelSpec",
     "all_models",
     "available_models",
+    "classifier_for",
     "classifier_model",
     "default_model",
     "get_model",

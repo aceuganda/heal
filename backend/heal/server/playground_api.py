@@ -52,6 +52,7 @@ from heal.knowledge.store import KnowledgeStore
 from heal.knowledge.store import QdrantKnowledgeStore
 from heal.knowledge.store import select_context
 from heal.llm import all_models
+from heal.llm import classifier_for
 from heal.llm import defaults as saved_defaults
 from heal.llm import get_model
 from heal.llm import to_provider_messages
@@ -654,7 +655,11 @@ async def run_query(
         )
 
     chat_model = _resolve_model(request.chat_model, "chat_model")
-    classifier_model = _resolve_model(request.classifier_model, "classifier_model")
+    # An explicit classifier wins; otherwise the internal model, when it is the
+    # one answering, also does the understanding -- as it does in chat.
+    classifier_model = _resolve_model(
+        request.classifier_model, "classifier_model"
+    ) or classifier_for(chat_model or None).id
 
     settings, used = resolve(
         {

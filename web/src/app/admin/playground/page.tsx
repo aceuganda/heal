@@ -265,6 +265,30 @@ function VerbosityPicker({
   );
 }
 
+const PROVIDER_LABELS: Record<string, string> = {
+  openai: "OpenAI",
+  anthropic: "Anthropic",
+};
+
+/**
+ * Internal model first, then one group per provider. The OpenAI group is
+ * OpenAI's own live list, read with the key already configured.
+ */
+function groupModels(
+  models: PlaygroundOptions["models"]
+): [string, PlaygroundOptions["models"]][] {
+  const groups = new Map<string, PlaygroundOptions["models"]>();
+  for (const model of models) {
+    const group = model.self_hosted
+      ? "Internal"
+      : PROVIDER_LABELS[model.provider] ?? model.provider;
+    groups.set(group, [...(groups.get(group) ?? []), model]);
+  }
+  return Array.from(groups).sort(([a], [b]) =>
+    a === "Internal" ? -1 : b === "Internal" ? 1 : a.localeCompare(b)
+  );
+}
+
 function ModelPicker({
   label,
   value,
@@ -294,12 +318,15 @@ function ModelPicker({
         className="mt-1 w-full rounded border border-border px-2 py-1.5 text-sm"
       >
         <option value="">Deployment default ({fallback})</option>
-        {options.map((model) => (
-          <option key={model.id} value={model.id}>
-            {model.display_name}
-            {model.self_hosted ? " — internal" : ""}
-            {model.configured ? "" : " — no API key set"}
-          </option>
+        {groupModels(options).map(([group, models]) => (
+          <optgroup key={group} label={group}>
+            {models.map((model) => (
+              <option key={model.id} value={model.id}>
+                {model.display_name}
+                {model.configured ? "" : " — no API key set"}
+              </option>
+            ))}
+          </optgroup>
         ))}
       </select>
     </div>

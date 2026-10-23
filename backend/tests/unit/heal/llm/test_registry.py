@@ -62,3 +62,85 @@ class TestAvailability:
     def test_allowlist_narrows_the_offer(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(config, "ENABLED_CHAT_MODELS", "gpt-4o-mini")
         assert {m.id for m in available_models()} == {"gpt-4o-mini"}
+
+
+class TestOpenAIListing:
+    """OpenAI's own model list, read with the key the client already uses."""
+
+    @pytest.fixture
+    def listing(self, monkeypatch: pytest.MonkeyPatch) -> list[str]:
+        from heal.llm import registry
+
+        calls: list[str] = []
+
+        def fetch(key: str) -> list[str]:
+            calls.append(key)
+            return ["gpt-4.1", "gpt-4o", "text-embedding-3-small", "gpt-4o-audio-preview"]
+
+        monkeypatch.setattr(registry, "_openai_key", lambda: "test-key")
+        monkeypatch.setattr(registry, "_fetch_openai_models", fetch)
+        return calls
+
+    def test_lists_chat_models_only(self, listing: list[str]) -> None:
+        ids = {m.id for m in all_models()}
+        assert "gpt-4.1" in ids
+        assert "text-embedding-3-small" not in ids
+        assert "gpt-4o-audio-preview" not in ids
+
+    def test_listed_model_resolves(self, listing: list[str]) -> None:
+        assert get_model("gpt-4.1").provider == "openai"
+
+    def test_static_entry_wins_over_listed(self, listing: list[str]) -> None:
+        assert get_model("gpt-4o").display_name == "GPT-4o"
+
+    def test_known_ids_never_trigger_a_listing(self, listing: list[str]) -> None:
+        """Per-message lookups must not wait on OpenAI."""
+        get_model("gpt-4o-mini")
+        assert listing == []
+
+    def test_listing_is_cached(self, listing: list[str]) -> None:
+        from heal.llm import registry
+
+        registry._openai_cache["ttl"] = 0.0
+        all_models()
+        all_models()
+        assert len(listing) == 1
+
+    def test_a_failed_listing_keeps_the_static_catalogue(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from heal.llm import registry
+
+        def broken(key: str) -> list[str]:
+            raise ConnectionError("no network")
+
+        monkeypatch.setattr(registry, "_openai_key", lambda: "test-key")
+        monkeypatch.setattr(registry, "_fetch_openai_models", broken)
+        assert "gpt-4o-mini" in {m.id for m in all_models()}
+
+    def test_no_key_means_no_listing(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from heal.llm import registry
+
+        monkeypatch.setattr(registry, "_openai_key", lambda: None)
+        monkeypatch.setattr(
+            registry, "_fetch_openai_models", lambda key: pytest.fail("fetched")
+        )
+        all_models()
+
+
+class TestClassifierFor:
+    """The internal model understands the questions it answers."""
+
+    def test_cloud_chat_keeps_the_configured_classifier(self) -> None:
+        from heal.llm import classifier_for
+
+        assert classifier_for("gpt-4o").id == config.CLASSIFIER_MODEL
+
+    def test_self_hosted_chat_classifies_itself(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from heal.llm import classifier_for
+
+        monkeypatch.setattr(config, "SELF_HOSTED_URL", "http://internal.test/v1")
+        monkeypatch.setattr(config, "SELF_HOSTED_MODEL", "local-model")
+        assert classifier_for("self-hosted").self_hosted

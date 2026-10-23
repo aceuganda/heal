@@ -7,7 +7,6 @@ import {
 } from "@/lib/userSS";
 import { redirect } from "next/navigation";
 import { HealthCheckBanner } from "@/components/health/healthcheck";
-import { ApiKeyModal } from "@/components/openai/ApiKeyModal";
 import { fetchSS } from "@/lib/utilsSS";
 import { Connector, DocumentSet, Tag, User, ValidSources } from "@/lib/types";
 import { cookies } from "next/headers";
@@ -117,7 +116,6 @@ export default async function Home() {
       <div className="m-3">
         <HealthCheckBanner />
       </div>
-      <ApiKeyModal />
       <InstantSSRAutoRefresh />
       {connectors.length === 0 && connectorsResponse?.ok && <WelcomeModal />}
       <div className="px-[2rem] sm:px-24 pt-10 flex flex-col items-center min-h-screen">

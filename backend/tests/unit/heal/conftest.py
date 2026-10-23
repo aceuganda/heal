@@ -14,6 +14,7 @@ itself; see tests/unit/heal/llm/test_defaults.py.
 import pytest
 
 from heal.llm import defaults
+from heal.llm import registry
 
 
 @pytest.fixture(autouse=True)
@@ -22,3 +23,13 @@ def no_saved_settings(monkeypatch: pytest.MonkeyPatch) -> None:
     defaults.invalidate()
     monkeypatch.setattr(defaults, "stored", lambda refresh=False: {})
     monkeypatch.setattr(defaults, "last_change", lambda: (None, None))
+
+
+@pytest.fixture(autouse=True)
+def no_openai_listing(monkeypatch: pytest.MonkeyPatch) -> None:
+    """OpenAI's live model list is empty: no test ever reaches the network.
+
+    A test about the listing stubs `_fetch_openai_models` itself.
+    """
+    monkeypatch.setattr(registry, "_fetch_openai_models", lambda key: [])
+    monkeypatch.setitem(registry._openai_cache, "ttl", 0.0)

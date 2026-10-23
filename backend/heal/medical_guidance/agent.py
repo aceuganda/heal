@@ -21,6 +21,7 @@ from heal.chat.stream_processing import StreamProcessor
 from heal.knowledge.models import RetrievedChunk
 from heal.knowledge.models import SearchOutcome
 from heal.knowledge.models import SourceRef
+from heal.llm.registry import classifier_for
 from heal.llm.registry import default_model
 from heal.llm.service import stream_with_failover
 from heal.llm.settings import GenerationSettings
@@ -105,7 +106,11 @@ class MedicalGuidanceAgent:
         # One call produces both the safety label and the query retrieval will
         # search on. See heal/medical_guidance/understanding.py for why these
         # are not two separate stages.
-        result = understand(request.message, [t for _, t in request.history])
+        result = understand(
+            request.message,
+            [t for _, t in request.history],
+            model_id=_classifier_id(request.model_id),
+        )
         route = route_for(result.intent)
 
         response = AgentResponse(
@@ -277,3 +282,15 @@ def _no_source_message(outcome: SearchOutcome) -> str:
 def _fill(response: AgentResponse, text: str) -> AgentResponse:
     response.text = text
     return response
+
+
+def _classifier_id(chat_model_id: str | None) -> str | None:
+    """The classifier for this turn; None leaves the choice to `understand`.
+
+    An unknown chat model id is not this step's failure to report -- the
+    generation step names it -- so it falls back to the configured classifier.
+    """
+    try:
+        return classifier_for(chat_model_id).id
+    except ValueError:
+        return None

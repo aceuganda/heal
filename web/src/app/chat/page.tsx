@@ -15,7 +15,6 @@ import {
 import { unstable_noStore as noStore } from "next/cache";
 import { Persona } from "../admin/personas/interfaces";
 import { InstantSSRAutoRefresh } from "@/components/SSRAutoRefresh";
-import { ApiKeyModal } from "@/components/openai/ApiKeyModal";
 import { cookies } from "next/headers";
 import { DOCUMENT_SIDEBAR_WIDTH_COOKIE_NAME } from "@/components/resizable/contants";
 import { personaComparator } from "../admin/personas/lib";
@@ -112,7 +111,6 @@ export default async function Page(props: {
   return (
     <>
       <InstantSSRAutoRefresh />
-      <ApiKeyModal />
 
 
       <ChatLayout

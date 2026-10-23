@@ -22,6 +22,30 @@ the first pilot release.
 
 ### Added
 
+- **OpenAI's live model list.** The model pickers now show every OpenAI chat
+  model the configured key can use, grouped by provider with the internal model
+  first. The list comes from OpenAI's own `/models` endpoint and uses the key
+  that is already set (the admin Keys page, then `GEN_AI_API_KEY`), so no new
+  key is needed. It is cached for 10 minutes. If the call fails, the built-in
+  list is shown instead. A normal chat message never waits on this call.
+
+### Changed
+
+- **The internal model now understands the questions it answers.** When the
+  chat model is `self-hosted`, query understanding (the rewrite and label used
+  for hybrid retrieval) runs on it too, in chat and in the playground. Before,
+  understanding always went to the cloud classifier, so every message needed a
+  working OpenAI key even when the internal model was selected. Picking a
+  classifier explicitly in the playground still overrides this. Understanding
+  also now respects the classifier saved in the playground; before, it only
+  read `HEAL_CLASSIFIER_MODEL`.
+
+### Removed
+
+- **The "provide an OpenAI API key" popup** on the chat page. Keys are set by
+  the operator (admin Keys page or deployment secret), not asked of whoever
+  opens the chat.
+
 - **`HEAL_SELF_HOSTED_CLOUD_FALLBACK`** (default `true`). Set it to `false` and
   an unreachable internal model makes the message fail instead of handing it
   to the cloud model, so no question leaves our network. Set

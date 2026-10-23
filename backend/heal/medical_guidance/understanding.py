@@ -29,6 +29,7 @@ import re
 from dataclasses import dataclass
 from dataclasses import field
 
+from heal.llm import classifier_model
 from heal.llm import get_classifier_llm
 from heal.logger import get_logger
 from heal.medical_guidance.intent import FALLBACK_INTENT
@@ -150,18 +151,16 @@ def understand(
 ) -> Understanding:
     """Classify and rewrite one English message.
 
-    `model_id` names a classifier for this call only; omitted, the configured
-    one is used, which is what every chat turn does.
+    `model_id` names a classifier for this call only; omitted, the deployment's
+    saved classifier is used, environment behind it.
 
     Never raises. On any failure the label falls back to CLINICAL_QUESTION and
     the query falls back to the user's own text -- which is exactly how the
     system behaved before this step existed, so a bad day for the model costs
     retrieval quality rather than the answer.
     """
-    from heal import config
-
     original = message.strip()
-    model_id = model_id or config.CLASSIFIER_MODEL
+    model_id = model_id or classifier_model().id
     prompt = UNDERSTANDING_PROMPT.format(
         history=_format_history(history or []), message=original
     )
