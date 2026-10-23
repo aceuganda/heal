@@ -117,10 +117,12 @@ class DefaultMultiLLM(LangChainChatLLM):
         temperature: float = GEN_AI_TEMPERATURE,
         top_p: float | None = None,
     ):
-        # Litellm Langchain integration currently doesn't take in the api key param
-        # Can place this in the call below once integration is in
-        litellm.api_key = api_key or "dummy-key"
-        litellm.api_version = api_version
+        # The key goes on the client, never on the `litellm` module: a module
+        # global is shared by every client in the process, so building the
+        # self-hosted client used to hand its placeholder key to the cached
+        # OpenAI classifier, and building a cloud client handed the OpenAI key
+        # to the internal endpoint.
+        api_key = api_key or "dummy-key"
 
         # Passed through `model_kwargs` rather than as a constructor field.
         # ChatLiteLLM declares a `top_p` attribute but does not put it in
@@ -128,15 +130,21 @@ class DefaultMultiLLM(LangChainChatLLM):
         # never reaches the provider -- which is how the playground came to
         # report a top-p that did nothing. Everything in `model_kwargs` is
         # spread into the call, so this is the version that is actually sent.
-        model_params: dict[str, float] = dict(DefaultMultiLLM.DEFAULT_MODEL_PARAMS)
+        model_params: dict[str, float | str] = dict(
+            DefaultMultiLLM.DEFAULT_MODEL_PARAMS
+        )
         if top_p is not None:
             model_params["top_p"] = top_p
+        # Azure only. Per call for the same reason as the key above.
+        if api_version:
+            model_params["api_version"] = api_version
 
         self._llm = ChatLiteLLM(  # type: ignore
             model=model_version
             if custom_llm_provider
             else _get_model_str(model_provider, model_version),
             api_base=api_base,
+            api_key=api_key,
             custom_llm_provider=custom_llm_provider,
             max_tokens=max_output_tokens,
             temperature=temperature,

@@ -20,7 +20,25 @@ the first pilot release.
 
 ## [Unreleased]
 
+### Added
+
+- **`HEAL_SELF_HOSTED_CLOUD_FALLBACK`** (default `true`). Set it to `false` and
+  an unreachable internal model makes the message fail instead of handing it
+  to the cloud model, so no question leaves our network. Set
+  `HEAL_CLASSIFIER_MODEL=self-hosted` as well, or query understanding still
+  goes to the cloud.
+
 ### Fixed
+
+- **Models no longer share one API key.** Building any LLM client set the
+  key for the whole process, so after the internal model was used the cloud
+  classifier sent `not-needed` to OpenAI, and the reverse sent the OpenAI key
+  to the internal endpoint. Each client now carries its own key.
+- **The saved classifier model is used.** Query understanding and intent
+  classification read `HEAL_CLASSIFIER_MODEL` from the environment and ignored
+  the classifier saved from the admin playground.
+- Self-hosted failures are now logged with the error message, not only its
+  type, so a dropped connection and a slow model can be told apart.
 
 - **Login works on a plain-http deployment.** The session cookie was always
   marked Secure, so on an `http://` address the browser dropped it: login

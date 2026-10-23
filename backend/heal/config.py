@@ -134,6 +134,13 @@ SELF_HOSTED_CONTEXT_TOKENS = _env_int("HEAL_SELF_HOSTED_CONTEXT_TOKENS", 131_072
 # vLLM does not check this, but the OpenAI client requires a non-empty string.
 SELF_HOSTED_API_KEY = _env_str("HEAL_SELF_HOSTED_API_KEY", "not-needed")
 
+# Whether an unreachable internal endpoint hands the message to the cloud model.
+# "false" for a deployment that must never send a question off our network:
+# the message then fails, visibly, rather than leaving quietly.
+SELF_HOSTED_CLOUD_FALLBACK = (
+    _env_str("HEAL_SELF_HOSTED_CLOUD_FALLBACK", "true").lower() == "true"
+)
+
 
 def self_hosted_configured() -> bool:
     """True when there is an internal endpoint to try at all."""

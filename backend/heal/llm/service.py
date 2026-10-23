@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING
 
 from heal import config
 from heal.llm.models import ModelSpec
+from heal.llm.registry import classifier_model
 from heal.llm.registry import default_model
 from heal.llm.registry import get_model
 from heal.logger import get_logger
@@ -27,6 +28,10 @@ logger = get_logger(__name__)
 # message. Two, because the common failure is one dropped connection rather
 # than a box that is genuinely down, and a second try costs a second.
 SELF_HOSTED_ATTEMPTS = 2
+
+
+class SelfHostedUnavailable(RuntimeError):
+    """The internal endpoint failed every attempt and the cloud is off-limits."""
 
 
 def to_provider_messages(messages: Sequence[tuple[str, str]]) -> list[Any]:
@@ -126,7 +131,9 @@ def stream_with_failover(
 
     The internal endpoint gets SELF_HOSTED_ATTEMPTS tries. If none of them
     produce a first token, the configured cloud model answers instead and the
-    returned `Generation` records that it happened.
+    returned `Generation` records that it happened -- unless
+    SELF_HOSTED_CLOUD_FALLBACK is off, in which case SelfHostedUnavailable is
+    raised and nothing leaves our network.
 
     The fallback can only happen BEFORE the first token. Once text has reached
     the user, swapping models mid-answer would splice two different models'
@@ -146,12 +153,21 @@ def stream_with_failover(
                     )
                     return
                 except Exception as exc:  # noqa: BLE001 -- any failure falls back
+                    # The message, not just the type: "Timeout" alone cannot
+                    # tell a box that is down from a firewall dropping us.
                     logger.warning(
-                        "Self-hosted model attempt %d/%d failed: %s",
+                        "Self-hosted model attempt %d/%d failed: %s: %s",
                         attempt,
                         SELF_HOSTED_ATTEMPTS,
                         type(exc).__name__,
+                        str(exc)[:300],
                     )
+
+            if not config.SELF_HOSTED_CLOUD_FALLBACK:
+                raise SelfHostedUnavailable(
+                    f"Self-hosted model unreachable after {SELF_HOSTED_ATTEMPTS} "
+                    "attempts and cloud fallback is disabled"
+                )
 
             fallback = _fallback_spec(spec)
             logger.error(
@@ -259,6 +275,7 @@ def get_classifier_llm(model_id: str | None = None) -> Any:
 
     `model_id` names a different classifier for one call. It exists for the
     admin playground, which compares classifiers without changing the one every
-    live conversation is using; omitted, this is the configured default.
+    live conversation is using; omitted, this is the deployment's saved choice,
+    environment behind it -- the same resolution the chat model gets.
     """
-    return _cached_llm(model_id or config.CLASSIFIER_MODEL, config.LLM_TIMEOUT)
+    return _cached_llm(model_id or classifier_model().id, config.LLM_TIMEOUT)

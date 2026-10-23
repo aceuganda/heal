@@ -196,3 +196,66 @@ class TestProbe:
             "error": "ConnectionError",
             "models": [],
         }
+
+
+class TestClientIsolation:
+    """Each client carries its own key; building one must not rekey another."""
+
+    def test_building_the_internal_client_does_not_rekey_a_cloud_client(
+        self, self_hosted: None, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from heal_app.llm import factory
+
+        monkeypatch.setattr(factory, "get_gen_ai_api_key", lambda: "test-key")
+        cloud = service.build_llm(get_model("gpt-4o-mini"))
+        internal = service.build_llm(get_model(SELF_HOSTED_ID))
+
+        # The order that broke production: cloud built first and cached, then
+        # the internal client overwrote the module-wide key with its placeholder.
+        assert cloud.llm._client_params["api_key"] == "test-key"
+        assert internal.llm._client_params["api_key"] == "not-needed"
+        assert internal.llm._client_params["api_base"] == config.SELF_HOSTED_URL
+
+
+class TestClassifierSelection:
+    def test_follows_the_saved_classifier_model(
+        self, self_hosted: None, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from heal.llm import defaults
+
+        monkeypatch.setattr(
+            defaults,
+            "stored",
+            lambda refresh=False: {"classifier_model": SELF_HOSTED_ID},
+        )
+        built: list[str] = []
+        monkeypatch.setattr(
+            service, "_cached_llm", lambda model_id, _timeout: built.append(model_id)
+        )
+
+        service.get_classifier_llm()
+
+        assert built == [SELF_HOSTED_ID]
+
+
+class TestInternalOnly:
+    def test_no_cloud_fallback_when_disabled(
+        self, self_hosted: None, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(config, "SELF_HOSTED_CLOUD_FALLBACK", False)
+        internal = FakeLLM([], error=TimeoutError("connect timed out"))
+        cloud = FakeLLM(["should", " never run"])
+        by_id = {SELF_HOSTED_ID: internal, config.CHAT_MODEL: cloud}
+        monkeypatch.setattr(
+            service,
+            "build_llm",
+            lambda spec, timeout=None, generation=None: by_id[spec.id],
+        )
+
+        tokens, generation = service.stream_with_failover(SELF_HOSTED_ID, [])
+
+        with pytest.raises(service.SelfHostedUnavailable):
+            list(tokens)
+        assert internal.calls == service.SELF_HOSTED_ATTEMPTS
+        assert cloud.calls == 0
+        assert generation.failed_over is False
