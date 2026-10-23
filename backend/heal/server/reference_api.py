@@ -28,7 +28,6 @@ from fastapi import HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from heal import config
 from heal.chat.citations import EXTERNAL_FLAG
 from heal.logger import get_logger
 from heal_app.auth.users import current_user
@@ -147,12 +146,14 @@ def _generate(passage: str) -> str | None:
         return None
 
     try:
+        from heal.llm import classifier_for
         from heal.llm import get_llm
         from heal.llm import to_provider_messages
 
         # The cheap model: this is a paraphrase of text already in hand, not a
-        # clinical judgement, and it runs once per opened citation.
-        llm = get_llm(config.CLASSIFIER_MODEL)
+        # clinical judgement, and it runs once per opened citation. On the
+        # internal model it is the internal model, so no cloud key is needed.
+        llm = get_llm(classifier_for().id)
         prompt = [("system", _INSTRUCTION), ("user", passage)]
         answer = "".join(llm.stream(to_provider_messages(prompt))).strip()
     except Exception as exc:  # noqa: BLE001 -- the drawer degrades to the passage

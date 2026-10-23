@@ -31,6 +31,14 @@ the first pilot release.
 
 ### Changed
 
+- **Chat titles and reference summaries stay on the internal model.** When the
+  chat model is `self-hosted`, naming a new conversation and summarising an
+  opened reference now run on it instead of going to OpenAI. Before, both
+  always used the OpenAI key, so on a fully local setup the title request
+  failed with a 500 and the conversation stayed "Untitled chat". Naming also
+  never fails now: if the model cannot be reached, the title is the start of
+  the first message.
+
 - **The internal model now understands the questions it answers.** When the
   chat model is `self-hosted`, query understanding (the rewrite and label used
   for hybrid retrieval) runs on it too, in chat and in the playground. Before,
