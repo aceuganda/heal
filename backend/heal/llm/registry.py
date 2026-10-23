@@ -70,8 +70,12 @@ def _self_hosted_spec() -> ModelSpec | None:
         provider="openai",
         model_name=config.SELF_HOSTED_MODEL,
         context_tokens=config.SELF_HOSTED_CONTEXT_TOKENS,
-        notes="Runs on our own infrastructure. Falls back to the cloud model "
-        "when unreachable.",
+        notes="Runs on our own infrastructure. "
+        + (
+            "Falls back to the cloud model when unreachable."
+            if config.SELF_HOSTED_CLOUD_FALLBACK
+            else "Never falls back to the cloud."
+        ),
         base_url=config.SELF_HOSTED_URL,
     )
 
@@ -147,7 +151,9 @@ def _openai_specs() -> dict[str, ModelSpec]:
 
     specs: dict[str, ModelSpec] = {}
     ttl = OPENAI_LIST_RETRY_SECONDS
-    key = _openai_key()
+    # Local mode sends nothing to OpenAI, not even a listing. The static
+    # entries still let an admin switch back to a cloud model.
+    key = None if local_only() else _openai_key()
     if key:
         try:
             ids = _fetch_openai_models(key)
@@ -252,6 +258,19 @@ def _configured(name: str, fallback: str) -> str:
     from heal.llm import defaults
 
     return str(defaults.effective().get(name) or fallback)
+
+
+def local_only() -> bool:
+    """True when the deployment answers on the self-hosted model.
+
+    Then no process may call OpenAI: not naming, not glossing, not listing.
+    Reads the saved id rather than resolving it, so it never triggers the
+    OpenAI listing it exists to suppress.
+    """
+    return (
+        config.self_hosted_configured()
+        and _configured("chat_model", config.CHAT_MODEL) == SELF_HOSTED_ID
+    )
 
 
 def default_model() -> ModelSpec:

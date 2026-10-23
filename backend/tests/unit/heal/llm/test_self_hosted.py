@@ -92,6 +92,8 @@ class TestFailover:
     def test_retries_twice_before_giving_up(
         self, self_hosted: None, monkeypatch: pytest.MonkeyPatch
     ) -> None:
+        # Opt-in: the default is that the self-hosted model never falls back.
+        monkeypatch.setattr(config, "SELF_HOSTED_CLOUD_FALLBACK", True)
         internal = FakeLLM([], error=ConnectionError("refused"))
         cloud = FakeLLM(["from", " the cloud"])
         self._patch_builds(
@@ -259,3 +261,44 @@ class TestInternalOnly:
         assert internal.calls == service.SELF_HOSTED_ATTEMPTS
         assert cloud.calls == 0
         assert generation.failed_over is False
+
+
+class TestLocalOnly:
+    """Choosing the self-hosted model means no process reaches OpenAI."""
+
+    def test_fallback_is_off_and_not_an_env_knob(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import importlib
+
+        monkeypatch.setenv("HEAL_SELF_HOSTED_CLOUD_FALLBACK", "true")
+        try:
+            assert importlib.reload(config).SELF_HOSTED_CLOUD_FALLBACK is False
+        finally:
+            monkeypatch.delenv("HEAL_SELF_HOSTED_CLOUD_FALLBACK")
+            importlib.reload(config)
+
+    def test_self_hosted_chat_is_local_only(
+        self, self_hosted: None, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from heal.llm import registry
+
+        monkeypatch.setattr(config, "CHAT_MODEL", SELF_HOSTED_ID)
+        assert registry.local_only() is True
+
+        monkeypatch.setattr(config, "CHAT_MODEL", "gpt-4o")
+        assert registry.local_only() is False
+
+    def test_local_only_never_lists_openai_models(
+        self, self_hosted: None, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from heal.llm import registry
+
+        monkeypatch.setattr(config, "CHAT_MODEL", SELF_HOSTED_ID)
+        called: list[str] = []
+        monkeypatch.setattr(
+            registry, "_fetch_openai_models", lambda key: called.append(key) or []
+        )
+
+        all_models()
+        assert called == []

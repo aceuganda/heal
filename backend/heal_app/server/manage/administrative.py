@@ -37,6 +37,13 @@ OpenAI key administration, which Heal keeps.
 def validate_existing_genai_api_key(
     _: User = Depends(current_admin_user),
 ) -> None:
+    # A self-hosted deployment has no OpenAI key to check, and checking one
+    # would be exactly the call local mode promises not to make.
+    from heal.llm.registry import local_only
+
+    if local_only():
+        return
+
     # Only validate every so often
     check_key_time = "genai_api_key_last_check_time"
     kv_store = get_dynamic_config_store()

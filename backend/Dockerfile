@@ -113,6 +113,12 @@ SentenceTransformer('${HEAL_EMBEDDING_MODEL}')" && \
     chmod -R a+rX /opt/models && \
     du -sh /opt/models
 
+# The token counter's vocabulary, fetched now so the running API never
+# downloads it -- a self-hosted deployment makes no calls out at runtime.
+ENV TIKTOKEN_CACHE_DIR=/opt/models/tiktoken
+RUN python -c "import tiktoken; tiktoken.get_encoding('cl100k_base')" && \
+    chmod -R a+rX /opt/models/tiktoken
+
 # Cleanup for CVEs and size reduction
 # perl-base is part of the base Python Debian image but not needed for Heal,
 # and could only be removed with --allow-remove-essential.

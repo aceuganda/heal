@@ -28,10 +28,6 @@ data:
   HEAL_SELF_HOSTED_URL: ""  # base URL including /v1
   HEAL_SELF_HOSTED_MODEL: ""  # exact id from GET <url>/models
   HEAL_SELF_HOSTED_CONTEXT_TOKENS: ""  # max_model_len; default 131072
-  # "false" = never send a message to the cloud model when the internal one is
-  # down; the message fails instead. Pair with HEAL_CLASSIFIER_MODEL
-  # "self-hosted" so query understanding stays internal too.
-  HEAL_SELF_HOSTED_CLOUD_FALLBACK: ""  # default true
 
   # Translation (Design A). Required for Luganda chat; English is unaffected.
   # No default is baked into the image -- a missing URL fails with a config

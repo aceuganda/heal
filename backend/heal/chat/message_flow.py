@@ -19,6 +19,7 @@ from heal.chat.citations import build_citations
 from heal.chat.stream_processing import extract_citations
 from heal.language import get_language_service
 from heal.language import TranslationError
+from heal.llm.service import SelfHostedUnavailable
 from heal.logger import get_logger
 from heal.medical_guidance import AgentRequest
 from heal.medical_guidance import MedicalGuidanceAgent
@@ -158,6 +159,18 @@ def stream_chat_message(
         else:
             for token in tokens:
                 yield get_json_line(DanswerAnswerPiece(answer_piece=token).model_dump())
+    except SelfHostedUnavailable as e:
+        # Its own message, so "our server is down" is never mistaken for a
+        # bug -- and never for a cloud answer, since none was attempted.
+        logger.error(f"Generation failed: {e}")
+        error = str(e)
+        yield get_json_line(
+            StreamingError(
+                error="The self-hosted model is not responding, so this question "
+                "was not answered. Nothing was sent to a cloud model. Try again "
+                "shortly, or ask an administrator to check the model server."
+            ).model_dump()
+        )
     except Exception as e:
         logger.exception(f"Generation failed: {e}")
         error = str(e)

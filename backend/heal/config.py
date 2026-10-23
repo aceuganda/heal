@@ -135,11 +135,10 @@ SELF_HOSTED_CONTEXT_TOKENS = _env_int("HEAL_SELF_HOSTED_CONTEXT_TOKENS", 131_072
 SELF_HOSTED_API_KEY = _env_str("HEAL_SELF_HOSTED_API_KEY", "not-needed")
 
 # Whether an unreachable internal endpoint hands the message to the cloud model.
-# "false" for a deployment that must never send a question off our network:
-# the message then fails, visibly, rather than leaving quietly.
-SELF_HOSTED_CLOUD_FALLBACK = (
-    _env_str("HEAL_SELF_HOSTED_CLOUD_FALLBACK", "true").lower() == "true"
-)
+# A constant, not an env var: choosing the self-hosted model means nothing
+# leaves our network, so a failure fails visibly rather than quietly reaching
+# OpenAI. Changing this is a code decision, not a deployment knob.
+SELF_HOSTED_CLOUD_FALLBACK = False
 
 
 def self_hosted_configured() -> bool:

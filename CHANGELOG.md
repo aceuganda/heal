@@ -31,6 +31,17 @@ the first pilot release.
 
 ### Changed
 
+- **Choosing the self-hosted model now means nothing goes to OpenAI.** The
+  cloud fallback is off by default: if the internal model does not answer
+  after two tries, the chat shows a clear "the self-hosted model is not
+  responding; nothing was sent to a cloud model" error instead of quietly
+  answering from OpenAI. This is a constant in code, not a setting:
+  `HEAL_SELF_HOSTED_CLOUD_FALLBACK` is gone and is ignored if still set. In
+  this mode the admin model list no longer calls OpenAI's `/models`, the
+  OpenAI key check is skipped, and the token counter's vocabulary is built into
+  the image, so the running API makes no calls out. Choosing an OpenAI model
+  in the admin settings is still how to use OpenAI.
+
 - **Chat titles and reference summaries stay on the internal model.** When the
   chat model is `self-hosted`, naming a new conversation and summarising an
   opened reference now run on it instead of going to OpenAI. Before, both
@@ -54,11 +65,11 @@ the first pilot release.
   the operator (admin Keys page or deployment secret), not asked of whoever
   opens the chat.
 
-- **`HEAL_SELF_HOSTED_CLOUD_FALLBACK`** (default `true`). Set it to `false` and
-  an unreachable internal model makes the message fail instead of handing it
-  to the cloud model, so no question leaves our network. Set
-  `HEAL_CLASSIFIER_MODEL=self-hosted` as well, or query understanding still
-  goes to the cloud.
+- **Self-hosted failures stay on our network.** An unreachable internal model
+  makes the message fail instead of handing it to the cloud model, so no
+  question leaves our network. (This briefly shipped as the
+  `HEAL_SELF_HOSTED_CLOUD_FALLBACK` setting; it is now fixed in code, see
+  above.)
 
 ### Fixed
 

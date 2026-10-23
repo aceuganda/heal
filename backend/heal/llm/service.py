@@ -130,10 +130,10 @@ def stream_with_failover(
     two different answers to one question if a save landed in between.
 
     The internal endpoint gets SELF_HOSTED_ATTEMPTS tries. If none of them
-    produce a first token, the configured cloud model answers instead and the
-    returned `Generation` records that it happened -- unless
-    SELF_HOSTED_CLOUD_FALLBACK is off, in which case SelfHostedUnavailable is
-    raised and nothing leaves our network.
+    produce a first token, SelfHostedUnavailable is raised and nothing leaves
+    our network. Only if config.SELF_HOSTED_CLOUD_FALLBACK is flipped in code
+    does the configured cloud model answer instead, and the returned
+    `Generation` records that it happened.
 
     The fallback can only happen BEFORE the first token. Once text has reached
     the user, swapping models mid-answer would splice two different models'
