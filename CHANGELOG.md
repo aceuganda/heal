@@ -80,6 +80,12 @@ the first pilot release.
 
 ### Fixed
 
+- **No hidden retries on model calls.** LiteLLM retried every call twice on
+  its own, so one hung call to the internal model blocked for three timeouts
+  (about 3 minutes at the default 60s) and sent three requests. Each call is
+  now one request. Chat still makes its own two deliberate attempts against the
+  internal model, which used to mean up to six requests.
+
 - **Models no longer share one API key.** Building any LLM client set the
   key for the whole process, so after the internal model was used the cloud
   classifier sent `not-needed` to OpenAI, and the reverse sent the OpenAI key

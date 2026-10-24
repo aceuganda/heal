@@ -219,6 +219,16 @@ class TestClientIsolation:
         assert internal.llm._client_params["api_base"] == config.SELF_HOSTED_URL
 
 
+class TestNoHiddenRetries:
+    def test_litellm_is_told_not_to_retry_on_its_own(
+        self, self_hosted: None
+    ) -> None:
+        # Unset, LiteLLM's OpenAI path retries twice per call, so a hung
+        # internal endpoint blocked for three timeouts instead of one.
+        internal = service.build_llm(get_model(SELF_HOSTED_ID))
+        assert internal.llm.model_kwargs["max_retries"] == 0
+
+
 class TestClassifierSelection:
     def test_follows_the_saved_classifier_model(
         self, self_hosted: None, monkeypatch: pytest.MonkeyPatch

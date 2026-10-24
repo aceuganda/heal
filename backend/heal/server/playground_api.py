@@ -794,6 +794,11 @@ def _run_traced(
 ) -> PlaygroundResponse:
     started = time.perf_counter()
 
+    try:
+        trace("understand", f"calling {_describe_client(get_model(classifier_model))}")
+    except ValueError:
+        trace("understand", f"calling {classifier_model!r}")
+    trace("understand", f"timeout={config.LLM_TIMEOUT}s, waiting for the classifier")
     mark = time.perf_counter()
     result = understand(question, model_id=classifier_model or None)
     understand_ms = _elapsed_ms(mark)

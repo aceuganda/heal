@@ -135,6 +135,10 @@ class DefaultMultiLLM(LangChainChatLLM):
         )
         if top_p is not None:
             model_params["top_p"] = top_p
+        # LiteLLM's OpenAI path retries twice on its own unless told otherwise,
+        # and `max_retries` below only reaches LangChain. Left alone, one hung
+        # call to the internal endpoint blocks for three timeouts.
+        model_params["max_retries"] = 0
         # Azure only. Per call for the same reason as the key above.
         if api_version:
             model_params["api_version"] = api_version
