@@ -22,6 +22,13 @@ the first pilot release.
 
 ### Added
 
+- **Playground debug log.** Every playground run now returns a stage-by-stage
+  trace (model, endpoint, whether a key is present, prompt size, time to first
+  token, failure and traceback tail). The screen shows it under the answer, and
+  opens it on its own when something went wrong. The same lines go to the server
+  log as `playground[<run id>]`, so an error on screen can be found in the pod
+  logs. The key itself is never logged.
+
 - **OpenAI's live model list.** The model pickers now show every OpenAI chat
   model the configured key can use, grouped by provider with the internal model
   first. The list comes from OpenAI's own `/models` endpoint and uses the key

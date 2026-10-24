@@ -763,6 +763,60 @@ function AnswerPanel({ result }: { result: PlaygroundResult }) {
   );
 }
 
+const TRACE_LEVEL_CLASS: Record<string, string> = {
+  info: "text-heal-ink-700",
+  warning: "text-amber-700",
+  error: "text-error",
+};
+
+function DebugLogPanel({ result }: { result: PlaygroundResult }) {
+  const trace = result.trace ?? [];
+  if (trace.length === 0) return null;
+  // Open by default when something went wrong, so the cause is on screen.
+  const troubled = trace.some((entry) => entry.level !== "info");
+  const text = trace
+    .map(
+      (e) => `+${e.at_ms}ms ${e.level.toUpperCase()} ${e.stage}: ${e.message}`
+    )
+    .join("\n");
+  return (
+    <Card className="mb-4">
+      <details open={troubled}>
+        <summary className="cursor-pointer text-sm font-semibold text-heal-ink-900">
+          Debug log
+          <span className="ml-2 font-normal text-heal-ink-500">
+            run {result.run_id} · grep the server log for playground[
+            {result.run_id}]
+          </span>
+        </summary>
+        <div className="mt-2 flex justify-end">
+          <button
+            type="button"
+            className="text-xs text-link underline"
+            onClick={() => navigator.clipboard?.writeText(text)}
+          >
+            Copy
+          </button>
+        </div>
+        <div className="mt-1 max-h-96 overflow-auto rounded bg-background-subtle p-2 font-mono text-xs">
+          {trace.map((entry, i) => (
+            <div
+              key={i}
+              className={`whitespace-pre-wrap ${
+                TRACE_LEVEL_CLASS[entry.level] ?? ""
+              }`}
+            >
+              <span className="text-heal-ink-500">+{entry.at_ms}ms</span>{" "}
+              <span className="font-semibold">{entry.stage}</span>{" "}
+              {entry.message}
+            </div>
+          ))}
+        </div>
+      </details>
+    </Card>
+  );
+}
+
 function TimingsPanel({ result }: { result: PlaygroundResult }) {
   const stages: [string, number][] = [
     ["Understand", result.timings.understand_ms],
@@ -1174,6 +1228,7 @@ export default function Page() {
           <TimingsPanel result={result} />
           <CandidatesPanel result={result} />
           <AnswerPanel result={result} />
+          <DebugLogPanel result={result} />
         </>
       )}
     </div>

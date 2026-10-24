@@ -214,6 +214,15 @@ export interface PlaygroundResult {
   knowledge_enabled: boolean;
   unavailable: boolean;
   error: string | null;
+  run_id: string;
+  trace: TraceEntry[];
+}
+
+export interface TraceEntry {
+  at_ms: number;
+  stage: string;
+  level: "info" | "warning" | "error";
+  message: string;
 }
 
 export interface Tunable {

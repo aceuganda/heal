@@ -29,7 +29,9 @@ result cannot describe a pipeline that the health worker's answer did not run.
 """
 import os
 import time
+import traceback
 from typing import Any
+from uuid import uuid4
 
 from fastapi import APIRouter
 from fastapi import Depends
@@ -56,6 +58,7 @@ from heal.llm import classifier_for
 from heal.llm import defaults as saved_defaults
 from heal.llm import get_model
 from heal.llm import to_provider_messages
+from heal.llm.models import ModelSpec
 from heal.llm.registry import default_model
 from heal.llm.service import build_llm
 from heal.llm.settings import BOUNDS as GENERATION_BOUNDS
@@ -226,6 +229,40 @@ class TimingsView(BaseModel):
     total_ms: int
 
 
+class TraceEntry(BaseModel):
+    """One line of a run's debug log, as the screen shows it."""
+
+    at_ms: int
+    stage: str
+    # "info" | "warning" | "error" -- the logging level it was mirrored at.
+    level: str
+    message: str
+
+
+class _Trace:
+    """A run's debug log, returned to the screen and mirrored to the server log.
+
+    Every server line carries the run id, so a failure seen on screen can be
+    found in the pod logs without guessing at timestamps.
+    """
+
+    def __init__(self) -> None:
+        self.run_id = uuid4().hex[:8]
+        self.started = time.perf_counter()
+        self.entries: list[TraceEntry] = []
+
+    def __call__(self, stage: str, message: str, level: str = "info") -> None:
+        self.entries.append(
+            TraceEntry(
+                at_ms=_elapsed_ms(self.started),
+                stage=stage,
+                level=level,
+                message=message,
+            )
+        )
+        getattr(logger, level)("playground[%s] %s: %s", self.run_id, stage, message)
+
+
 class PlaygroundResponse(BaseModel):
     question: str
     understanding: UnderstandingView
@@ -249,6 +286,9 @@ class PlaygroundResponse(BaseModel):
     knowledge_enabled: bool = True
     unavailable: bool = False
     error: str | None = None
+
+    run_id: str = ""
+    trace: list[TraceEntry] = Field(default_factory=list)
 
 
 class ModelView(BaseModel):
@@ -710,11 +750,62 @@ def _run(
     `store` is injectable so this can be exercised without Qdrant, which is the
     same reason `QdrantKnowledgeStore` takes its client as an argument.
     """
+    trace = _Trace()
+    trace(
+        "request",
+        f"chat_model={chat_model or config.CHAT_MODEL!r} "
+        f"classifier_model={classifier_model!r} retrieval_only={retrieval_only} "
+        f"knowledge_enabled={config.KNOWLEDGE_ENABLED} question_chars={len(question)}",
+    )
+    try:
+        response = _run_traced(
+            trace,
+            question=question,
+            chat_model=chat_model,
+            classifier_model=classifier_model,
+            settings=settings,
+            used=used,
+            retrieval_only=retrieval_only,
+            generation=generation,
+            generation_used=generation_used,
+            store=store,
+        )
+    except Exception:
+        # Still a 500, but with the run id and traceback in the pod log.
+        logger.exception("playground[%s] run crashed", trace.run_id)
+        raise
+    trace("done", f"total_ms={response.timings.total_ms} error={response.error!r}")
+    response.run_id = trace.run_id
+    response.trace = trace.entries
+    return response
+
+
+def _run_traced(
+    trace: _Trace,
+    question: str,
+    chat_model: str,
+    classifier_model: str,
+    settings: RetrievalSettings,
+    used: list[SettingUsed],
+    retrieval_only: bool,
+    generation: GenerationSettings | None,
+    generation_used: list[GenerationSettingUsed] | None,
+    store: KnowledgeStore | None,
+) -> PlaygroundResponse:
     started = time.perf_counter()
 
     mark = time.perf_counter()
     result = understand(question, model_id=classifier_model or None)
     understand_ms = _elapsed_ms(mark)
+    trace(
+        "understand",
+        f"model={result.model_id} intent={result.intent.value} "
+        f"classified={result.classified} rewritten={result.rewritten} "
+        f"in {understand_ms}ms",
+        "info" if result.classified else "warning",
+    )
+    if result.error:
+        trace("understand", f"error: {result.error}", "warning")
 
     route = route_for(result.intent)
     response = PlaygroundResponse(
@@ -741,6 +832,7 @@ def _run(
     # The route declined outright. No retrieval, no model call -- the decline
     # text is fixed, and showing it is more honest than a blank result.
     if not route.answer:
+        trace("route", f"intent {result.intent.value} declines; no generation")
         response.answer = route.decline_message
         response.timings.total_ms = _elapsed_ms(started)
         return response
@@ -754,7 +846,7 @@ def _run(
         try:
             candidates = store.candidates(result.query, result.lexical_query, settings)
         except Exception as exc:  # noqa: BLE001 -- reported, never a 500
-            logger.error("Playground retrieval failed: %s", type(exc).__name__)
+            trace("retrieve", f"failed: {type(exc).__name__}: {exc}"[:500], "error")
             response.unavailable = True
             response.error = type(exc).__name__
             response.timings.retrieve_ms = _elapsed_ms(mark)
@@ -764,6 +856,11 @@ def _run(
         selection = select_context(candidates, settings)
         context = selection.context
         retrieve_ms = _elapsed_ms(mark)
+        trace(
+            "retrieve",
+            f"{len(candidates)} candidates, {len(selection.passed_floor)} passed "
+            f"floor, {len(context)} in context, in {retrieve_ms}ms",
+        )
         response.candidates = _candidate_views(
             candidates, selection.passed_floor, selection.survived_cap, context
         )
@@ -773,6 +870,7 @@ def _run(
     # agent: a dose under a citation marker carries authority the passage has
     # not earned. Shown here so an admin can see the floor cause the refusal.
     if route.require_source and config.KNOWLEDGE_ENABLED and not context:
+        trace("route", "source required and none survived; refused", "warning")
         response.refused_unsourced = True
         response.timings.total_ms = _elapsed_ms(started)
         return response
@@ -782,7 +880,9 @@ def _run(
         return response
 
     mark = time.perf_counter()
-    answer, error = _generate(question, route, result, context, chat_model, generation)
+    answer, error = _generate(
+        question, route, result, context, chat_model, generation, trace
+    )
     response.timings.generate_ms = _elapsed_ms(mark)
     response.timings.total_ms = _elapsed_ms(started)
 
@@ -803,6 +903,7 @@ def _generate(
     context: list[RetrievedChunk],
     chat_model: str,
     generation: GenerationSettings | None = None,
+    trace: _Trace | None = None,
 ) -> tuple[str, str | None]:
     """One non-streaming completion, built exactly as the chat path builds it.
 
@@ -823,16 +924,69 @@ def _generate(
         context_labels=[c.source.label() for c in context],
     )
     prefix = emergency_preamble() if result.intent is MedicalIntent.EMERGENCY else ""
+    trace = trace or _Trace()
 
+    started = time.perf_counter()
+    parts: list[str] = []
     try:
         spec = get_model(chat_model) if chat_model else default_model()
+        trace("generate", _describe_client(spec))
+        trace(
+            "generate",
+            f"timeout={config.LLM_TIMEOUT}s temperature={gen.temperature} "
+            f"token_cap={gen.token_cap} top_p={gen.top_p} verbosity={gen.verbosity}",
+        )
+        messages = builder.build(question)
+        trace(
+            "generate",
+            f"prompt: {len(messages)} messages, "
+            f"{sum(len(text) for _, text in messages)} chars, "
+            f"{len(context)} passages",
+        )
         llm = build_llm(spec, generation=gen)
-        text = "".join(llm.stream(to_provider_messages(builder.build(question))))
+        trace("generate", f"client built: {type(llm).__name__}")
+        for part in llm.stream(to_provider_messages(messages)):
+            if not parts:
+                trace("generate", f"first token after {_elapsed_ms(started)}ms")
+            parts.append(part)
     except Exception as exc:  # noqa: BLE001 -- the report carries the failure
-        logger.error("Playground generation failed: %s", exc)
+        logger.exception("playground[%s] generation failed", trace.run_id)
+        trace(
+            "generate",
+            f"failed after {_elapsed_ms(started)}ms and {len(parts)} chunks: "
+            f"{type(exc).__name__}: {exc}"[:1000],
+            "error",
+        )
+        # The innermost frames are where the provider said no.
+        tail = "".join(traceback.format_exception(exc)[-3:])
+        trace("generate", tail[-1500:], "error")
         return "", f"{type(exc).__name__}: {exc}"
 
+    text = "".join(parts)
+    trace(
+        "generate",
+        f"finished: {len(parts)} chunks, {len(text)} chars in {_elapsed_ms(started)}ms",
+        "info" if text.strip() else "warning",
+    )
+    if not text.strip():
+        trace("generate", "model returned an empty answer", "warning")
     return prefix + text, None
+
+
+def _describe_client(spec: ModelSpec) -> str:
+    """Where a generation call is going, without the key itself."""
+    if spec.self_hosted:
+        has_key = bool(config.SELF_HOSTED_API_KEY)
+        where = f"base_url={spec.base_url}"
+    else:
+        has_key = bool(os.environ.get(spec.api_key_env)) or (
+            spec.provider == "openai" and bool(os.environ.get("GEN_AI_API_KEY"))
+        )
+        where = f"key_env={spec.api_key_env}"
+    return (
+        f"model={spec.id} provider={spec.provider} model_name={spec.model_name} "
+        f"self_hosted={spec.self_hosted} {where} key_present={has_key}"
+    )
 
 
 def _elapsed_ms(since: float) -> int:

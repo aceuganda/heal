@@ -610,3 +610,78 @@ class TestSavedDefaults:
             "standard",
             "detailed",
         ]
+
+
+class FakeLLM:
+    """Streams scripted parts, or raises partway through."""
+
+    def __init__(self, parts: list[str], fail_after: int | None = None) -> None:
+        self.parts = parts
+        self.fail_after = fail_after
+
+    def stream(self, messages):
+        for i, part in enumerate(self.parts):
+            if self.fail_after is not None and i == self.fail_after:
+                raise ConnectionError("endpoint dropped the connection")
+            yield part
+
+
+class TestTheDebugLog:
+    """What the screen shows when a production run goes wrong."""
+
+    @pytest.fixture
+    def llm(self, monkeypatch: pytest.MonkeyPatch):
+        def install(fake: FakeLLM) -> None:
+            monkeypatch.setattr(playground_api, "build_llm", lambda spec, **kw: fake)
+
+        return install
+
+    def test_every_run_carries_an_id_and_a_trace(self, store) -> None:
+        store([chunk()])
+        body = run(client_as(UserRole.ADMIN))
+
+        assert len(body["run_id"]) == 8
+        stages = [entry["stage"] for entry in body["trace"]]
+        assert stages[0] == "request"
+        assert "understand" in stages and "retrieve" in stages
+        assert stages[-1] == "done"
+
+    def test_a_generation_failure_is_traced_with_its_cause(self, store, llm) -> None:
+        store([chunk()])
+        llm(FakeLLM(["Give ", "DTG"], fail_after=1))
+        body = run(client_as(UserRole.ADMIN), retrieval_only=False)
+
+        errors = [e for e in body["trace"] if e["level"] == "error"]
+        assert body["error"].startswith("ConnectionError")
+        assert "after" in errors[0]["message"] and "1 chunks" in errors[0]["message"]
+        assert any("ConnectionError" in e["message"] for e in errors[1:])
+
+    def test_a_successful_generation_reports_where_it_went(self, store, llm) -> None:
+        store([chunk()])
+        llm(FakeLLM(["Give ", "DTG"]))
+        body = run(client_as(UserRole.ADMIN), retrieval_only=False)
+
+        messages = [e["message"] for e in body["trace"] if e["stage"] == "generate"]
+        assert any("model=gpt-4o-mini" in m and "key_present=" in m for m in messages)
+        assert any(m.startswith("first token after") for m in messages)
+        assert any(m.startswith("finished: 2 chunks") for m in messages)
+
+    def test_an_empty_answer_is_flagged(self, store, llm) -> None:
+        store([chunk()])
+        llm(FakeLLM([]))
+        body = run(client_as(UserRole.ADMIN), retrieval_only=False)
+
+        assert any(
+            e["level"] == "warning" and "empty answer" in e["message"]
+            for e in body["trace"]
+        )
+
+    def test_the_key_itself_is_never_traced(
+        self, store, llm, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("OPENAI_API_KEY", "sk-secret-value")
+        store([chunk()])
+        llm(FakeLLM(["ok"]))
+        body = run(client_as(UserRole.ADMIN), retrieval_only=False)
+
+        assert "sk-secret-value" not in str(body["trace"])
