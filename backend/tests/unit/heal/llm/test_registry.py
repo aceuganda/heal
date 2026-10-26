@@ -7,6 +7,7 @@ from heal.llm.registry import available_models
 from heal.llm.registry import classifier_model
 from heal.llm.registry import default_model
 from heal.llm.registry import get_model
+from heal.llm.registry import model_configured
 
 
 @pytest.fixture(autouse=True)
@@ -54,6 +55,18 @@ class TestAvailability:
         monkeypatch.setenv("GEN_AI_API_KEY", "test-key")
         assert "gpt-4o" in {m.id for m in available_models()}
 
+    def test_accepts_an_openai_key_saved_through_the_admin_ui(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The picker must match the credentials the client will actually use."""
+        from heal.llm import registry
+
+        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+        monkeypatch.delenv("GEN_AI_API_KEY", raising=False)
+        monkeypatch.setattr(registry, "_openai_key", lambda: "saved-key")
+
+        assert model_configured(get_model("gpt-5.4-mini")) is True
+
     def test_non_selectable_models_are_never_offered(self) -> None:
         """gpt-3.5-turbo is kept as an eval baseline, not as a user choice."""
         assert "gpt-3.5-turbo" not in {m.id for m in available_models()}
@@ -98,6 +111,13 @@ class TestOpenAIListing:
         get_model("gpt-4o-mini")
         assert listing == []
 
+    @pytest.mark.parametrize("model_id", ["gpt-5.4", "gpt-5.4-mini", "gpt-5.4-nano"])
+    def test_current_gpt_models_are_available_without_a_listing(
+        self, listing: list[str], model_id: str
+    ) -> None:
+        assert get_model(model_id).provider == "openai"
+        assert listing == []
+
     def test_listing_is_cached(self, listing: list[str]) -> None:
         from heal.llm import registry
 
@@ -131,10 +151,10 @@ class TestOpenAIListing:
 class TestClassifierFor:
     """The internal model understands the questions it answers."""
 
-    def test_cloud_chat_keeps_the_configured_classifier(self) -> None:
+    def test_openai_chat_classifies_with_the_selected_openai_model(self) -> None:
         from heal.llm import classifier_for
 
-        assert classifier_for("gpt-4o").id == config.CLASSIFIER_MODEL
+        assert classifier_for("gpt-5.4-mini").id == "gpt-5.4-mini"
 
     def test_self_hosted_chat_classifies_itself(
         self, monkeypatch: pytest.MonkeyPatch

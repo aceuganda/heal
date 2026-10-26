@@ -305,10 +305,28 @@ class TestModelSelection:
         )
         assert response.status_code == 422
 
-    def test_a_catalogue_model_is_accepted(self, store) -> None:
+    def test_a_valid_classifier_override_is_accepted_but_does_not_reroute_the_run(
+        self, store
+    ) -> None:
         store([chunk()])
         body = run(client_as(UserRole.ADMIN), classifier_model="gpt-4o")
-        assert body["classifier_model"] == "gpt-4o"
+        assert body["classifier_model"] == "gpt-4o-mini"
+
+    def test_trace_uses_the_saved_effective_chat_model(self, store, monkeypatch) -> None:
+        """An empty per-run picker must not be reported as the env fallback."""
+        from heal.llm import defaults
+
+        monkeypatch.setattr(
+            defaults,
+            "stored",
+            lambda refresh=False: {"chat_model": "gpt-5.4-mini"},
+        )
+        store([chunk()])
+
+        body = run(client_as(UserRole.ADMIN), retrieval_only=True)
+
+        assert body["chat_model"] == "gpt-5.4-mini"
+        assert body["classifier_model"] == "gpt-5.4-mini"
 
     def test_the_internal_model_understands_what_it_answers(
         self, store, monkeypatch: pytest.MonkeyPatch
@@ -322,7 +340,7 @@ class TestModelSelection:
         )
         assert body["classifier_model"] == "self-hosted"
 
-    def test_an_explicit_classifier_still_wins(
+    def test_a_chat_model_selection_overrides_a_stale_classifier(
         self, store, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setattr(config, "SELF_HOSTED_URL", "http://internal.test/v1")
@@ -334,7 +352,7 @@ class TestModelSelection:
             classifier_model="gpt-4o",
             retrieval_only=True,
         )
-        assert body["classifier_model"] == "gpt-4o"
+        assert body["classifier_model"] == "self-hosted"
 
 
 class TestTheCandidateReport:
@@ -465,6 +483,17 @@ class TestOptions:
         assert body["models"]
         for entry in body["models"]:
             assert get_model(entry["id"]).id == entry["id"]
+
+    def test_openai_models_show_configured_when_the_admin_key_is_saved(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(playground_api, "model_configured", lambda spec: True)
+
+        body = client_as(UserRole.ADMIN).get("/manage/playground/options").json()
+
+        assert next(entry for entry in body["models"] if entry["id"] == "gpt-4o-mini")[
+            "configured"
+        ] is True
 
     def test_the_bounds_the_screen_draws_are_the_ones_enforced(self) -> None:
         body = client_as(UserRole.ADMIN).get("/manage/playground/options").json()
@@ -685,3 +714,23 @@ class TestTheDebugLog:
         body = run(client_as(UserRole.ADMIN), retrieval_only=False)
 
         assert "sk-secret-value" not in str(body["trace"])
+
+    def test_dashboard_key_is_recognized_in_both_inference_traces(
+        self, store, llm, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from heal_app.llm import utils
+
+        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+        monkeypatch.delenv("GEN_AI_API_KEY", raising=False)
+        monkeypatch.setattr(utils, "get_gen_ai_api_key", lambda: "dashboard-secret")
+        store([chunk()])
+        llm(FakeLLM(["ok"]))
+
+        body = run(client_as(UserRole.ADMIN), retrieval_only=False)
+
+        for stage in ("understand", "generate"):
+            assert any(
+                entry["stage"] == stage and "key_present=True" in entry["message"]
+                for entry in body["trace"]
+            )
+        assert "dashboard-secret" not in str(body["trace"])

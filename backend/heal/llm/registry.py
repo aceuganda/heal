@@ -34,6 +34,30 @@ _CATALOGUE: dict[str, ModelSpec] = {
             notes="Stronger clinical reasoning; measure the cost before enabling.",
         ),
         ModelSpec(
+            id="gpt-5.4",
+            display_name="GPT-5.4",
+            provider="openai",
+            model_name="gpt-5.4",
+            context_tokens=1_000_000,
+            notes="Latest GPT-5.4 frontier model; supports Chat Completions.",
+        ),
+        ModelSpec(
+            id="gpt-5.4-mini",
+            display_name="GPT-5.4 mini",
+            provider="openai",
+            model_name="gpt-5.4-mini",
+            context_tokens=1_000_000,
+            notes="Faster, lower-cost GPT-5.4 model; supports Chat Completions.",
+        ),
+        ModelSpec(
+            id="gpt-5.4-nano",
+            display_name="GPT-5.4 nano",
+            provider="openai",
+            model_name="gpt-5.4-nano",
+            context_tokens=1_000_000,
+            notes="Cost-optimized GPT-5.4 model; supports Chat Completions.",
+        ),
+        ModelSpec(
             id="gpt-3.5-turbo",
             display_name="GPT-3.5 Turbo",
             provider="openai",
@@ -117,7 +141,12 @@ def _openai_key() -> str | None:
         key = get_gen_ai_api_key()
     except Exception:  # noqa: BLE001 -- no store means fall through to env
         key = None
-    return key or os.environ.get("OPENAI_API_KEY") or None
+    return (
+        key
+        or os.environ.get("OPENAI_API_KEY")
+        or os.environ.get("GEN_AI_API_KEY")
+        or None
+    )
 
 
 def _fetch_openai_models(api_key: str) -> list[str]:
@@ -218,17 +247,22 @@ def get_model(model_id: str) -> ModelSpec:
         ) from None
 
 
-def _provider_configured(spec: ModelSpec) -> bool:
-    """A model is only offerable if its provider has a key in the environment."""
+def model_configured(spec: ModelSpec) -> bool:
+    """Whether the credentials for a selectable model are available.
+
+    OpenAI keys may be saved through the admin UI as well as supplied by the
+    environment. Keep this check on the same resolver the client and live
+    model listing use, otherwise the picker can claim "no API key" for a key
+    that generation will successfully use.
+    """
     # We host it; there is no third-party key to hold. Whether it can actually
     # be reached is a runtime question, answered by the failover, not here --
     # hiding it from the list when the box is briefly down would be worse.
     if spec.self_hosted:
         return True
-    if os.environ.get(spec.api_key_env):
-        return True
-    # The inherited config keeps the OpenAI key under its own name.
-    return spec.provider == "openai" and bool(os.environ.get("GEN_AI_API_KEY"))
+    if spec.provider == "openai":
+        return bool(_openai_key())
+    return bool(os.environ.get(spec.api_key_env))
 
 
 def available_models() -> list[ModelSpec]:
@@ -243,7 +277,7 @@ def available_models() -> list[ModelSpec]:
         for spec in _catalogue(include_remote=True).values()
         if spec.selectable
         and (not allowlist or spec.id in allowlist)
-        and _provider_configured(spec)
+        and model_configured(spec)
     ]
 
 
@@ -310,10 +344,11 @@ def classifier_model() -> ModelSpec:
 def classifier_for(chat_model_id: str | None = None) -> ModelSpec:
     """The model that understands a question answered by `chat_model_id`.
 
-    The internal model does both jobs when it is the one answering: a question
-    meant to stay on our own infrastructure must not be sent to a cloud
-    classifier first, and a cloud key should not be needed to use it. Any
-    other chat model keeps the configured classifier.
+    The model selected for generation also prepares the question when it is
+    self-hosted or OpenAI. That keeps every inference in an explicitly selected
+    OpenAI run on OpenAI (and every local run local), rather than sending query
+    understanding to a stale separately configured endpoint first. Other
+    providers retain the separately configurable classifier.
     """
     chat = get_model(chat_model_id) if chat_model_id else default_model()
-    return chat if chat.self_hosted else classifier_model()
+    return chat if chat.self_hosted or chat.provider == "openai" else classifier_model()

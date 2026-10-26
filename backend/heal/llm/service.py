@@ -91,13 +91,22 @@ def build_llm(
             top_p=gen.top_p,
         )
 
+    # A catalogue entry is an explicit provider choice. Do not let a legacy
+    # GEN_AI_API_ENDPOINT or GEN_AI_LLM_PROVIDER_TYPE (often left behind from
+    # an OpenAI-compatible local server) redirect a selected cloud model.
+    # This also makes the selected provider reach LiteLLM instead of relying on
+    # the process-wide GEN_AI_MODEL_PROVIDER default.
     return get_default_llm(
         gen_ai_model_provider=spec.provider,
         timeout=seconds,
         gen_ai_model_version_override=spec.model_name,
+        api_base=None,
+        custom_llm_provider=None,
         temperature=gen.temperature,
         max_output_tokens=gen.token_cap,
         top_p=gen.top_p,
+        use_configured_endpoint=False,
+        use_configured_provider=False,
     )
 
 

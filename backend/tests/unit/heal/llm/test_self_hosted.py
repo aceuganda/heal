@@ -218,6 +218,23 @@ class TestClientIsolation:
         assert internal.llm._client_params["api_key"] == "not-needed"
         assert internal.llm._client_params["api_base"] == config.SELF_HOSTED_URL
 
+    def test_selected_openai_client_ignores_legacy_endpoint_settings(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A selected OpenAI model must not inherit a local-server endpoint."""
+        from heal_app.llm import factory
+
+        monkeypatch.setattr(factory, "GEN_AI_MODEL_PROVIDER", "custom")
+        monkeypatch.setattr(factory, "GEN_AI_API_ENDPOINT", "http://internal.test/v1")
+        monkeypatch.setattr(factory, "GEN_AI_LLM_PROVIDER_TYPE", "openai")
+        monkeypatch.setattr(factory, "get_gen_ai_api_key", lambda: "test-key")
+
+        cloud = service.build_llm(get_model("gpt-5.4-mini"))
+
+        assert cloud.llm.model == "openai/gpt-5.4-mini"
+        assert cloud.llm._client_params.get("api_base") is None
+        assert cloud.llm._client_params.get("custom_llm_provider") is None
+
 
 class TestNoHiddenRetries:
     def test_litellm_is_told_not_to_retry_on_its_own(

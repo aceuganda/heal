@@ -37,6 +37,8 @@ def test_a_translation_failure_is_a_503_with_a_readable_message(
 
     assert caught.value.status_code == 503
     # The user-facing sentence, never the HTTP detail from the MT service.
-    assert "404" not in caught.value.detail
+    assert caught.value.detail == (
+        "Translation is unavailable at the moment. Please try again shortly."
+    )
     assert message.luganda_message is None
     assert not session.committed

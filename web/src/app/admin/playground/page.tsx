@@ -734,7 +734,10 @@ function AnswerPanel({ result }: { result: PlaygroundResult }) {
 
   return (
     <Card className="mb-4">
-      <Title>Answer</Title>
+      <div className="flex items-baseline justify-between gap-3">
+        <Title>Answer</Title>
+        <span className="text-xs text-heal-teal-700">Completed successfully</span>
+      </div>
       <pre className="mt-2 whitespace-pre-wrap font-sans text-sm text-heal-ink-800">
         {result.answer}
       </pre>
@@ -753,12 +756,12 @@ function AnswerPanel({ result }: { result: PlaygroundResult }) {
             ))}
           </ul>
         </div>
-      ) : (
+      ) : result.candidates.some((candidate) => candidate.in_context) ? (
         <Text className="mt-3 text-xs">
           The answer cited nothing. With passages in the prompt that is worth
           looking at: it means the model did not lean on them.
         </Text>
-      )}
+      ) : null}
     </Card>
   );
 }
@@ -1223,11 +1226,11 @@ export default function Page() {
 
       {result && (
         <>
+          <AnswerPanel result={result} />
           <SettingsUsed result={result} />
           <UnderstandingPanel result={result} />
           <TimingsPanel result={result} />
           <CandidatesPanel result={result} />
-          <AnswerPanel result={result} />
           <DebugLogPanel result={result} />
         </>
       )}

@@ -27,7 +27,6 @@ stage that has a rule in it -- the route table, the floor, the cap, prompt
 assembly, citation extraction -- is called, not reimplemented, so a playground
 result cannot describe a pipeline that the health worker's answer did not run.
 """
-import os
 import time
 import traceback
 from typing import Any
@@ -57,6 +56,7 @@ from heal.llm import all_models
 from heal.llm import classifier_for
 from heal.llm import defaults as saved_defaults
 from heal.llm import get_model
+from heal.llm import model_configured
 from heal.llm import to_provider_messages
 from heal.llm.models import ModelSpec
 from heal.llm.registry import default_model
@@ -541,11 +541,7 @@ def playground_options(
                 self_hosted=spec.self_hosted,
                 # We host it, so there is no third-party key to hold. Whether
                 # it answers is a runtime question the run itself reports.
-                configured=spec.self_hosted
-                or bool(os.environ.get(spec.api_key_env))
-                or (
-                    spec.provider == "openai" and bool(os.environ.get("GEN_AI_API_KEY"))
-                ),
+                configured=model_configured(spec),
                 notes=spec.notes,
             )
             for spec in all_models()
@@ -694,12 +690,21 @@ async def run_query(
             detail=f"A question must be at most {MAX_QUESTION_CHARS} characters",
         )
 
-    chat_model = _resolve_model(request.chat_model, "chat_model")
-    # An explicit classifier wins; otherwise the internal model, when it is the
-    # one answering, also does the understanding -- as it does in chat.
-    classifier_model = _resolve_model(
-        request.classifier_model, "classifier_model"
-    ) or classifier_for(chat_model or None).id
+    requested_chat_model = _resolve_model(request.chat_model, "chat_model")
+    # Resolve the deployment default here rather than leaving an empty value
+    # for `_run` to resolve later. A saved setting takes precedence over the
+    # environment, so logging `config.CHAT_MODEL` for an empty request used to
+    # claim "self-hosted" while the generation path correctly used the saved
+    # GPT model. Passing one concrete id makes the trace and the request match.
+    chat_model = requested_chat_model or default_model().id
+
+    # Preserve validation for clients that still send this legacy field, but
+    # the chosen chat model owns every inference in a playground run. This
+    # prevents a stale classifier picker from sending a supposedly local run
+    # to OpenAI (or vice versa).
+    if request.classifier_model:
+        _resolve_model(request.classifier_model, "classifier_model")
+    classifier_model = classifier_for(chat_model).id
 
     settings, used = resolve(
         {
@@ -984,10 +989,8 @@ def _describe_client(spec: ModelSpec) -> str:
         has_key = bool(config.SELF_HOSTED_API_KEY)
         where = f"base_url={spec.base_url}"
     else:
-        has_key = bool(os.environ.get(spec.api_key_env)) or (
-            spec.provider == "openai" and bool(os.environ.get("GEN_AI_API_KEY"))
-        )
-        where = f"key_env={spec.api_key_env}"
+        has_key = model_configured(spec)
+        where = "credentials=dashboard_or_environment"
     return (
         f"model={spec.id} provider={spec.provider} model_name={spec.model_name} "
         f"self_hosted={spec.self_hosted} {where} key_present={has_key}"

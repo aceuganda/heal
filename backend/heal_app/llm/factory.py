@@ -27,13 +27,17 @@ def get_default_llm(
     temperature: float | None = None,
     max_output_tokens: int | None = None,
     top_p: float | None = None,
+    use_configured_endpoint: bool = True,
+    use_configured_provider: bool = True,
 ) -> LLM:
     """A single place to fetch the configured LLM for Danswer
     Also allows overriding certain LLM defaults
 
     `api_base`/`custom_llm_provider` point the client at an OpenAI-compatible
     endpoint we host ourselves; `temperature`/`max_output_tokens`/`top_p` are
-    the per-request wording knobs. All of them keep the module defaults when
+    the per-request wording knobs. `use_configured_endpoint` and
+    `use_configured_provider` let an explicit catalogue choice bypass legacy
+    global endpoint settings. All of them keep the module defaults when
     omitted, so existing callers are unaffected."""
     if DISABLE_GENERATIVE_AI:
         raise GenAIDisabledException()
@@ -56,12 +60,19 @@ def get_default_llm(
     # Fall back to the module defaults rather than forwarding None, which would
     # overwrite DefaultMultiLLM's own environment-derived values.
     return DefaultMultiLLM(
+        model_provider=gen_ai_model_provider,
         model_version=model_version,
         api_key=api_key,
         timeout=timeout,
-        api_base=api_base if api_base is not None else GEN_AI_API_ENDPOINT,
+        api_base=(
+            api_base
+            if not use_configured_endpoint
+            else api_base if api_base is not None else GEN_AI_API_ENDPOINT
+        ),
         custom_llm_provider=(
             custom_llm_provider
+            if not use_configured_provider
+            else custom_llm_provider
             if custom_llm_provider is not None
             else GEN_AI_LLM_PROVIDER_TYPE
         ),

@@ -11,7 +11,7 @@ class TranslationError(Exception):
     """Base class for all translation failures."""
 
     # Shown to the end user. Never includes URLs, keys or message content.
-    user_message = "Translation is temporarily unavailable. Please try again."
+    user_message = "Translation is unavailable at the moment. Please try again shortly."
 
 
 class TranslationNotConfigured(TranslationError):
