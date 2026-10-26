@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 
 from heal.chat import external_refs
 from heal.chat.citations import build_citations
+from heal.chat.citations import search_doc_fields
 from heal.chat.stream_processing import extract_citations
 from heal.language import get_language_service
 from heal.language import TranslationError
@@ -36,6 +37,7 @@ from heal_app.db.models import User
 from heal_app.llm.utils import get_default_llm_token_encode
 from heal_app.server.query_and_chat.models import CreateChatMessageRequest
 from heal_app.server.utils import get_json_line
+from heal_app.search.models import SavedSearchDoc
 
 logger = get_logger(__name__)
 
@@ -149,6 +151,22 @@ def stream_chat_message(
         )
     )
 
+    # The agent has completed retrieval, but generation is still lazy. Publish
+    # the ranked context now so the chat UI sees the search before any answer
+    # tokens, just as the playground reports the passages used for generation.
+    # These previews have no DB id: only passages actually cited are persisted
+    # below, once the completed answer supplies the citation numbers.
+    if decision.retrieved:
+        documents = []
+        for chunk in decision.chunks:
+            fields = search_doc_fields(chunk)
+            fields["semantic_identifier"] = fields.pop("semantic_id")
+            fields["metadata"] = fields.pop("doc_metadata")
+            documents.append(SavedSearchDoc(**fields).model_dump(mode="json"))
+        yield get_json_line(
+            {"top_documents": documents, "rephrased_query": decision.search_query}
+        )
+
     error: str | None = None
     try:
         if is_luganda:
@@ -226,6 +244,7 @@ def stream_chat_message(
         token_count=len(llm_tokenizer(english_answer)),
         message_type=MessageType.ASSISTANT,
         error=error,
+        rephrased_query=decision.search_query if decision.retrieved else None,
         reference_docs=reference_docs,
         citations=citations,
         db_session=db_session,

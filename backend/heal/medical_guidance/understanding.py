@@ -67,9 +67,12 @@ Return a JSON object with exactly these keys:
     A clinical question that is not primarily about a dose: diagnosis,
     symptoms, investigations, management steps, guideline content, referral.
   GENERAL_HEALTH_INFO
-    Background or public-health information rather than management of a case.
+    Background or public-health information rather than management of a case,
+    including health services, health helplines, free help lines and referral
+    contact numbers. Asking what a health contact number is is in scope.
   ADMIN_OR_SMALLTALK
     Greetings, thanks, questions about this assistant or about using it.
+    Asking for sources or verification of an answer is NOT small talk.
   OUT_OF_SCOPE
     Not health-related at all, or a request that must be refused.
 
@@ -94,6 +97,14 @@ Hard rules:
 - If a message is both an emergency and a dose question, the category is
   EMERGENCY.
 - Judge the latest message. Use the history only to resolve what it refers to.
+- A request such as "check the sources", "where did you get that", or
+  "where have you gotten that" asks to VERIFY the preceding answer. Classify
+  it as CLINICAL_QUESTION so the reference library is searched. Rewrite it as
+  a search for the specific claim or subject in the recent conversation,
+  rather than searching for the words "sources" or "that". A preceding
+  assistant answer is a claim to verify, not evidence that the claim is true.
+- "what's the free help line" is GENERAL_HEALTH_INFO. "what is this number"
+  referring to a health helpline in the history is also GENERAL_HEALTH_INFO.
 - Output the JSON object alone. No commentary, no code fence.
 
 Recent conversation:
@@ -177,6 +188,11 @@ def understand(
         return _fallback(original, model_id, "unparseable_response")
 
     intent, query, terms = parsed
+    # Explicit requests to check evidence must reach retrieval even if the
+    # classifier calls a short follow-up small talk. Preserve emergency/dose
+    # handling and out-of-scope refusals; only correct the small-talk route.
+    if intent is MedicalIntent.ADMIN_OR_SMALLTALK and _asks_for_sources(original):
+        intent = MedicalIntent.CLINICAL_QUESTION
     if intent is None:
         # A usable rewrite with an unusable label is still worth keeping: the
         # safe label answers and cites, it just does not unlock the emergency
@@ -195,6 +211,15 @@ def understand(
         safety_version=safety_version(),
         error=None if intent is not None else "unparseable_label",
     )
+
+
+def _asks_for_sources(message: str) -> bool:
+    return bool(re.search(
+        r"\b(?:sources?|references?|citations?|evidence)\b"
+        r"|\bwhere\b.*\b(?:get|got|gotten|find|found|read|learn|learned)\b.*\b(?:that|this|it)\b",
+        message,
+        flags=re.IGNORECASE,
+    ))
 
 
 def parse_understanding(

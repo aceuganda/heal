@@ -149,6 +149,17 @@ class QdrantKnowledgeStore:
 
         best = max(c.score for c in candidates)
         selection = select_context(candidates, settings, limit=want)
+        logger.info(
+            "Knowledge retrieval mode=%s alpha=%.3f floor=%.3f "
+            "candidates=%d above_floor=%d context=%d best_score=%.3f",
+            "hybrid" if settings.hybrid_search else "dense",
+            settings.alpha,
+            settings.min_retrieval_score,
+            len(candidates),
+            len(selection.above_floor),
+            len(selection.context),
+            best,
+        )
         if not selection.above_floor:
             # The near-miss is logged because it is what tunes the floor.
             logger.info(

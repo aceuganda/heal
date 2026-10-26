@@ -62,6 +62,19 @@ def payload(**overrides) -> str:
 
 
 class TestTheHappyPath:
+    @pytest.mark.parametrize("message", [
+        "check the sources man", "where have you gotten that", "what is your evidence?",
+    ])
+    def test_source_verification_followups_cannot_skip_retrieval(self, responds, message):
+        from heal.medical_guidance.routes import route_for
+
+        responds(payload(category="ADMIN_OR_SMALLTALK", query="Uganda free health helpline"))
+        result = understand(message, ["Uganda's free health helpline is 0800 100 066."])
+
+        assert result.intent is MedicalIntent.CLINICAL_QUESTION
+        assert route_for(result.intent).retrieve is True
+        assert result.query == "Uganda free health helpline"
+
     def test_the_label_routes_and_the_rewrite_is_searched(self, responds) -> None:
         responds(payload(category="DOSAGE_OR_MEDICATION", query="ART dosing at 40kg"))
         result = understand("wat z the dose")
