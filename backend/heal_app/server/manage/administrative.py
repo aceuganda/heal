@@ -14,15 +14,52 @@ from heal_app.configs.constants import GEN_AI_API_KEY_STORAGE_KEY
 from heal_app.db.models import User
 from heal_app.dynamic_configs import get_dynamic_config_store
 from heal_app.dynamic_configs.interface import ConfigNotFoundError
-from heal_app.llm.exceptions import GenAIDisabledException
 from heal_app.llm.factory import get_default_llm
 from heal_app.llm.utils import get_gen_ai_api_key
-from heal_app.llm.utils import test_llm
 from heal_app.server.models import ApiKey
 from heal_app.utils.logger import setup_logger
 
 router = APIRouter(prefix="/manage")
 logger = setup_logger()
+
+OPENAI_KEY_VALIDATION_MODEL = "gpt-5.4-mini"
+
+
+def _validate_openai_key(api_key: str) -> None:
+    """Check the key against the model this deployment wants to use.
+
+    Do not use the inherited GEN_AI_MODEL_VERSION here: production may leave
+    it unset, in which case the legacy gpt-3.5-turbo default rejects a valid
+    key before it can be saved. Pin the validation call to OpenAI and remove
+    any compatible-provider endpoint overrides from the environment.
+    """
+    try:
+        llm = get_default_llm(
+            gen_ai_model_provider="openai",
+            api_key=api_key,
+            timeout=15,
+            gen_ai_model_version_override=OPENAI_KEY_VALIDATION_MODEL,
+            api_base=None,
+            custom_llm_provider=None,
+            temperature=0,
+            max_output_tokens=8,
+            use_configured_endpoint=False,
+            use_configured_provider=False,
+        )
+        response = llm.invoke("Reply with OK.")
+        if not isinstance(response, str) or not response.strip():
+            raise RuntimeError("OpenAI returned an empty validation response")
+    except Exception as exc:  # noqa: BLE001 -- report provider validation details
+        detail = str(exc).replace(api_key, "[redacted]").strip()
+        if len(detail) > 400:
+            detail = detail[:400] + "…"
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Could not validate this key with {OPENAI_KEY_VALIDATION_MODEL}: "
+                f"{type(exc).__name__}: {detail or 'request failed'}"
+            ),
+        ) from exc
 
 
 """Admin only API endpoints.
@@ -61,17 +98,10 @@ def validate_existing_genai_api_key(
 
     genai_api_key = get_gen_ai_api_key()
 
-    try:
-        llm = get_default_llm(api_key=genai_api_key, timeout=10)
-    except GenAIDisabledException:
-        return
+    if genai_api_key is None:
+        raise HTTPException(status_code=404, detail="Key not found")
 
-    is_valid = test_llm(llm)
-
-    if not is_valid:
-        if genai_api_key is None:
-            raise HTTPException(status_code=404, detail="Key not found")
-        raise HTTPException(status_code=400, detail="Invalid API key provided")
+    _validate_openai_key(genai_api_key)
 
     # Mark check as successful
     get_dynamic_config_store().store(check_key_time, curr_time.timestamp())
@@ -104,16 +134,10 @@ def store_genai_api_key(
         if not request.api_key:
             raise HTTPException(400, "No API key provided")
 
-        llm = get_default_llm(api_key=request.api_key, timeout=10)
-        is_valid = test_llm(llm)
-
-        if not is_valid:
-            raise HTTPException(400, "Invalid API key provided")
-
+        _validate_openai_key(request.api_key)
         get_dynamic_config_store().store(GEN_AI_API_KEY_STORAGE_KEY, request.api_key)
-    except GenAIDisabledException:
-        # If Disable Generative AI is set, no need to verify, just store the key for later use
-        get_dynamic_config_store().store(GEN_AI_API_KEY_STORAGE_KEY, request.api_key)
+    except HTTPException:
+        raise
     except RuntimeError as e:
         raise HTTPException(400, str(e))
 

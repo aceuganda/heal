@@ -57,7 +57,9 @@ const Page = () => {
 
       <Title className="mb-2 mt-6">Update Key</Title>
       <Text className="mb-2">
-        Specify an OpenAI API key and click the &quot;Submit&quot; button.
+        Enter an OpenAI API key. Heal validates it with GPT-5.4 mini before
+        saving it, then uses the saved key for OpenAI models. You can replace
+        or delete it here at any time.
       </Text>
       <div className="border rounded-md border-border p-3">
         <ApiKeyForm
