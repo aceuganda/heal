@@ -8,6 +8,14 @@ export const MAX_ORGANISATION_LENGTH = 200;
 export const MIN_AGE_YEARS = 16;
 const EARLIEST_BIRTH_YEAR = 1900;
 
+/** Mirrors SEX_OPTIONS in profile.py. Sign-up needs them before there is a
+ * session to fetch them with. */
+export const SEX_OPTIONS: Record<string, string> = {
+  female: "Female",
+  male: "Male",
+  prefer_not_to_say: "Prefer not to say",
+};
+
 export interface ProfileDraft {
   organisation: string;
   /** yyyy-mm-dd, as an <input type="date"> gives it. */
@@ -71,4 +79,21 @@ export function profileProblem(
 
   if (!(draft.sex in sexOptions)) return "Choose one of the options for sex.";
   return null;
+}
+
+/** The message to show for a failed sign-up response body. */
+export function signupErrorMessage(body: unknown): string {
+  const detail = (body as { detail?: unknown } | null)?.detail;
+  if (detail === "REGISTER_USER_ALREADY_EXISTS") {
+    return "An account already exists with the specified email.";
+  }
+  if (detail === "REGISTER_INVALID_PASSWORD") {
+    return "That password is not allowed. Try a longer one.";
+  }
+  // A 422 from the profile check: pydantic prefixes the rule's own sentence.
+  if (Array.isArray(detail) && typeof detail[0]?.msg === "string") {
+    return detail[0].msg.replace(/^Value error, /, "");
+  }
+  if (typeof detail === "string") return detail;
+  return "Unknown error";
 }

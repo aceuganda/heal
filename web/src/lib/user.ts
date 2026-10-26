@@ -1,3 +1,4 @@
+import { ProfileDraft } from "@/components/account/profile";
 import { User } from "./types";
 
 // should be used client-side only
@@ -40,7 +41,11 @@ export const basicLogin = async (
   return response;
 };
 
-export const basicSignup = async (email: string, password: string) => {
+export const basicSignup = async (
+  email: string,
+  password: string,
+  profile?: ProfileDraft
+) => {
   const response = await fetch("/api/auth/register", {
     method: "POST",
     credentials: "include",
@@ -51,6 +56,9 @@ export const basicSignup = async (email: string, password: string) => {
       email,
       username: email,
       password,
+      ...(profile
+        ? { ...profile, organisation: profile.organisation.trim() }
+        : {}),
     }),
   });
   return response;

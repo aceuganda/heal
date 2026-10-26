@@ -22,6 +22,14 @@ the first pilot release.
 
 ### Added
 
+- **Sign-up asks for the profile.** The sign-up form now collects
+  organisation, date of birth and sex, checked by the same rule as the account
+  page, so a new health worker doesn't hit the profile prompt on their first
+  chat. The form is wider and splits into two columns. The API takes the three
+  fields together or not at all: the bootstrap admin and accounts made by an
+  admin can still be created without them, but a partial profile gets a 422.
+  No migration is needed, because the columns already exist.
+
 - **Playground debug log.** Every playground run now returns a stage-by-stage
   trace (model, endpoint, whether a key is present, prompt size, time to first
   token, failure and traceback tail). The screen shows it under the answer, and

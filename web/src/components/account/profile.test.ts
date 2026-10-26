@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { profileProblem } from "./profile";
+import { profileProblem, signupErrorMessage } from "./profile";
 
 const SEX = {
   female: "Female",
@@ -53,5 +53,24 @@ describe("profileProblem", () => {
 
   it("needs a sex option", () => {
     expect(problem({ sex: "" })).toMatch(/sex/);
+  });
+});
+
+describe("signupErrorMessage", () => {
+  it("names a taken email", () => {
+    expect(
+      signupErrorMessage({ detail: "REGISTER_USER_ALREADY_EXISTS" })
+    ).toMatch(/already exists/);
+  });
+
+  it("shows the profile rule's sentence from a 422", () => {
+    const body = {
+      detail: [{ msg: "Value error, Enter a real date of birth." }],
+    };
+    expect(signupErrorMessage(body)).toBe("Enter a real date of birth.");
+  });
+
+  it("falls back when the body is unreadable", () => {
+    expect(signupErrorMessage(null)).toBe("Unknown error");
   });
 });
